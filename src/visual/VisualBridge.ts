@@ -17,7 +17,7 @@ export type VisualUiState =
   | "error"
   | "shutdown";
 
-export type VisualControlAction = "tts_stop" | "exit" | "clear_commands";
+export type VisualControlAction = "tts_stop" | "exit" | "clear_commands" | "add_context" | "clear_context";
 
 export type VisualEvent =
   | {
@@ -61,12 +61,18 @@ export type VisualEvent =
       op: "voice-agent-ui";
       type: "approval";
       text: string;
+    }
+  | {
+      op: "voice-agent-ui";
+      type: "context";
+      entries: string[];
     };
 
 export interface VisualControlEvent {
   op: "voice-agent-ui";
   type: "control";
   action: VisualControlAction;
+  text?: string;
 }
 
 export interface VisualBridgeLike {
@@ -183,12 +189,21 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
 
   const record = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
   if (record.op !== "voice-agent-ui" || record.type !== "control") return null;
-  if (record.action !== "tts_stop" && record.action !== "exit" && record.action !== "clear_commands") return null;
+  if (
+    record.action !== "tts_stop" &&
+    record.action !== "exit" &&
+    record.action !== "clear_commands" &&
+    record.action !== "add_context" &&
+    record.action !== "clear_context"
+  ) {
+    return null;
+  }
 
   return {
     op: "voice-agent-ui",
     type: "control",
-    action: record.action
+    action: record.action,
+    ...(typeof record.text === "string" ? { text: record.text } : {})
   };
 }
 

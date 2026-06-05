@@ -21,9 +21,10 @@ ApplicationWindow {
     property real visualPhase: 0.0
     property bool expandedLayout: width >= 760 || height >= 760
     property int controlsHeight: 38
-    property int commandPanelHeight: Math.round(Math.max(86, Math.min(expandedLayout ? 150 : 112, height * (expandedLayout ? 0.15 : 0.17))))
+    property int commandPanelHeight: Math.round(Math.max(132, Math.min(expandedLayout ? 220 : 172, height * (expandedLayout ? 0.22 : 0.25))))
     property int visualDiameter: Math.round(Math.max(220, Math.min(width * (expandedLayout ? 0.78 : 0.84), height * (expandedLayout ? 0.60 : 0.48), height - commandPanelHeight - controlsHeight - 92, expandedLayout ? 720 : 360)))
     property var commands: []
+    property var contextEntries: []
 
     function argumentValue(name, fallback) {
         var args = Qt.application.arguments
@@ -33,17 +34,26 @@ ApplicationWindow {
         return fallback
     }
 
-    function sendControl(action) {
+    function sendControl(action, text) {
         if (socket.status === WebSocket.Open) {
-            socket.sendTextMessage(JSON.stringify({
+            var payload = {
                 op: "voice-agent-ui",
                 type: "control",
                 action: action
-            }))
+            }
+            if (text !== undefined) payload.text = text
+            socket.sendTextMessage(JSON.stringify(payload))
         }
 
         if (action === "clear_commands") commands = []
+        if (action === "clear_context") contextEntries = []
         if (action === "exit") exitTimer.restart()
+    }
+
+    function addContextFromInput() {
+        var text = contextInput.text.trim()
+        root.sendControl("add_context", text)
+        if (text.length > 0) contextInput.text = ""
     }
 
     function pushCommand(text) {
@@ -150,6 +160,9 @@ ApplicationWindow {
             } else if (event.type === "approval") {
                 root.uiState = "approval_pending"
                 root.statusText = event.text
+            } else if (event.type === "context") {
+                root.contextEntries = event.entries || []
+                if (root.contextEntries.length === 0) contextInput.text = ""
             }
         }
     }
@@ -529,6 +542,44 @@ ApplicationWindow {
                 anchors.fill: parent
                 anchors.margins: 14
                 spacing: 8
+
+                Text {
+                    text: "References"
+                    color: "#91a4bd"
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    TextField {
+                        id: contextInput
+                        Layout.fillWidth: true
+                        placeholderText: "/add reference text"
+                        selectByMouse: true
+                        onAccepted: root.addContextFromInput()
+                    }
+
+                    Button {
+                        text: "Add"
+                        onClicked: root.addContextFromInput()
+                    }
+
+                    Button {
+                        text: "Clear Ref"
+                        onClicked: root.sendControl("clear_context")
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: root.contextEntries.length > 0 ? root.contextEntries.length + " reference item(s) queued" : "No references queued"
+                    color: root.contextEntries.length > 0 ? "#ffd166" : "#68778b"
+                    font.pixelSize: 12
+                    elide: Text.ElideRight
+                }
 
                 Text {
                     text: "Commands"

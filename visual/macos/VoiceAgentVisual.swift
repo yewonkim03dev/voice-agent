@@ -470,14 +470,31 @@ final class AgentCircleView: NSView {
 final class VisualRootView: NSView {
     private let circleView: AgentCircleView
     private let commandView: NSTextView
+    private let contextField: NSTextField
+    private let contextSummary: NSTextField
+    private let addContextButton: NSButton
+    private let clearContextButton: NSButton
     private let commandPanel = NSView(frame: .zero)
+    private let contextLabel = NSTextField(labelWithString: "References")
     private let commandLabel = NSTextField(labelWithString: "Commands")
     private let commandScroll = NSScrollView(frame: .zero)
     private let controls: NSStackView
 
-    init(circleView: AgentCircleView, commandView: NSTextView, controls: NSStackView) {
+    init(
+        circleView: AgentCircleView,
+        commandView: NSTextView,
+        contextField: NSTextField,
+        contextSummary: NSTextField,
+        addContextButton: NSButton,
+        clearContextButton: NSButton,
+        controls: NSStackView
+    ) {
         self.circleView = circleView
         self.commandView = commandView
+        self.contextField = contextField
+        self.contextSummary = contextSummary
+        self.addContextButton = addContextButton
+        self.clearContextButton = clearContextButton
         self.controls = controls
         super.init(frame: .zero)
 
@@ -493,6 +510,21 @@ final class VisualRootView: NSView {
         commandPanel.layer?.borderWidth = 1
         commandPanel.layer?.cornerRadius = 8
         addSubview(commandPanel)
+
+        contextLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
+        contextLabel.font = NSFont.boldSystemFont(ofSize: 13)
+        commandPanel.addSubview(contextLabel)
+
+        contextField.placeholderString = "/add reference text"
+        contextField.font = NSFont.systemFont(ofSize: 13)
+        commandPanel.addSubview(contextField)
+
+        contextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
+        contextSummary.font = NSFont.systemFont(ofSize: 12)
+        commandPanel.addSubview(contextSummary)
+
+        commandPanel.addSubview(addContextButton)
+        commandPanel.addSubview(clearContextButton)
 
         commandLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
         commandLabel.font = NSFont.boldSystemFont(ofSize: 13)
@@ -528,7 +560,7 @@ final class VisualRootView: NSView {
         let gap: CGFloat = 10
         let controlsHeight: CGFloat = 34
         let expanded = bounds.width >= 760 || bounds.height >= 760
-        let commandHeight = max(86, min(expanded ? 150 : 112, bounds.height * (expanded ? 0.15 : 0.17)))
+        let commandHeight = max(132, min(expanded ? 220 : 172, bounds.height * (expanded ? 0.22 : 0.25)))
         let contentWidth = max(0, bounds.width - inset * 2)
 
         controls.frame = NSRect(x: inset, y: inset, width: contentWidth, height: controlsHeight)
@@ -541,9 +573,44 @@ final class VisualRootView: NSView {
 
         let panelInset: CGFloat = 14
         let labelHeight: CGFloat = 18
+        let fieldHeight: CGFloat = 26
+        let summaryHeight: CGFloat = 16
+        let buttonWidth: CGFloat = 76
+        let topY = commandPanel.bounds.height - panelInset - labelHeight
+
+        contextLabel.frame = NSRect(
+            x: panelInset,
+            y: topY,
+            width: max(0, commandPanel.bounds.width - panelInset * 2),
+            height: labelHeight
+        )
+        clearContextButton.frame = NSRect(
+            x: commandPanel.bounds.width - panelInset - buttonWidth,
+            y: contextLabel.frame.minY - fieldHeight - 6,
+            width: buttonWidth,
+            height: fieldHeight
+        )
+        addContextButton.frame = NSRect(
+            x: clearContextButton.frame.minX - buttonWidth - 8,
+            y: clearContextButton.frame.minY,
+            width: buttonWidth,
+            height: fieldHeight
+        )
+        contextField.frame = NSRect(
+            x: panelInset,
+            y: clearContextButton.frame.minY,
+            width: max(0, addContextButton.frame.minX - panelInset - 8),
+            height: fieldHeight
+        )
+        contextSummary.frame = NSRect(
+            x: panelInset,
+            y: contextField.frame.minY - summaryHeight - 5,
+            width: max(0, commandPanel.bounds.width - panelInset * 2),
+            height: summaryHeight
+        )
         commandLabel.frame = NSRect(
             x: panelInset,
-            y: commandPanel.bounds.height - panelInset - labelHeight,
+            y: contextSummary.frame.minY - labelHeight - 8,
             width: max(0, commandPanel.bounds.width - panelInset * 2),
             height: labelHeight
         )
@@ -657,9 +724,12 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
     private let commandView = NSTextView(frame: .zero)
+    private let contextField = NSTextField(string: "")
+    private let contextSummary = NSTextField(labelWithString: "No references queued")
     private let thinkingPulseSound = ThinkingPulseSound()
     private var webSocket: URLSessionWebSocketTask?
     private var commands: [String] = []
+    private var contextEntries: [String] = []
 
     init(bridgeUrl: String) {
         self.bridgeUrl = bridgeUrl
@@ -683,10 +753,21 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private func buildContentView() -> NSView {
         let controls = NSStackView()
         controls.addArrangedSubview(button("TTS Stop", action: #selector(stopTts)))
-        controls.addArrangedSubview(button("Clear", action: #selector(clearCommands)))
+        controls.addArrangedSubview(button("Clear Cmds", action: #selector(clearCommands)))
         controls.addArrangedSubview(button("Exit", action: #selector(exitVisual)))
 
-        return VisualRootView(circleView: circleView, commandView: commandView, controls: controls)
+        contextField.target = self
+        contextField.action = #selector(addContext)
+
+        return VisualRootView(
+            circleView: circleView,
+            commandView: commandView,
+            contextField: contextField,
+            contextSummary: contextSummary,
+            addContextButton: button("Add", action: #selector(addContext)),
+            clearContextButton: button("Clear Ref", action: #selector(clearContext)),
+            controls: controls
+        )
     }
 
     private func button(_ title: String, action: Selector) -> NSButton {
@@ -771,6 +852,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         case "approval":
             circleView.state = "approval_pending"
             circleView.statusText = event["text"] as? String ?? "approval pending"
+        case "context":
+            updateContext(event["entries"] as? [String] ?? [])
         default:
             break
         }
@@ -795,6 +878,19 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         sendControl("clear_commands")
     }
 
+    @objc private func addContext() {
+        let text = contextField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        sendControl("add_context", text: text)
+        if !text.isEmpty {
+            contextField.stringValue = ""
+        }
+    }
+
+    @objc private func clearContext() {
+        updateContext([])
+        sendControl("clear_context")
+    }
+
     @objc private func exitVisual() {
         sendControl("exit")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
@@ -802,12 +898,27 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func sendControl(_ action: String) {
-        let payload: [String: String] = [
+    private func updateContext(_ entries: [String]) {
+        contextEntries = Array(entries.prefix(8))
+        if contextEntries.isEmpty {
+            contextSummary.stringValue = "No references queued"
+            contextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
+            return
+        }
+
+        contextSummary.stringValue = "\(contextEntries.count) reference item(s) queued"
+        contextSummary.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.40, alpha: 1)
+    }
+
+    private func sendControl(_ action: String, text: String? = nil) {
+        var payload: [String: String] = [
             "op": "voice-agent-ui",
             "type": "control",
             "action": action
         ]
+        if let text {
+            payload["text"] = text
+        }
         guard
             let data = try? JSONSerialization.data(withJSONObject: payload),
             let text = String(data: data, encoding: .utf8)

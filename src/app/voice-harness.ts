@@ -30,6 +30,7 @@ export interface VoiceHarnessRunnerOptions {
   gate: ManualRecordingGate;
   recordingController: RecordingController;
   speechProcessor: SpeechProcessor;
+  visualBridge?: VisualBridgeLike;
   writeLine?: WriteLine;
   debug?: boolean;
 }
@@ -40,6 +41,7 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   wakeGate: AlwaysOnWakeGate;
   speechProcessor: SpeechProcessor;
   wakePhrases: string[];
+  visualBridge?: VisualBridgeLike;
   writeLine?: WriteLine;
   debug?: boolean;
   echoGuard?: EchoGuard;
@@ -67,7 +69,10 @@ export class VoiceHarnessRunner {
     this.speechProcessor = options.speechProcessor;
     this.writeLine = options.writeLine ?? noop;
     this.debug = options.debug ?? false;
-    this.textContext = new SupplementalTextBuffer(this.writeLine);
+    this.textContext = new SupplementalTextBuffer(this.writeLine, (entries) =>
+      sendVisualContextEvent(options.visualBridge, entries)
+    );
+    bindVisualContextControls(this.textContext, options.visualBridge);
     this.recordingController.onUtterance((audio) => {
       const task = this.transcribeAndRoute(audio).finally(() => {
         this.pendingTranscripts.delete(task);
@@ -197,7 +202,10 @@ export class AlwaysOnVoiceHarnessRunner {
     this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy();
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? ((prefix) => `${prefix}_${this.now()}`);
-    this.textContext = new SupplementalTextBuffer(this.writeLine);
+    this.textContext = new SupplementalTextBuffer(this.writeLine, (entries) =>
+      sendVisualContextEvent(options.visualBridge, entries)
+    );
+    bindVisualContextControls(this.textContext, options.visualBridge);
     this.manualRecorder = new UtteranceRecorder({
       now: this.now,
       createId: this.createId
@@ -626,6 +634,7 @@ export function createVoiceHarnessRunnerFromConfig(
     gate,
     recordingController,
     speechProcessor,
+    visualBridge: options.visualBridge,
     writeLine,
     debug: options.debug
   });
@@ -685,6 +694,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
       }),
     speechProcessor,
     wakePhrases: options.wakePhrases ?? config.wakePhrases,
+    visualBridge: options.visualBridge,
     writeLine,
     debug: options.debug,
     now: options.now,
@@ -897,12 +907,16 @@ function isReadlineClosedError(error: unknown): boolean {
   return error instanceof Error && /readline was closed/i.test(error.message);
 }
 
+type SupplementalTextChange = (entries: string[]) => void;
+
 class SupplementalTextBuffer {
   private readonly writeLine: WriteLine;
+  private readonly onChange: SupplementalTextChange;
   private readonly entries: string[] = [];
 
-  constructor(writeLine: WriteLine) {
+  constructor(writeLine: WriteLine, onChange: SupplementalTextChange = noopContextChange) {
     this.writeLine = writeLine;
+    this.onChange = onChange;
   }
 
   queue(text: string): void {
@@ -913,6 +927,19 @@ class SupplementalTextBuffer {
 
     this.entries.push(text);
     this.writeLine(`[voice:context] queued ${this.entries.length} item(s).`);
+    this.emitChange();
+  }
+
+  clear(): void {
+    if (this.entries.length === 0) {
+      this.writeLine("[voice:context] already empty.");
+      this.emitChange();
+      return;
+    }
+
+    const count = this.entries.splice(0).length;
+    this.writeLine(`[voice:context] cleared ${count} item(s).`);
+    this.emitChange();
   }
 
   apply(transcript: Transcript): Transcript {
@@ -920,9 +947,39 @@ class SupplementalTextBuffer {
 
     const entries = this.entries.splice(0);
     this.writeLine(`[voice:context] applied ${entries.length} item(s).`);
+    this.emitChange();
     return withTranscriptText(transcript, appendSupplementalText(transcript.text, entries));
   }
+
+  private emitChange(): void {
+    this.onChange([...this.entries]);
+  }
 }
+
+function bindVisualContextControls(textContext: SupplementalTextBuffer, visualBridge: VisualBridgeLike | undefined): void {
+  visualBridge?.onControl((event) => {
+    if (event.action === "add_context") {
+      const text = (event.text ?? "").trim();
+      const addContext = parseAddContextCommand(text);
+      textContext.queue(addContext.matched ? addContext.argument : text);
+      return;
+    }
+
+    if (event.action === "clear_context") {
+      textContext.clear();
+    }
+  });
+}
+
+function sendVisualContextEvent(visualBridge: VisualBridgeLike | undefined, entries: string[]): void {
+  visualBridge?.send({
+    op: "voice-agent-ui",
+    type: "context",
+    entries
+  });
+}
+
+function noopContextChange(_entries: string[]): void {}
 
 function appendSupplementalText(text: string, entries: string[]): string {
   const base = text.trim();

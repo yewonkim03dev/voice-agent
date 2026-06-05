@@ -61,6 +61,8 @@ npm run harness:wake:codex -- --tts --visual
 
 항상대기 모드는 recorder/STT 파이프라인을 유지하면서 VAD로 후보 발화를 자릅니다. 후보 발화는 STT 한 번을 거친 뒤 wake phrase로 시작하는 경우에만 Codex로 전달됩니다.
 
+터미널에서는 `/add <text>`로 다음 wake-routed 요청에 붙일 참고자료를 미리 넣을 수 있습니다. 참고자료는 `추가 정보:` 아래에 한 번 붙은 뒤 자동으로 비워집니다.
+
 기본 호출어:
 
 ```json
@@ -223,7 +225,7 @@ visual은 다음 상태를 표시합니다.
 - `wake_rejected`
 - `error`
 
-`approval_pending`에서는 현재 로컬에 설정된 허용/거부/세션 허용/계속 허용 문구가 화면에 유지됩니다. `TTS Stop` 버튼은 `/tts-stop`과 같은 동작이고, `Exit` 버튼은 visual만 닫는 것이 아니라 harness 전체 종료를 요청합니다.
+`approval_pending`에서는 현재 로컬에 설정된 허용/거부/세션 허용/계속 허용 문구가 화면에 유지됩니다. References 입력줄은 터미널 `/add <text>`와 같은 참고자료 큐를 사용합니다. wake 명령이 인식되어 요청이 전송되면 참고자료가 자동으로 붙고 비워지며, `Clear Ref`로 직접 비울 수도 있습니다. `TTS Stop` 버튼은 `/tts-stop`과 같은 동작이고, `Exit` 버튼은 visual만 닫는 것이 아니라 harness 전체 종료를 요청합니다.
 
 ## 로컬 설정
 

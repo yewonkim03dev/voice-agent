@@ -128,7 +128,7 @@ This mode uses manual recording first so it can later swap `ManualRecordingGate`
 AudioInput -> ListeningGate -> RecordingController -> UtteranceRecorder -> STT -> Transcript -> Agent pass-through
 ```
 
-In voice modes, slash commands are still handled by the harness, and plain typed terminal text still routes normally. Use `/add <text>` to queue supplemental context for the next routed STT transcript; queued text is appended under `추가 정보:`.
+In voice modes, slash commands are still handled by the harness, and plain typed terminal text still routes normally. Use `/add <text>` to queue supplemental context for the next routed STT transcript; queued text is appended under `추가 정보:` and cleared after that routed request.
 
 Always-on wake listening is exposed as:
 
@@ -236,7 +236,7 @@ npm run harness:wake:codex -- --visual
 
 By default, `visual.provider` is `auto`: Qt/QML is used first when `qml6`, `qml`, `qmlscene6`, or `qmlscene` is on PATH; on macOS, missing Qt falls back to `swift visual/macos/VoiceAgentVisual.swift`. You can force a provider with `--visual-provider qtqml` or `--visual-provider macos-native`.
 
-The UI receives state, volume, wake, speech, command, status, error, and approval events. After STT completes, `wake_rejected` flashes when the text does not match a configured wake phrase, while `submitting` marks the short handoff from transcript to Codex/Claude before `thinking` or `running`. Speech text is shown near the audio circle with multiline wrapping, and NDJSON `command` events are shown in the command panel without being spoken. The bottom `TTS Stop` button sends the same control action as `/tts-stop`, and `Exit` requests a full harness shutdown so the terminal session, visual bridge, and Codex/Claude backend are cleaned up together. If a requested visual provider is unavailable, the harness prints `[visual] unavailable: ...` and continues normally.
+The UI receives state, volume, wake, speech, command, status, error, approval, and context events. After STT completes, `wake_rejected` flashes when the text does not match a configured wake phrase, while `submitting` marks the short handoff from transcript to Codex/Claude before `thinking` or `running`. Speech text is shown near the audio circle with multiline wrapping, and NDJSON `command` events are shown in the command panel without being spoken. The References input sends the same supplemental context as terminal `/add <text>`; it is attached to the next wake-routed request and then cleared, or can be cleared manually with `Clear Ref`. The bottom `TTS Stop` button sends the same control action as `/tts-stop`, and `Exit` requests a full harness shutdown so the terminal session, visual bridge, and Codex/Claude backend are cleaned up together. If a requested visual provider is unavailable, the harness prints `[visual] unavailable: ...` and continues normally.
 
 or configured through env:
 

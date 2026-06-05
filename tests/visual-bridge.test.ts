@@ -16,6 +16,7 @@ import {
   parseVisualControlEvent,
   serializeVisualEvent,
   VisualBridge,
+  type VisualControlEvent,
   type VisualEvent
 } from "../src/visual/VisualBridge.ts";
 
@@ -45,6 +46,11 @@ test("visual bridge serializes UI events as JSON", () => {
       op: "voice-agent-ui",
       type: "error",
       text: "실패했어."
+    },
+    {
+      op: "voice-agent-ui",
+      type: "context",
+      entries: ["참고자료"]
     }
   ];
 
@@ -57,17 +63,23 @@ test("visual bridge parses allowed control events only", () => {
     type: "control",
     action: "tts_stop"
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"add_context","text":"README 참고"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "add_context",
+    text: "README 참고"
+  });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
   assert.equal(parseVisualControlEvent("not-json"), null);
 });
 
 test("visual bridge accepts websocket clients, sends events, and receives controls", async (context) => {
-  const controls: string[] = [];
+  const controls: VisualControlEvent[] = [];
   const bridge = new VisualBridge({
     writeLine: () => {}
   });
 
-  bridge.onControl((event) => controls.push(event.action));
+  bridge.onControl((event) => controls.push(event));
   let url: string;
   try {
     url = await bridge.start();
@@ -90,7 +102,9 @@ test("visual bridge accepts websocket clients, sends events, and receives contro
     assert.equal(received.some((message) => message.includes('"type":"wake"')), true);
 
     socket.write(encodeClientFrame('{"op":"voice-agent-ui","type":"control","action":"tts_stop"}'));
-    await waitFor(() => controls.includes("tts_stop"));
+    await waitFor(() => controls.some((event) => event.action === "tts_stop"));
+    socket.write(encodeClientFrame('{"op":"voice-agent-ui","type":"control","action":"add_context","text":"참고"}'));
+    await waitFor(() => controls.some((event) => event.action === "add_context" && event.text === "참고"));
   } finally {
     socket.destroy();
     await bridge.stop();
@@ -251,6 +265,11 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.doesNotMatch(qml, /Layout\.fillHeight: true\s*\n\s*radius: 8/u);
   assert.match(qml, /TTS Stop/u);
   assert.match(qml, /Commands/u);
+  assert.match(qml, /References/u);
+  assert.match(qml, /add_context/u);
+  assert.match(qml, /clear_context/u);
+  assert.match(qml, /contextEntries/u);
+  assert.match(qml, /\/add reference text/u);
   assert.doesNotMatch(qml, /WebView|WebEngine|Chromium|Electron|Tauri/iu);
 });
 
@@ -286,6 +305,11 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /if !expandedText/u);
   assert.doesNotMatch(swift, /greaterThanOrEqualToConstant:\s*180/u);
   assert.match(swift, /TTS Stop/u);
+  assert.match(swift, /Clear Cmds/u);
+  assert.match(swift, /References/u);
+  assert.match(swift, /add_context/u);
+  assert.match(swift, /clear_context/u);
+  assert.match(swift, /No references queued/u);
   assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);
 });
 

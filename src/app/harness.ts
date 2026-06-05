@@ -44,7 +44,7 @@ import {
 import type { VoiceMessage } from "../voice/VoiceMessage.ts";
 import type { SpawnTtsProcess } from "../voice/MacosAppleTtsProvider.ts";
 import { TtsPlaybackState } from "../voice/TtsPlaybackState.ts";
-import type { VisualBridgeLike, VisualEvent, VisualUiState } from "../visual/VisualBridge.ts";
+import type { VisualBridgeLike, VisualControlEvent, VisualEvent, VisualUiState } from "../visual/VisualBridge.ts";
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
 import { createCodexThreadStore } from "./codex-thread-config.ts";
 
@@ -876,7 +876,7 @@ export class TerminalHarness {
     );
   }
 
-  private async handleVisualControl(action: "tts_stop" | "exit" | "clear_commands"): Promise<void> {
+  private async handleVisualControl(action: VisualControlEvent["action"]): Promise<void> {
     switch (action) {
       case "tts_stop":
         await this.stopVoiceOutput();
@@ -887,6 +887,9 @@ export class TerminalHarness {
           type: "status",
           text: "commands cleared"
         });
+        return;
+      case "add_context":
+      case "clear_context":
         return;
       case "exit":
         await this.requestExit();

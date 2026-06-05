@@ -373,6 +373,41 @@ test("always-on voice runner appends /add text to the next routed STT transcript
   assert.ok(logs.includes("[voice:context] applied 1 item(s)."));
 });
 
+test("always-on voice runner applies visual reference context to the next wake command", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 테스트 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  visualBridge.emitControl("add_context", "/add 관련 파일은 README.md야");
+
+  assert.equal(backend.prompts.length, 0);
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "context" }> => event.type === "context").at(-1)?.entries,
+    ["관련 파일은 README.md야"]
+  );
+
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘\n\n추가 정보:\n- 관련 파일은 README.md야");
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "context" }> => event.type === "context").at(-1)?.entries,
+    []
+  );
+});
+
 test("always-on voice runner routes plain typed text immediately", async () => {
   const { backend, runner } = createAlwaysOnRunner([]);
 
@@ -1218,6 +1253,7 @@ function createAlwaysOnRunner(
     wakeGate: createTestWakeGate(createId),
     speechProcessor,
     wakePhrases: options.wakePhrases ?? defaultWakePhrases,
+    visualBridge: options.visualBridge,
     writeLine: (line) => logs.push(line),
     now: () => 1000,
     createId,
@@ -1393,12 +1429,13 @@ class FakeVisualBridge implements VisualBridgeLike {
     this.controlListeners.push(callback);
   }
 
-  emitControl(action: VisualControlEvent["action"]): void {
+  emitControl(action: VisualControlEvent["action"], text?: string): void {
     this.controlListeners.forEach((listener) =>
       listener({
         op: "voice-agent-ui",
         type: "control",
-        action
+        action,
+        ...(text ? { text } : {})
       })
     );
   }
