@@ -19,7 +19,19 @@ export interface ConfiguredWakePhraseMatch {
   distance?: number;
 }
 
-export const defaultWakePhrases = ["코덱스", "클로드", "codex", "claude", "hey codex", "hey claude"];
+export const defaultWakePhrases = [
+  "코덱스",
+  "클로드",
+  "자비스",
+  "codex",
+  "claude",
+  "jarvis",
+  "hey codex",
+  "hey claude",
+  "hey jarvis",
+  "헤이 자비스",
+  "hey 자비스"
+];
 
 export type WakeMatchStrategy = "exact" | "normalized" | "fuzzy";
 
@@ -106,6 +118,12 @@ const defaultTargetedWakePhrases: Array<{
   { target: "codex", phrase: "hey codex" },
   { target: "codex", phrase: "헤이 코덱스" },
   { target: "codex", phrase: "야 코덱스" },
+  { target: "codex", phrase: "자비스" },
+  { target: "codex", phrase: "jarvis" },
+  { target: "codex", phrase: "hey jarvis" },
+  { target: "codex", phrase: "헤이 자비스" },
+  { target: "codex", phrase: "hey 자비스" },
+  { target: "codex", phrase: "야 자비스" },
   { target: "claude", phrase: "클로드" },
   { target: "claude", phrase: "claude" },
   { target: "claude", phrase: "hey claude" },

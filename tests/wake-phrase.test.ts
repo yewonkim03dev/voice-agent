@@ -12,6 +12,26 @@ test("detects Codex wake phrases and strips the phrase", () => {
   });
 });
 
+test("detects Jarvis wake phrases as Codex aliases", () => {
+  assert.deepEqual(detectWakePhrase("자비스 간단한 npm test 돌려줘"), {
+    target: "codex",
+    phrase: "자비스",
+    commandText: "간단한 npm test 돌려줘",
+    strategy: "exact"
+  });
+  assert.deepEqual(detectWakePhrase("hey jarvis run npm test"), {
+    target: "codex",
+    phrase: "hey jarvis",
+    commandText: "run npm test",
+    strategy: "exact"
+  });
+  assert.deepEqual(detectConfiguredWakePhrase("헤이 자비스 테스트 돌려줘"), {
+    phrase: "헤이 자비스",
+    commandText: "테스트 돌려줘",
+    strategy: "exact"
+  });
+});
+
 test("detects wake phrases with multiline command context", () => {
   assert.deepEqual(detectWakePhrase("코덱스 테스트 돌려줘\n\n추가 정보:\n- README.md"), {
     target: "codex",

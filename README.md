@@ -1,6 +1,51 @@
 # Voice Agent
 
-## Terminal Harness
+Voice Agent aims to make Codex feel like a conversational local coding agent: wake it by voice, speak a natural Korean or English request, hear short spoken responses, and answer permission prompts without touching the keyboard.
+
+It is macOS-optimized today. It listens through the Mac microphone, transcribes Korean/English speech with the local Apple Speech path, routes wake commands to Codex, speaks short responses with Apple TTS, and shows a native visual companion window for listening, thinking, speaking, and approval states.
+
+The local layer is intentionally thin: it handles voice I/O, wake phrases, STT/TTS, visual feedback, and native approval bridging. It does not classify coding intent locally. Normal user commands are passed through to Codex.
+
+Korean documentation is available in [`README.ko.md`](./README.ko.md).
+
+## macOS Quick Start
+
+Prerequisites:
+
+- macOS with microphone and speech recognition permissions available.
+- Node.js 22 or newer.
+- The local `codex` CLI installed and logged in.
+- Optional: Qt/QML for the preferred visual companion. If Qt is missing on macOS, the harness falls back to the Swift/AppKit visual companion.
+
+Clone and run the full voice agent:
+
+```sh
+git clone git@github.com:yewonkim03dev/voice-agent.git
+cd voice-agent
+npm run setup:voice
+npm run setup:visual
+npm run harness:wake:codex -- --visual --tts
+```
+
+Then say one of:
+
+```text
+코덱스 npm test 돌려줘
+자비스 현재 파일 리팩토링해줘
+헤이 자비스 테스트 실행해줘
+hey jarvis run npm test
+```
+
+When Codex asks for permission, answer with `허용`, `거부`, or `이번 세션 동안 허용`. The visual approval state keeps the currently supported allow/deny phrases on screen while it waits.
+
+Useful checks:
+
+```sh
+npm run tts:test -- --ko "코덱스 음성 출력 테스트야."
+npm test
+```
+
+## Additional Modes
 
 Run the local MVP harness with the in-memory backend:
 
@@ -45,9 +90,11 @@ Wake text is supported in the terminal as a development stand-in for a real wake
 
 ```text
 코덱스 간단한 npm test 돌려줘
+자비스 간단한 npm test 돌려줘
+hey jarvis run npm test
 ```
 
-The harness strips `코덱스` and forwards `간단한 npm test 돌려줘` to Codex. Plain text without a wake phrase is also forwarded for development convenience.
+The harness strips the wake phrase, for example `코덱스` or `자비스`, and forwards the remaining command to Codex. Plain text without a wake phrase is also forwarded for development convenience.
 
 Native Codex approval requests are printed through the console voice output. While one is pending:
 
@@ -108,10 +155,22 @@ Voice setup is provider-based: macOS Swift support is the first provider, and Wi
 Wake phrases are loaded from `.voice-agent.local.json` or `VOICE_AGENT_WAKE_PHRASES`. The default set is:
 
 ```json
-["코덱스", "클로드", "codex", "claude", "hey codex", "hey claude"]
+[
+  "코덱스",
+  "클로드",
+  "자비스",
+  "codex",
+  "claude",
+  "jarvis",
+  "hey codex",
+  "hey claude",
+  "hey jarvis",
+  "헤이 자비스",
+  "hey 자비스"
+]
 ```
 
-For example, to use `자비스`:
+For example, to customize the list:
 
 ```json
 {
@@ -119,7 +178,7 @@ For example, to use `자비스`:
   "sttCommand": "swift src/speech/macos-transcribe.swift {audio}",
   "sampleRate": 16000,
   "channels": 1,
-  "wakePhrases": ["자비스", "코덱스", "codex"]
+  "wakePhrases": ["자비스", "헤이 자비스", "jarvis", "hey jarvis", "코덱스", "codex"]
 }
 ```
 
@@ -128,7 +187,7 @@ If auto-detection cannot find a supported command, configure manually with envir
 ```sh
 export VOICE_AGENT_RECORDER_COMMAND='rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -'
 export VOICE_AGENT_STT_COMMAND='your-local-whisper-command {audio}'
-export VOICE_AGENT_WAKE_PHRASES='자비스,코덱스,codex'
+export VOICE_AGENT_WAKE_PHRASES='자비스,헤이 자비스,jarvis,hey jarvis,코덱스,codex'
 ```
 
 `VOICE_AGENT_RECORDER_COMMAND` must stream 16kHz mono `pcm_s16le` audio to stdout. `VOICE_AGENT_STT_COMMAND` receives a WAV file path through `{audio}` and should print either plain transcript text or JSON like `{"text":"코덱스 npm test 돌려줘","language":"ko","confidence":0.99}`.
@@ -197,7 +256,7 @@ or in `.voice-agent.local.json`:
   "sttCommand": "swift src/speech/macos-transcribe.swift {audio}",
   "sampleRate": 16000,
   "channels": 1,
-  "wakePhrases": ["자비스", "코덱스", "codex"],
+  "wakePhrases": ["자비스", "헤이 자비스", "jarvis", "hey jarvis", "코덱스", "codex"],
   "tts": {
     "enabled": true,
     "provider": "macos-apple",
@@ -220,4 +279,4 @@ npm run harness:claude
 
 It probes the local `claude` CLI. If the CLI is broken or no supported structured approval transport is available, it prints the exact missing capability instead of pretending to drive Claude through an unsafe PTY shim.
 
-This branch intentionally does not implement visual UI, production wake-word ML, cloud TTS providers, or a third-party PTY dependency. Always-on wake mode uses VAD plus one STT pass per candidate utterance, then discards transcripts that do not start with a configured wake phrase.
+This branch intentionally does not implement production wake-word ML, cloud TTS providers, a third-party PTY dependency, or unsafe text scraping for native approvals. Always-on wake mode uses VAD plus one STT pass per candidate utterance, then discards transcripts that do not start with a configured wake phrase.

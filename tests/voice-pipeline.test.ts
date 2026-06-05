@@ -27,6 +27,7 @@ import { EchoGuard } from "../src/voice/EchoGuard.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
 import type { VoiceOutput } from "../src/voice/VoiceOutput.ts";
 import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
+import { defaultWakePhrases } from "../src/wake/WakePhraseRouter.ts";
 
 test("ManualRecordingGate opens and closes through toggle", async () => {
   const gate = new ManualRecordingGate({
@@ -290,6 +291,14 @@ test("always-on voice runner routes default Korean and English wake phrases", as
       {
         text: "codex run npm test",
         language: "en"
+      },
+      {
+        text: "자비스 상태 확인해줘",
+        language: "ko"
+      },
+      {
+        text: "hey jarvis list files",
+        language: "en"
       }
     ],
     {
@@ -300,13 +309,19 @@ test("always-on voice runner routes default Korean and English wake phrases", as
   await runner.start();
   emitCandidate(audioInput, 1000);
   emitCandidate(audioInput, 2000);
+  emitCandidate(audioInput, 3000);
+  emitCandidate(audioInput, 4000);
   await runner.drain();
   await runner.stop();
 
-  assert.equal(backend.prompts.length, 2);
+  assert.equal(backend.prompts.length, 4);
   assert.equal(backend.prompts[0].text, "테스트 돌려줘");
   assert.equal(backend.prompts[1].text, "run npm test");
+  assert.equal(backend.prompts[2].text, "상태 확인해줘");
+  assert.equal(backend.prompts[3].text, "list files");
   assert.equal(visualBridge.events.some((event) => event.type === "wake" && event.phrase === "코덱스"), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "wake" && event.phrase === "자비스"), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "wake" && event.phrase === "hey jarvis"), true);
   assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "submitting"), true);
 });
 
@@ -1202,7 +1217,7 @@ function createAlwaysOnRunner(
     audioInput,
     wakeGate: createTestWakeGate(createId),
     speechProcessor,
-    wakePhrases: options.wakePhrases ?? ["코덱스", "codex"],
+    wakePhrases: options.wakePhrases ?? defaultWakePhrases,
     writeLine: (line) => logs.push(line),
     now: () => 1000,
     createId,
