@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
-import { parseVoiceAgentEventLine, parseVoiceAgentEventSequence } from "../src/voice/VoiceAgentEvent.ts";
+import {
+  parseVoiceAgentEventLine,
+  parseVoiceAgentEventSequence,
+  voiceAgentProtocolPrompt
+} from "../src/voice/VoiceAgentEvent.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
 import type { VoiceOutput } from "../src/voice/VoiceOutput.ts";
 import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
@@ -298,6 +302,12 @@ test("parses adjacent voice-agent events defensively", () => {
     }
   ]);
   assert.equal(parseVoiceAgentEventSequence('raw {"op":"voice-agent","type":"speech","text":"no"}'), null);
+});
+
+test("voice-agent protocol prefers speech for audible progress", () => {
+  assert.match(voiceAgentProtocolPrompt, /Before tool use.+brief speech event/u);
+  assert.match(voiceAgentProtocolPrompt, /Use speech, not status, for user-facing progress/u);
+  assert.match(voiceAgentProtocolPrompt, /status.+only for silent UI state/u);
 });
 
 test("pass-through mode routes voice-agent speech events to TTS immediately", async () => {
