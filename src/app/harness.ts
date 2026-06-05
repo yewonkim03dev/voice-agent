@@ -1,0 +1,919 @@
+import { resolve } from "node:path";
+import { stdin, stderr, stdout } from "node:process";
+import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
+
+import { ClaudeCodeBackend } from "../claude/ClaudeCodeBackend.ts";
+import type { AgentBackend, CodexProcessConfig } from "../codex/CodexBridge.ts";
+import { CodexAppServerBackend } from "../codex/CodexAppServerBackend.ts";
+import { initialCodexStatus, type CodexOutputEvent, type CodexStatus } from "../codex/CodexOutputEvent.ts";
+import type { CodexPrompt } from "../codex/CodexPrompt.ts";
+import { interpretApprovalSpeech } from "../permission/ApprovalSpeech.ts";
+import type { PermissionDecision } from "../permission/PermissionDecision.ts";
+import type { PermissionRequest } from "../permission/PermissionRequest.ts";
+import { RuntimeController } from "../runtime/RuntimeController.ts";
+import type { AgentState } from "../runtime/AgentState.ts";
+import { normalizeTranscriptText, type Language, type Transcript } from "../speech/Transcript.ts";
+import type { VoiceMessage } from "../voice/VoiceMessage.ts";
+import type { VoiceOutput } from "../voice/VoiceOutput.ts";
+import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
+
+type WriteLine = (line: string) => void;
+
+export type HarnessLineResult = "continue" | "quit";
+
+export interface InMemoryAgentBackendOptions {
+  now?: () => number;
+  writeLine?: WriteLine;
+}
+
+export class InMemoryAgentBackend implements AgentBackend {
+  readonly prompts: CodexPrompt[] = [];
+  readonly permissions: PermissionDecision[] = [];
+  readonly interrupts: string[] = [];
+  readonly outputs: CodexOutputEvent[] = [];
+  readonly permissionRequests: PermissionRequest[] = [];
+
+  private readonly now: () => number;
+  private readonly writeLine: WriteLine;
+  private status: CodexStatus = {
+    process: "not_started",
+    task: "idle"
+  };
+  private readonly outputListeners: Array<(event: CodexOutputEvent) => void> = [];
+  private readonly permissionListeners: Array<(request: PermissionRequest) => void> = [];
+  private readonly statusListeners: Array<(status: CodexStatus) => void> = [];
+
+  constructor(options: InMemoryAgentBackendOptions = {}) {
+    this.now = options.now ?? Date.now;
+    this.writeLine = options.writeLine ?? noop;
+  }
+
+  async start(config?: CodexProcessConfig): Promise<void> {
+    this.publishStatus({
+      process: "running",
+      task: "idle",
+      currentWorkingDirectory: config?.cwd
+    });
+  }
+
+  async stop(): Promise<void> {
+    this.publishStatus({
+      ...this.status,
+      process: "exited",
+      task: "idle"
+    });
+  }
+
+  async sendPrompt(prompt: CodexPrompt): Promise<void> {
+    this.prompts.push(prompt);
+    this.writeLine(`[backend] prompt ${prompt.sessionId}: ${prompt.text}`);
+    this.publishStatus({
+      ...this.status,
+      process: "running",
+      task: "thinking"
+    });
+  }
+
+  async sendPermission(decision: PermissionDecision): Promise<void> {
+    this.permissions.push(decision);
+    this.writeLine(`[backend] permission ${decision.decision}: ${decision.requestId}`);
+    this.publishStatus({
+      ...this.status,
+      process: "running",
+      task: "thinking"
+    });
+  }
+
+  async interrupt(reason: string): Promise<void> {
+    this.interrupts.push(reason);
+    this.writeLine(`[backend] interrupt: ${reason}`);
+    this.publishStatus({
+      ...this.status,
+      process: "running",
+      task: "idle"
+    });
+  }
+
+  onOutput(callback: (event: CodexOutputEvent) => void): void {
+    this.outputListeners.push(callback);
+  }
+
+  onPermissionRequest(callback: (request: PermissionRequest) => void): void {
+    this.permissionListeners.push(callback);
+  }
+
+  onStatus(callback: (status: CodexStatus) => void): void {
+    this.statusListeners.push(callback);
+  }
+
+  recordOutput(event: CodexOutputEvent): void {
+    this.outputs.push(event);
+  }
+
+  recordPermissionRequest(request: PermissionRequest): void {
+    this.permissionRequests.push(request);
+  }
+
+  emitOutput(event: CodexOutputEvent): void {
+    this.recordOutput(event);
+    this.outputListeners.forEach((listener) => listener(event));
+  }
+
+  emitPermissionRequest(request: PermissionRequest): void {
+    this.recordPermissionRequest(request);
+    this.permissionListeners.forEach((listener) => listener(request));
+  }
+
+  createPermissionRequest(command: string, sessionId: string, id: string): PermissionRequest {
+    const request: PermissionRequest = {
+      id,
+      sessionId,
+      tool: "shell",
+      action: "run_command",
+      command,
+      riskLevel: "medium",
+      rawText: `Run command: ${command} ?`,
+      createdAt: this.now()
+    };
+
+    this.recordPermissionRequest(request);
+    return request;
+  }
+
+  private publishStatus(status: CodexStatus): void {
+    this.status = status;
+    this.statusListeners.forEach((listener) => listener(status));
+  }
+}
+
+export interface ConsoleVoiceOutputOptions {
+  writeLine?: WriteLine;
+}
+
+export class ConsoleVoiceOutput implements VoiceOutput {
+  readonly messages: VoiceMessage[] = [];
+
+  private readonly writeLine: WriteLine;
+  private readonly finishedListeners: Array<(id: string) => void> = [];
+
+  constructor(options: ConsoleVoiceOutputOptions = {}) {
+    this.writeLine = options.writeLine ?? noop;
+  }
+
+  async speak(message: VoiceMessage): Promise<void> {
+    this.messages.push(message);
+    this.writeLine(`[voice:${message.category}] ${message.text}`);
+    this.finishedListeners.forEach((listener) => listener(message.id));
+  }
+
+  async stop(): Promise<void> {}
+
+  onFinished(callback: (id: string) => void): void {
+    this.finishedListeners.push(callback);
+  }
+}
+
+export interface TerminalHarnessOptions {
+  now?: () => number;
+  writeLine?: WriteLine;
+  createId?: (prefix: string) => string;
+  backend?: AgentBackend;
+  backendLabel?: string;
+  routingMode?: "runtime" | "passthrough";
+  agentTarget?: AgentTarget;
+  voiceOutput?: ConsoleVoiceOutput;
+}
+
+export class TerminalHarness {
+  readonly backend: AgentBackend;
+  readonly voiceOutput: ConsoleVoiceOutput;
+  readonly runtime: RuntimeController | undefined;
+
+  private readonly now: () => number;
+  private readonly writeLine: WriteLine;
+  private readonly createId: (prefix: string) => string;
+  private readonly backendLabel: string;
+  private readonly routingMode: "runtime" | "passthrough";
+  private readonly agentTarget: AgentTarget;
+  private idSequence = 0;
+  private started = false;
+  private currentSessionId: string | undefined;
+  private passthroughState: AgentState = "BOOTING";
+  private codexStatus: CodexStatus = initialCodexStatus;
+  private pendingPermission: PermissionRequest | undefined;
+  private lastSpokenText: string | undefined;
+  private readonly passthroughOutputBuffers = new Map<string, string>();
+
+  constructor(options: TerminalHarnessOptions = {}) {
+    this.now = options.now ?? Date.now;
+    this.writeLine = options.writeLine ?? noop;
+    this.backendLabel = options.backendLabel ?? "mock";
+    this.routingMode =
+      options.routingMode ??
+      (options.backend && this.backendLabel !== "mock" ? "passthrough" : "runtime");
+    this.agentTarget =
+      options.agentTarget ?? (this.backendLabel.includes("claude") ? "claude" : "codex");
+    this.createId =
+      options.createId ??
+      ((prefix) => `${prefix}_${this.now()}_${++this.idSequence}`);
+    this.backend =
+      options.backend ??
+      new InMemoryAgentBackend({
+        now: this.now,
+        writeLine: this.writeLine
+      });
+    this.voiceOutput =
+      options.voiceOutput ??
+      new ConsoleVoiceOutput({
+        writeLine: this.writeLine
+      });
+
+    if (this.routingMode === "runtime") {
+      this.runtime = new RuntimeController({
+        backend: this.backend,
+        voiceOutput: this.voiceOutput,
+        now: this.now,
+        createId: this.createId
+      });
+    } else {
+      this.bindPassthroughBackend();
+    }
+  }
+
+  async start(): Promise<void> {
+    if (this.started) return;
+
+    if (this.runtime) {
+      await this.runtime.start();
+    } else {
+      this.passthroughState = "BOOTING";
+      await this.backend.start();
+      this.passthroughState = "IDLE";
+    }
+
+    this.started = true;
+    this.printStartupBanner();
+    if (this.runtime) {
+      this.writeLine("  Type text to send a transcript, or /status, /permission <command>, /complete, /error <message>, /quit.");
+    } else {
+      this.writeLine("  Wake: 코덱스 <명령> / 클로드 <명령>");
+      this.writeLine("  Plain text also passes through in development mode.");
+      this.writeLine("  Approval: 허용 / 거부 / 이번 세션 동안 허용");
+      this.writeLine("  Commands: /status /quit");
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (!this.started) return;
+
+    if (this.runtime) {
+      await this.runtime.stop();
+    } else {
+      this.flushPassthroughOutputBuffers();
+      await this.backend.stop();
+      this.passthroughState = "SHUTDOWN";
+    }
+
+    this.started = false;
+  }
+
+  async processLine(line: string): Promise<HarnessLineResult> {
+    const text = line.trim();
+    if (!text) return "continue";
+
+    if (text.startsWith("/")) {
+      return this.handleSlashCommand(text);
+    }
+
+    if (this.runtime) {
+      await this.runtime.handleTranscript(this.createTranscript(text));
+      return "continue";
+    }
+
+    await this.handlePassthroughLine(text);
+    return "continue";
+  }
+
+  private bindPassthroughBackend(): void {
+    this.backend.onOutput((event) => {
+      void this.handlePassthroughOutput(event);
+    });
+    this.backend.onPermissionRequest((request) => {
+      void this.handlePassthroughPermissionRequest(request);
+    });
+    this.backend.onStatus((status) => {
+      this.codexStatus = status;
+    });
+  }
+
+  private async handlePassthroughLine(text: string): Promise<void> {
+    if (this.pendingPermission) {
+      await this.handleNativeApprovalSpeech(text);
+      return;
+    }
+
+    if (this.shouldInterrupt(text)) {
+      this.passthroughState = "INTERRUPTING";
+      await this.backend.interrupt(text);
+      await this.speak("멈출게.", "status");
+      this.passthroughState = "IDLE";
+      return;
+    }
+
+    const wake = detectWakePhrase(text);
+
+    if (wake && wake.target !== this.agentTarget) {
+      await this.speak(`${agentLabel(wake.target)} 모드는 현재 harness에 연결되어 있지 않아.`, "warning");
+      return;
+    }
+
+    const promptText = wake ? wake.commandText : text;
+
+    if (!promptText) {
+      this.passthroughState = "LISTENING";
+      await this.speak(`${agentLabel(this.agentTarget)} 준비됐어.`, "status");
+      return;
+    }
+
+    await this.sendPassthroughPrompt(promptText);
+  }
+
+  private async sendPassthroughPrompt(text: string): Promise<void> {
+    await this.sendPassthroughTranscript(this.createTranscript(text));
+  }
+
+  private async sendPassthroughTranscript(transcript: Transcript): Promise<void> {
+    const prompt: CodexPrompt = {
+      sessionId: transcript.sessionId,
+      text: transcript.text,
+      language: transcript.language === "unknown" ? "mixed" : transcript.language,
+      source: "voice",
+      mode: "submit",
+      metadata: {
+        transcriptConfidence: transcript.confidence,
+        spokenAt: transcript.endedAt
+      }
+    };
+
+    this.passthroughState = "EXECUTING";
+    await this.backend.sendPrompt(prompt);
+    this.codexStatus = {
+      ...this.codexStatus,
+      task: "thinking"
+    };
+    this.passthroughState = "WAITING_CODEX";
+  }
+
+  private async handleNativeApprovalSpeech(text: string): Promise<void> {
+    const pending = this.pendingPermission;
+    if (!pending) return;
+
+    const interpreted = interpretApprovalSpeech(text);
+
+    if (interpreted.intent === "unknown") {
+      await this.speak("허용인지 거부인지 다시 말해줘.", "permission");
+      this.passthroughState = "CONFIRMING";
+      return;
+    }
+
+    const decision: PermissionDecision = {
+      requestId: pending.id,
+      decision: interpreted.intent === "deny" ? "deny" : "allow",
+      remember: interpreted.intent === "approve_session" || interpreted.intent === "approve_policy",
+      scope: approvalScope(interpreted.intent),
+      decidedBy: "voice",
+      transcript: text
+    };
+
+    try {
+      await this.backend.sendPermission(decision);
+    } catch (error) {
+      await this.speak(`${formatError(error)} 다시 말해줘.`, "warning");
+      this.passthroughState = "CONFIRMING";
+      return;
+    }
+
+    this.pendingPermission = undefined;
+    this.codexStatus = {
+      ...this.codexStatus,
+      task: "thinking"
+    };
+    this.passthroughState = "WAITING_CODEX";
+  }
+
+  private async handlePassthroughPermissionRequest(request: PermissionRequest): Promise<void> {
+    this.flushPassthroughOutputBuffers();
+    this.pendingPermission = request;
+    this.codexStatus = {
+      ...this.codexStatus,
+      task: "waiting_permission",
+      currentTool: request.tool
+    };
+    this.passthroughState = "CONFIRMING";
+    await this.speak(`${request.command ?? request.action} 실행 권한 필요해. 허용할까?`, "permission");
+    this.passthroughState = "CONFIRMING";
+  }
+
+  private async handlePassthroughOutput(output: CodexOutputEvent): Promise<void> {
+    const text = output.text ?? output.raw ?? "";
+
+    if (output.type === "task_complete") {
+      this.flushPassthroughOutputBuffers();
+      this.pendingPermission = undefined;
+      this.codexStatus = {
+        ...this.codexStatus,
+        task: "idle"
+      };
+      this.passthroughState = "IDLE";
+      await this.speak("끝났어.", "completion");
+      return;
+    }
+
+    if (output.type === "error") {
+      this.flushPassthroughOutputBuffers();
+      this.passthroughState = "ERROR";
+      await this.speak(text ? `오류 났어. ${text}` : "오류 났어.", "error");
+      return;
+    }
+
+    if (text) {
+      this.bufferPassthroughOutput(output.type, text);
+    }
+  }
+
+  private bufferPassthroughOutput(type: CodexOutputEvent["type"], text: string): void {
+    const buffered = `${this.passthroughOutputBuffers.get(type) ?? ""}${text}`;
+    const normalized = buffered.replace(/\r/g, "\n");
+    const parts = normalized.split("\n");
+    const completeLines = parts.slice(0, -1);
+    const remainder = parts.at(-1) ?? "";
+
+    if (completeLines.length > 0) {
+      this.printAgentOutputBlock(type, completeLines.join("\n"));
+      this.passthroughOutputBuffers.set(type, remainder);
+      return;
+    }
+
+    if (remainder.length >= 2_000) {
+      this.printAgentOutputBlock(type, remainder);
+      this.passthroughOutputBuffers.delete(type);
+      return;
+    }
+
+    this.passthroughOutputBuffers.set(type, remainder);
+  }
+
+  private flushPassthroughOutputBuffers(): void {
+    for (const [type, text] of this.passthroughOutputBuffers) {
+      this.printAgentOutputBlock(type, text);
+    }
+
+    this.passthroughOutputBuffers.clear();
+  }
+
+  private printAgentOutputBlock(type: string, text: string): void {
+    const visible = text.trimEnd();
+    if (!visible) return;
+
+    if (visible.includes("\n")) {
+      this.writeLine(`[agent:${type}]\n${visible}`);
+      return;
+    }
+
+    this.writeLine(`[agent:${type}] ${visible}`);
+  }
+
+  private shouldInterrupt(text: string): boolean {
+    if (this.passthroughState !== "WAITING_CODEX" && this.passthroughState !== "EXECUTING") {
+      return false;
+    }
+
+    const normalized = text.trim().replace(/\s+/g, " ").toLowerCase();
+    return ["멈춰", "그만", "취소해", "잠깐", "stop", "cancel", "hold on"].some((phrase) =>
+      normalized.includes(phrase)
+    );
+  }
+
+  private async speak(text: string, category: VoiceMessage["category"]): Promise<void> {
+    this.lastSpokenText = text;
+    await this.voiceOutput.speak({
+      id: this.createId("voice"),
+      text,
+      language: "ko",
+      priority: category === "permission" || category === "warning" ? "urgent" : "normal",
+      interruptible: category !== "permission",
+      category
+    });
+  }
+
+  private async handleSlashCommand(line: string): Promise<HarnessLineResult> {
+    const { command, argument } = parseSlashCommand(line);
+
+    switch (command) {
+      case "/status":
+        this.printStatus();
+        return "continue";
+      case "/permission":
+        await this.requestPermission(argument);
+        return "continue";
+      case "/complete":
+        await this.handleMockOutput("task_complete", "Task complete");
+        return "continue";
+      case "/error":
+        await this.handleMockOutput("error", argument || "Harness error");
+        return "continue";
+      case "/quit":
+        await this.stop();
+        this.writeLine("Harness stopped.");
+        return "quit";
+      default:
+        this.writeLine(`[harness] unknown command: ${command}`);
+        this.writeLine("Commands: /status, /permission <command>, /complete, /error <message>, /quit");
+        return "continue";
+    }
+  }
+
+  private async requestPermission(command: string): Promise<void> {
+    if (!command) {
+      this.writeLine("[harness] usage: /permission <command>");
+      return;
+    }
+
+    if (!this.runtime) {
+      this.writeLine("[harness] /permission is only available with the mock backend. In real mode, wait for the agent to request permission.");
+      return;
+    }
+
+    const request = createPermissionRequest(command, this.currentBackendSessionId(), this.createId("perm"), this.now());
+
+    if (!recordPermissionRequest(this.backend, request)) {
+      this.writeLine("[harness] /permission is only available with the mock backend. In real mode, wait for Codex to request permission.");
+      return;
+    }
+
+    await this.runtime.handlePermissionRequest(request);
+  }
+
+  private async handleMockOutput(type: "task_complete" | "error", text: string): Promise<void> {
+    if (!this.runtime) {
+      this.writeLine(`[harness] /${type === "task_complete" ? "complete" : "error"} is only available with the mock backend.`);
+      return;
+    }
+
+    const output: CodexOutputEvent = {
+      sessionId: this.currentBackendSessionId(),
+      type,
+      text,
+      timestamp: this.now()
+    };
+
+    recordOutput(this.backend, output);
+    await this.runtime.handleCodexOutput(output);
+  }
+
+  private createTranscript(text: string): Transcript {
+    const now = this.now();
+    const normalizedText = normalizeTranscriptText(text);
+
+    return {
+      id: this.createId("tr"),
+      sessionId: this.currentTranscriptSessionId(),
+      text,
+      normalizedText,
+      language: detectLanguage(normalizedText),
+      confidence: 0.99,
+      startedAt: now,
+      endedAt: now
+    };
+  }
+
+  private currentTranscriptSessionId(): string {
+    if (!this.runtime) {
+      this.currentSessionId = this.currentSessionId ?? this.createId("sess");
+      return this.currentSessionId;
+    }
+
+    const context = this.runtime.getContext();
+
+    if (context.pendingPermission) {
+      this.currentSessionId = context.pendingPermission.sessionId;
+      return this.currentSessionId;
+    }
+
+    if (context.state === "WAITING_CODEX" && context.activeSessionId) {
+      this.currentSessionId = context.activeSessionId;
+      return this.currentSessionId;
+    }
+
+    this.currentSessionId = this.createId("sess");
+    return this.currentSessionId;
+  }
+
+  private currentBackendSessionId(): string {
+    if (!this.runtime) {
+      this.currentSessionId = this.currentSessionId ?? this.createId("sess");
+      return this.currentSessionId;
+    }
+
+    const context = this.runtime.getContext();
+    this.currentSessionId = context.activeSessionId ?? this.currentSessionId ?? this.createId("sess");
+    return this.currentSessionId;
+  }
+
+  private printStatus(): void {
+    if (!this.runtime) {
+      const session = this.currentSessionId ? ` session=${this.currentSessionId}` : "";
+      const pending = this.pendingPermission
+        ? ` pending=${this.pendingPermission.command ?? this.pendingPermission.action} risk=${this.pendingPermission.riskLevel}`
+        : "";
+
+      this.writeLine(
+        `[status] state=${this.passthroughState} agent=${this.agentTarget} backend=${this.backendLabel} ` +
+          `codex=${this.codexStatus.process}/${this.codexStatus.task}${session}${pending}`
+      );
+      return;
+    }
+
+    const context = this.runtime.getContext();
+    const session = context.activeSessionId ? ` session=${context.activeSessionId}` : "";
+    const pending = context.pendingPermission
+      ? ` pending=${context.pendingPermission.command ?? context.pendingPermission.action} risk=${context.pendingPermission.riskLevel}`
+      : "";
+
+    this.writeLine(
+      `[status] state=${context.state} codex=${context.codexStatus.process}/${context.codexStatus.task}${session}${pending}`
+    );
+  }
+
+  private printStartupBanner(): void {
+    const accent = "\x1b[1;36m";
+    const dim = "\x1b[2m";
+    const reset = "\x1b[0m";
+    const mode = this.runtime ? "MOCK RUNTIME" : "REAL PASS-THROUGH";
+    const agent = this.runtime ? "mock" : this.agentTarget.toUpperCase();
+
+    this.writeLine("");
+    this.writeLine(`${accent}+------------------------------------------------------+${reset}`);
+    this.writeLine(`${accent}|              VOICE AGENT HARNESS READY              |${reset}`);
+    this.writeLine(`${accent}+------------------------------------------------------+${reset}`);
+    this.writeLine(`  backend: ${this.backendLabel}`);
+    this.writeLine(`  mode:    ${mode}`);
+    this.writeLine(`  agent:   ${agent}`);
+    this.writeLine(`${dim}  Local layer does not classify coding intent in real mode.${reset}`);
+    this.writeLine("");
+  }
+}
+
+export async function runTerminalHarness(): Promise<void> {
+  const writeLine = (line: string): void => {
+    stdout.write(`${line}\n`);
+  };
+  const harness = createTerminalHarnessFromArgs(process.argv.slice(2), { writeLine });
+
+  await harness.start();
+  const readline = createInterface({
+    input: stdin,
+    output: stdout,
+    prompt: "> "
+  });
+  promptIfOpen(readline);
+
+  try {
+    for await (const line of readline) {
+      try {
+        const result = await harness.processLine(line);
+        if (result === "quit") break;
+      } catch (error) {
+        writeLine(`[harness:error] ${formatError(error)}`);
+      }
+
+      promptIfOpen(readline);
+    }
+  } finally {
+    closeReadline(readline);
+    await harness.stop();
+  }
+}
+
+export interface HarnessCliOptions {
+  backendMode: "mock" | "codex" | "claude";
+  codexCommand: string;
+  codexArgs: string[];
+  claudeCommand: string;
+  cwd: string;
+}
+
+export function createTerminalHarnessFromArgs(
+  args: string[],
+  options: Omit<TerminalHarnessOptions, "backend" | "backendLabel"> = {}
+): TerminalHarness {
+  const cli = parseHarnessCliArgs(args);
+
+  if (cli.backendMode === "codex") {
+    return new TerminalHarness({
+      ...options,
+      backendLabel: "codex",
+      routingMode: "passthrough",
+      agentTarget: "codex",
+      backend: new CodexAppServerBackend({
+        command: cli.codexCommand,
+        args: cli.codexArgs,
+        cwd: cli.cwd,
+        now: options.now,
+        writeLine: options.writeLine
+      })
+    });
+  }
+
+  if (cli.backendMode === "claude") {
+    return new TerminalHarness({
+      ...options,
+      backendLabel: "claude",
+      routingMode: "passthrough",
+      agentTarget: "claude",
+      backend: new ClaudeCodeBackend({
+        command: cli.claudeCommand,
+        cwd: cli.cwd,
+        now: options.now,
+        writeLine: options.writeLine
+      })
+    });
+  }
+
+  return new TerminalHarness({
+    ...options,
+    backendLabel: "mock",
+    routingMode: "runtime",
+    agentTarget: "codex"
+  });
+}
+
+export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()): HarnessCliOptions {
+  const separator = args.indexOf("--");
+  const harnessArgs = separator === -1 ? args : args.slice(0, separator);
+  const extraCodexArgs = separator === -1 ? [] : args.slice(separator + 1);
+  let backendMode: HarnessCliOptions["backendMode"] = "mock";
+  let codexCommand = "codex";
+  let claudeCommand = "claude";
+  let cwd = defaultCwd;
+
+  for (let index = 0; index < harnessArgs.length; index += 1) {
+    const arg = harnessArgs[index];
+
+    switch (arg) {
+      case "--mock":
+        backendMode = "mock";
+        break;
+      case "--codex":
+      case "--real":
+        backendMode = "codex";
+        break;
+      case "--claude":
+        backendMode = "claude";
+        break;
+      case "--codex-command":
+        codexCommand = requiredValue(harnessArgs, ++index, "--codex-command");
+        break;
+      case "--claude-command":
+        claudeCommand = requiredValue(harnessArgs, ++index, "--claude-command");
+        break;
+      case "--cwd":
+        cwd = requiredValue(harnessArgs, ++index, "--cwd");
+        break;
+      default:
+        extraCodexArgs.push(arg);
+    }
+  }
+
+  return {
+    backendMode,
+    codexCommand,
+    codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", ...extraCodexArgs],
+    claudeCommand,
+    cwd
+  };
+}
+
+function parseSlashCommand(line: string): { command: string; argument: string } {
+  const firstSpace = line.search(/\s/);
+
+  if (firstSpace === -1) {
+    return {
+      command: line.toLowerCase(),
+      argument: ""
+    };
+  }
+
+  return {
+    command: line.slice(0, firstSpace).toLowerCase(),
+    argument: line.slice(firstSpace).trim()
+  };
+}
+
+function promptIfOpen(readline: ReturnType<typeof createInterface>): void {
+  try {
+    readline.prompt();
+  } catch (error) {
+    if (!isReadlineClosedError(error)) throw error;
+  }
+}
+
+function closeReadline(readline: ReturnType<typeof createInterface>): void {
+  try {
+    readline.close();
+  } catch (error) {
+    if (!isReadlineClosedError(error)) throw error;
+  }
+}
+
+function isReadlineClosedError(error: unknown): boolean {
+  return error instanceof Error && /readline was closed/i.test(error.message);
+}
+
+function createPermissionRequest(command: string, sessionId: string, id: string, now: number): PermissionRequest {
+  return {
+    id,
+    sessionId,
+    tool: "shell",
+    action: "run_command",
+    command,
+    riskLevel: "medium",
+    rawText: `Run command: ${command} ?`,
+    createdAt: now
+  };
+}
+
+function recordPermissionRequest(backend: AgentBackend, request: PermissionRequest): boolean {
+  const recorder = backend as AgentBackend & {
+    recordPermissionRequest?: (permissionRequest: PermissionRequest) => void;
+  };
+
+  if (!recorder.recordPermissionRequest) return false;
+
+  recorder.recordPermissionRequest(request);
+  return true;
+}
+
+function recordOutput(backend: AgentBackend, output: CodexOutputEvent): void {
+  const recorder = backend as AgentBackend & {
+    recordOutput?: (event: CodexOutputEvent) => void;
+  };
+
+  recorder.recordOutput?.(output);
+}
+
+function requiredValue(args: string[], index: number, option: string): string {
+  const value = args[index];
+
+  if (!value) {
+    throw new Error(`${option} requires a value.`);
+  }
+
+  return value;
+}
+
+function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["intent"]): PermissionDecision["scope"] {
+  switch (intent) {
+    case "approve_session":
+      return "session";
+    case "approve_policy":
+      return "tool";
+    case "approve_once":
+    case "deny":
+    case "unknown":
+      return "once";
+  }
+}
+
+function agentLabel(target: AgentTarget): string {
+  return target === "claude" ? "Claude" : "Codex";
+}
+
+function detectLanguage(text: string): Exclude<Language, "unknown"> | "unknown" {
+  const hasKorean = /[ㄱ-ㅎㅏ-ㅣ가-힣]/u.test(text);
+  const hasLatin = /[a-z]/i.test(text);
+
+  if (hasKorean && hasLatin) return "mixed";
+  if (hasKorean) return "ko";
+  if (hasLatin) return "en";
+  return "unknown";
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function noop(_line: string): void {}
+
+function isDirectEntrypoint(): boolean {
+  if (!process.argv[1]) return false;
+  return fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isDirectEntrypoint()) {
+  runTerminalHarness().catch((error: unknown) => {
+    stderr.write(`[harness:fatal] ${formatError(error)}\n`);
+    process.exitCode = 1;
+  });
+}

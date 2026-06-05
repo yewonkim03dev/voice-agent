@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "harness": "node src/app/harness.ts",
+    "harness:codex": "node src/app/harness.ts --codex",
+    "harness:claude": "node src/app/harness.ts --claude",
+    "harness:real": "node src/app/harness.ts --codex",
     "start": "node src/app/main.ts",
     "test": "node --test tests/*.test.ts"
   }
