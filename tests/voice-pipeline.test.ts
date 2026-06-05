@@ -477,6 +477,65 @@ test("wake-only status response marks the visual as speaking", async () => {
   });
 });
 
+test("always-on voice runner routes one follow-up command after wake-only speech", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "코덱스",
+      language: "ko"
+    },
+    {
+      text: "테스트 돌려줘",
+      language: "ko"
+    },
+    {
+      text: "이건 배경 소리야",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  emitCandidate(audioInput, 2000);
+  emitCandidate(audioInput, 3000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.ok(logs.includes('[wake:armed] phrase="코덱스" timeoutMs=10000'));
+  assert.ok(logs.includes('[wake:followup] phrase="코덱스" command="테스트 돌려줘"'));
+  assert.equal(logs.filter((line) => line.startsWith("[wake:followup]")).length, 1);
+});
+
+test("always-on voice runner keeps wake follow-up armed after ready TTS echo", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "코덱스",
+      language: "ko"
+    },
+    {
+      text: "Codex 준비됐어",
+      language: "ko"
+    },
+    {
+      text: "npm test 돌려줘",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  emitCandidate(audioInput, 2000);
+  emitCandidate(audioInput, 3000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "npm test 돌려줘");
+  assert.equal(logs.some((line) => line.startsWith("[echo:discarded] similarity=")), true);
+  assert.ok(logs.includes('[wake:followup] phrase="코덱스" command="npm test 돌려줘"'));
+});
+
 test("always-on voice runner stops TTS on wake plus stop intent", async () => {
   const voiceOutput = new InspectableTestVoiceOutput();
   const { backend, runner, audioInput, logs } = createAlwaysOnRunner(

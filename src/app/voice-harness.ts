@@ -23,6 +23,7 @@ import { createTerminalHarnessFromArgs, TerminalHarness } from "./harness.ts";
 import { resolveVoiceHarnessConfig, type VoiceHarnessConfig } from "./voice-config.ts";
 
 type WriteLine = (line: string) => void;
+const wakeFollowUpWindowMs = 10_000;
 
 export interface VoiceHarnessRunnerOptions {
   terminalHarness: TerminalHarness;
@@ -158,6 +159,13 @@ export class AlwaysOnVoiceHarnessRunner {
   private manualRecording = false;
   private started = false;
   private lastVolumeEventAt = 0;
+  private wakeFollowUp:
+    | {
+        phrase: string;
+        armedAt: number;
+        expiresAt: number;
+      }
+    | undefined;
 
   constructor(options: AlwaysOnVoiceHarnessRunnerOptions) {
     this.terminalHarness = options.terminalHarness;
@@ -297,12 +305,16 @@ export class AlwaysOnVoiceHarnessRunner {
       return;
     }
 
+    const wake = detectConfiguredWakePhrase(transcript.text, this.wakePhrases);
+
+    if (!wake && await this.tryRouteWakeFollowUp(transcript)) {
+      return;
+    }
+
     if (this.terminalHarness.ttsPlaybackState.isSpeakingOrRecent(this.now())) {
       await this.routeSpeakingTranscript(transcript);
       return;
     }
-
-    const wake = detectConfiguredWakePhrase(transcript.text, this.wakePhrases);
 
     if (!wake) {
       this.writeLine("[wake:discard] no configured wake phrase matched.");
@@ -315,13 +327,79 @@ export class AlwaysOnVoiceHarnessRunner {
       return;
     }
 
+    await this.routeWakeMatch(transcript, wake);
+  }
+
+  private async routeWakeMatch(
+    transcript: Transcript,
+    wake: {
+      phrase: string;
+      commandText: string;
+    }
+  ): Promise<void> {
     this.writeLine(`[wake:matched] phrase="${wake.phrase}" command="${wake.commandText}"`);
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
       type: "wake",
       phrase: wake.phrase
     });
+
+    if (!wake.commandText) {
+      this.armWakeFollowUp(wake.phrase);
+    } else {
+      this.clearWakeFollowUp();
+    }
+
     await this.terminalHarness.processTranscript(withTranscriptText(transcript, wake.commandText));
+  }
+
+  private async tryRouteWakeFollowUp(transcript: Transcript): Promise<boolean> {
+    const followUp = this.activeWakeFollowUp();
+
+    if (!followUp) return false;
+
+    if (this.terminalHarness.ttsPlaybackState.isSpeakingOrRecent(this.now())) {
+      const echo = this.echoGuard.evaluate(transcript.text, this.terminalHarness.ttsPlaybackState, this.now());
+
+      if (echo.echo) {
+        this.writeLine(`[echo:discarded] similarity=${formatSimilarity(echo)} strategy=${echo.strategy}`);
+        return true;
+      }
+    }
+
+    this.clearWakeFollowUp();
+    if (this.terminalHarness.ttsPlaybackState.isSpeakingOrRecent(this.now())) {
+      await this.terminalHarness.stopVoiceOutput();
+    }
+    this.writeLine(`[wake:followup] phrase="${followUp.phrase}" command="${transcript.text.trim()}"`);
+    await this.terminalHarness.processTranscript(transcript);
+    return true;
+  }
+
+  private armWakeFollowUp(phrase: string): void {
+    const armedAt = this.now();
+    this.wakeFollowUp = {
+      phrase,
+      armedAt,
+      expiresAt: armedAt + wakeFollowUpWindowMs
+    };
+    this.writeLine(`[wake:armed] phrase="${phrase}" timeoutMs=${wakeFollowUpWindowMs}`);
+  }
+
+  private activeWakeFollowUp(): { phrase: string; armedAt: number; expiresAt: number } | undefined {
+    if (!this.wakeFollowUp) return undefined;
+
+    if (this.wakeFollowUp.expiresAt < this.now()) {
+      this.writeLine(`[wake:followup] expired phrase="${this.wakeFollowUp.phrase}"`);
+      this.clearWakeFollowUp();
+      return undefined;
+    }
+
+    return this.wakeFollowUp;
+  }
+
+  private clearWakeFollowUp(): void {
+    this.wakeFollowUp = undefined;
   }
 
   private async routeSpeakingTranscript(transcript: Transcript): Promise<void> {

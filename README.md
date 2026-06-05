@@ -89,6 +89,8 @@ npm run harness:wake:codex
 
 This starts the same recorder/STT pipeline, but keeps the recorder process running and uses a lightweight VAD gate to cut candidate speech utterances. Each candidate utterance is transcribed once. If the transcript starts with a configured wake phrase, the wake phrase is stripped and the rest is forwarded to Codex. If it does not, the transcript is discarded.
 
+If a candidate contains only the wake phrase, such as `코덱스`, the runner arms a one-shot follow-up window. The next non-echo utterance is routed as the command without requiring another wake phrase, then the runner returns to normal wake-required listening.
+
 ```text
 AudioInput -> VAD candidate detector -> STT -> WakePhraseRouter -> Agent pass-through
 ```
