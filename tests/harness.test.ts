@@ -245,6 +245,50 @@ test("pass-through permission prompt waits for queued speech instead of cutting 
   ]);
 });
 
+test("pass-through visual keeps approval choices visible after permission TTS", async () => {
+  const backend = new InMemoryAgentBackend();
+  const voiceOutput = new HoldableVoiceOutput();
+  const visualBridge = new FakeVisualBridge();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "codex-test",
+    routingMode: "passthrough",
+    agentTarget: "codex",
+    voiceOutput,
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+
+  const stateDuringTts = lastStateEvent(visualBridge.events);
+  assert.equal(stateDuringTts?.state, "approval_pending");
+  assert.match(stateDuringTts?.text ?? "", /허용: 허용 \/ 승인/u);
+  assert.match(stateDuringTts?.text ?? "", /거부: 거부 \/ 아니/u);
+
+  voiceOutput.finishLast();
+  await flushAsync();
+
+  const stateAfterTts = lastStateEvent(visualBridge.events);
+  assert.equal(stateAfterTts?.state, "approval_pending");
+  assert.match(stateAfterTts?.text ?? "", /허용: 허용 \/ 승인/u);
+  assert.match(stateAfterTts?.text ?? "", /거부: 거부 \/ 아니/u);
+
+  backend.emitStatus({
+    process: "running",
+    task: "waiting_permission"
+  });
+  await flushAsync();
+
+  const stateAfterNativeStatus = lastStateEvent(visualBridge.events);
+  assert.equal(stateAfterNativeStatus?.state, "approval_pending");
+  assert.match(stateAfterNativeStatus?.text ?? "", /허용: 허용 \/ 승인/u);
+  assert.match(stateAfterNativeStatus?.text ?? "", /거부: 거부 \/ 아니/u);
+});
+
 test("pass-through approval speech can deny a native approval", async () => {
   const backend = new InMemoryAgentBackend();
   const harness = createPassthroughHarness(backend);

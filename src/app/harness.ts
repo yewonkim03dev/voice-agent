@@ -706,6 +706,12 @@ export class TerminalHarness {
 
     this.lastSpokenText = message.text;
     this.ttsPlaybackState.recordStart(message, this.now());
+    if (message.category === "permission" && this.currentVisualState() === "approval_pending") {
+      this.sendVisualState("approval_pending");
+      await this.voiceOutput.speak(message);
+      return;
+    }
+
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "state",
@@ -908,6 +914,17 @@ export class TerminalHarness {
 
   private sendVisualState(state: VisualUiState, text?: string): void {
     const visualState = state === "idle" && this.isAgentRequestActive() ? this.currentVisualState() : state;
+    const visualText = text ?? (visualState === "approval_pending" ? this.currentApprovalVisualText() : undefined);
+
+    if (visualState === "approval_pending") {
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: visualState,
+        ...(visualText ? { text: visualText } : {})
+      });
+      return;
+    }
 
     if (visualState !== "speaking" && visualState !== "shutdown" && this.ttsPlaybackState.isSpeaking()) {
       this.sendVisualEvent({
@@ -923,7 +940,7 @@ export class TerminalHarness {
       op: "voice-agent-ui",
       type: "state",
       state: visualState,
-      ...(text ? { text } : {})
+      ...(visualText ? { text: visualText } : {})
     });
   }
 
@@ -940,6 +957,12 @@ export class TerminalHarness {
     const statusState = statusToVisualState(this.codexStatus.task);
     if (statusState !== "idle") return statusState;
     return runtimeStateToVisualState(this.passthroughState);
+  }
+
+  private currentApprovalVisualText(): string | undefined {
+    const request = this.runtime?.getContext().pendingPermission ?? this.pendingPermission;
+    if (!request) return undefined;
+    return approvalVisualText(request.command ? "명령" : "작업");
   }
 
   private printStartupBanner(): void {
