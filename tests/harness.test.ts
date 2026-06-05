@@ -599,6 +599,7 @@ test("parses adjacent voice-agent events defensively", () => {
 
 test("voice-agent protocol prefers speech for audible progress", () => {
   assert.match(voiceAgentProtocolPrompt, /Before tool use.+brief speech event/u);
+  assert.match(voiceAgentProtocolPrompt, /During long-running work.+brief speech progress updates/u);
   assert.match(voiceAgentProtocolPrompt, /Use speech, not status or command, for user-facing progress/u);
   assert.match(voiceAgentProtocolPrompt, /findings, conclusions, and short summaries/u);
   assert.match(voiceAgentProtocolPrompt, /command.+only for shell commands, file paths, URLs/u);

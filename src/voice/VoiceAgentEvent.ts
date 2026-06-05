@@ -13,6 +13,7 @@ export const voiceAgentProtocolPrompt = [
   "Each line must be one JSON object with op=\"voice-agent\".",
   "Use {\"op\":\"voice-agent\",\"type\":\"speech\",\"text\":\"...\"} for concise natural-language text the TTS should speak immediately.",
   "Before tool use, searches, file reads, or command requests, emit one very brief speech event so the user knows work started.",
+  "During long-running work, emit brief speech progress updates after meaningful milestones so the user can hear that work is still moving.",
   "Use speech, not status or command, for user-facing progress, findings, conclusions, and short summaries the user should hear.",
   "Use {\"op\":\"voice-agent\",\"type\":\"command\",\"text\":\"...\"} only for shell commands, file paths, URLs, flags, stack traces, raw logs, or compact execution lists that should be displayed but not spoken.",
   "Use {\"op\":\"voice-agent\",\"type\":\"status\",\"text\":\"...\"} only for silent UI state that should not be spoken.",
