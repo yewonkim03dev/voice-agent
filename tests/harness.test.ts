@@ -4,6 +4,7 @@ import test from "node:test";
 import { InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
 import { parseVoiceAgentEventLine, parseVoiceAgentEventSequence } from "../src/voice/VoiceAgentEvent.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
+import type { VoiceOutput } from "../src/voice/VoiceOutput.ts";
 import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
 
 test("routes terminal text to the in-memory backend as a Codex prompt", async () => {
@@ -317,6 +318,56 @@ test("pass-through mode routes voice-agent speech events to TTS immediately", as
   assert.equal(lines.some((line) => line.includes("[agent:speech] 확인했어. 테스트부터 돌려볼게.")), true);
 });
 
+test("pass-through visual stays speaking until TTS finishes", async () => {
+  const backend = new InMemoryAgentBackend();
+  const voiceOutput = new HoldableVoiceOutput();
+  const visualBridge = new FakeVisualBridge();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "codex-test",
+    routingMode: "passthrough",
+    agentTarget: "codex",
+    voiceOutput,
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","text":"대기 중입니다. 원하시는 작업을 말씀해 주세요."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(lastStateEvent(visualBridge.events), {
+    op: "voice-agent-ui",
+    type: "state",
+    state: "speaking",
+    text: "대기 중입니다. 원하시는 작업을 말씀해 주세요."
+  });
+
+  backend.emitStatus({
+    process: "running",
+    task: "idle"
+  });
+  await flushAsync();
+
+  assert.deepEqual(lastStateEvent(visualBridge.events), {
+    op: "voice-agent-ui",
+    type: "state",
+    state: "speaking",
+    text: "대기 중입니다. 원하시는 작업을 말씀해 주세요."
+  });
+
+  voiceOutput.finishLast();
+  await flushAsync();
+
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "idle");
+});
+
 test("pass-through mode displays command events without speaking them", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
@@ -535,6 +586,36 @@ class StoppableVoiceOutput {
   }
 }
 
+class HoldableVoiceOutput implements VoiceOutput {
+  readonly messages: VoiceMessage[] = [];
+  private readonly finishedListeners: Array<(id: string) => void> = [];
+  private readonly resolvers = new Map<string, () => void>();
+
+  speak(message: VoiceMessage): Promise<void> {
+    this.messages.push(message);
+    return new Promise((resolve) => {
+      this.resolvers.set(message.id, resolve);
+    });
+  }
+
+  async stop(): Promise<void> {
+    this.finishLast();
+  }
+
+  onFinished(callback: (id: string) => void): void {
+    this.finishedListeners.push(callback);
+  }
+
+  finishLast(): void {
+    const message = this.messages.at(-1);
+    if (!message) return;
+
+    this.finishedListeners.forEach((listener) => listener(message.id));
+    this.resolvers.get(message.id)?.();
+    this.resolvers.delete(message.id);
+  }
+}
+
 class FakeVisualBridge implements VisualBridgeLike {
   readonly events: VisualEvent[] = [];
   private readonly controlListeners: Array<(event: VisualControlEvent) => void> = [];
@@ -556,4 +637,12 @@ class FakeVisualBridge implements VisualBridgeLike {
       })
     );
   }
+}
+
+function isStateEvent(event: VisualEvent): event is Extract<VisualEvent, { type: "state" }> {
+  return event.type === "state";
+}
+
+function lastStateEvent(events: VisualEvent[]): Extract<VisualEvent, { type: "state" }> | undefined {
+  return events.findLast(isStateEvent);
 }

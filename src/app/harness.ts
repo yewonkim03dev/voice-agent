@@ -151,6 +151,10 @@ export class InMemoryAgentBackend implements AgentBackend {
     this.permissionListeners.forEach((listener) => listener(request));
   }
 
+  emitStatus(status: CodexStatus): void {
+    this.publishStatus(status);
+  }
+
   createPermissionRequest(command: string, sessionId: string, id: string): PermissionRequest {
     const request: PermissionRequest = {
       id,
@@ -254,11 +258,7 @@ export class TerminalHarness {
     });
     this.voiceOutput.onFinished((id) => {
       this.ttsPlaybackState.recordFinished(id, this.now());
-      this.sendVisualEvent({
-        op: "voice-agent-ui",
-        type: "state",
-        state: "idle"
-      });
+      this.restoreVisualStateAfterSpeech();
     });
     this.visualBridge?.onControl((event) => {
       void this.handleVisualControl(event.action);
@@ -678,6 +678,20 @@ export class TerminalHarness {
     await this.voiceOutput.speak(message);
   }
 
+  private restoreVisualStateAfterSpeech(): void {
+    if (this.ttsPlaybackState.isSpeaking()) {
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "speaking",
+        ...(this.lastSpokenText ? { text: this.lastSpokenText } : {})
+      });
+      return;
+    }
+
+    this.sendVisualState(this.currentVisualStateAfterSpeech());
+  }
+
   private scheduleSpeak(text: string, category: VoiceMessage["category"]): void {
     const task = this.speak(text, category);
     this.scheduledVoiceTasks.add(task);
@@ -866,12 +880,33 @@ export class TerminalHarness {
   }
 
   private sendVisualState(state: VisualUiState, text?: string): void {
+    if (state !== "speaking" && state !== "shutdown" && this.ttsPlaybackState.isSpeaking()) {
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "speaking",
+        ...(this.lastSpokenText ? { text: this.lastSpokenText } : {})
+      });
+      return;
+    }
+
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "state",
       state,
       ...(text ? { text } : {})
     });
+  }
+
+  private currentVisualStateAfterSpeech(): VisualUiState {
+    if (this.runtime) {
+      const context = this.runtime.getContext();
+      if (context.pendingPermission) return "approval_pending";
+      return statusToVisualState(context.codexStatus.task);
+    }
+
+    if (this.pendingPermission) return "approval_pending";
+    return statusToVisualState(this.codexStatus.task);
   }
 
   private printStartupBanner(): void {
