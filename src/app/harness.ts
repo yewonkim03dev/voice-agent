@@ -245,6 +245,7 @@ export class TerminalHarness {
   private passthroughState: AgentState = "BOOTING";
   private codexStatus: CodexStatus = initialCodexStatus;
   private pendingPermission: PermissionRequest | undefined;
+  private readonly pendingPermissionQueue: PermissionRequest[] = [];
   private lastSpokenText: string | undefined;
   private readonly passthroughOutputBuffers = new Map<string, string>();
   private readonly passthroughStructuredSpeechSessions = new Set<string>();
@@ -385,7 +386,7 @@ export class TerminalHarness {
       return Boolean(this.runtime.getContext().pendingPermission);
     }
 
-    return Boolean(this.pendingPermission);
+    return Boolean(this.pendingPermission || this.pendingPermissionQueue.length > 0);
   }
 
   isAgentRequestActive(): boolean {
@@ -417,7 +418,7 @@ export class TerminalHarness {
         this.passthroughState = "INTERRUPTING";
         this.markCurrentPassthroughSessionInterrupted();
         await this.backend.interrupt(reason);
-        this.pendingPermission = undefined;
+        this.clearPendingPermissions();
         this.codexStatus = {
           ...this.codexStatus,
           task: "idle"
@@ -452,7 +453,7 @@ export class TerminalHarness {
     this.passthroughState = "INTERRUPTING";
     this.markCurrentPassthroughSessionInterrupted();
     await this.backend.interrupt(reason);
-    this.pendingPermission = undefined;
+    this.clearPendingPermissions();
     this.codexStatus = {
       ...this.codexStatus,
       task: "idle"
@@ -582,12 +583,16 @@ export class TerminalHarness {
     try {
       await this.backend.sendPermission(decision);
     } catch (error) {
-      await this.speak(`${formatError(error)} 다시 말해줘.`, "warning");
+      await this.speak(unsupportedApprovalGuidance(interpreted.intent, pending, error), "warning");
       this.passthroughState = "CONFIRMING";
       return;
     }
 
     this.pendingPermission = undefined;
+    if (await this.activateNextPendingPermission()) {
+      return;
+    }
+
     this.codexStatus = {
       ...this.codexStatus,
       task: "thinking"
@@ -597,6 +602,27 @@ export class TerminalHarness {
 
   private async handlePassthroughPermissionRequest(request: PermissionRequest): Promise<void> {
     await this.flushPassthroughOutputBuffers(request.sessionId);
+
+    if (this.pendingPermission || this.pendingPermissionQueue.length > 0) {
+      this.pendingPermissionQueue.push(request);
+      if (!this.pendingPermission) {
+        await this.activateNextPendingPermission();
+      }
+      return;
+    }
+
+    await this.activatePendingPermission(request);
+  }
+
+  private async activateNextPendingPermission(): Promise<boolean> {
+    const next = this.pendingPermissionQueue.shift();
+    if (!next) return false;
+
+    await this.activatePendingPermission(next);
+    return true;
+  }
+
+  private async activatePendingPermission(request: PermissionRequest): Promise<void> {
     this.pendingPermission = request;
     const permissionTarget = request.command ? "명령" : "작업";
     if (request.command) {
@@ -626,7 +652,7 @@ export class TerminalHarness {
 
     if (output.type === "task_complete") {
       await this.flushPassthroughOutputBuffers(output.sessionId);
-      this.pendingPermission = undefined;
+      this.clearPendingPermissions();
       this.codexStatus = {
         ...this.codexStatus,
         task: "idle"
@@ -899,6 +925,11 @@ export class TerminalHarness {
     this.progressVoiceGeneration += 1;
     this.passthroughOutputBuffers.clear();
     this.passthroughStructuredSpeechSessions.clear();
+  }
+
+  private clearPendingPermissions(): void {
+    this.pendingPermission = undefined;
+    this.pendingPermissionQueue.length = 0;
   }
 
   private markCurrentPassthroughSessionInterrupted(): void {
@@ -1192,7 +1223,7 @@ export class TerminalHarness {
         this.passthroughState = "INTERRUPTING";
         this.markCurrentPassthroughSessionInterrupted();
         await this.backend.interrupt("Emergency stop requested from visual");
-        this.pendingPermission = undefined;
+        this.clearPendingPermissions();
         this.codexStatus = {
           ...this.codexStatus,
           task: "idle"
@@ -1827,6 +1858,43 @@ function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["inten
     case "unknown":
       return "once";
   }
+}
+
+function unsupportedApprovalGuidance(
+  intent: ReturnType<typeof interpretApprovalSpeech>["intent"],
+  request: PermissionRequest,
+  error: unknown
+): string {
+  const decisions = request.native?.availableDecisions;
+
+  if (intent === "approve_session" && !supportsNativeDecision(decisions, "acceptForSession")) {
+    const alternatives = ["한 번만 허용은 허용"];
+    if (supportsNativeDecision(decisions, "acceptWithExecpolicyAmendment")) {
+      alternatives.push("같은 명령 계속 허용은 같은 명령 계속 허용");
+    }
+    if (supportsAnyNativeDecision(decisions, ["cancel", "decline", "reject", "deny"])) {
+      alternatives.push("거부는 거부");
+    }
+    return `이번 요청은 세션 허용을 지원하지 않아. ${alternatives.join(", ")} 중 하나로 다시 말해줘.`;
+  }
+
+  if (intent === "approve_policy" && !supportsNativeDecision(decisions, "acceptWithExecpolicyAmendment")) {
+    return "이번 요청은 같은 명령 계속 허용을 지원하지 않아. 한 번만 허용하려면 허용, 거부하려면 거부라고 말해줘.";
+  }
+
+  return `${formatError(error)} 다시 말해줘.`;
+}
+
+function supportsNativeDecision(decisions: unknown[] | undefined, name: string): boolean {
+  return decisions?.some((decision) => decision === name || Object.prototype.hasOwnProperty.call(asRecord(decision), name)) ?? false;
+}
+
+function supportsAnyNativeDecision(decisions: unknown[] | undefined, names: string[]): boolean {
+  return names.some((name) => supportsNativeDecision(decisions, name));
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
 function agentLabel(target: AgentTarget): string {

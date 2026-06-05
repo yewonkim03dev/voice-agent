@@ -534,6 +534,59 @@ test("pass-through approval speech can deny a native approval", async () => {
   assert.equal(backend.permissions[0].decision, "deny");
 });
 
+test("pass-through session approval explains available alternatives when unsupported", async () => {
+  const backend = new InMemoryAgentBackend();
+  backend.sendPermission = async () => {
+    throw new Error("Codex approval does not offer acceptForSession for this request. Available: accept, acceptWithExecpolicyAmendment, cancel.");
+  };
+  const harness = createPassthroughHarness(backend);
+
+  await harness.start();
+  const request = backend.createPermissionRequest("npm test", "sess_1", "approval_1");
+  request.native = {
+    backend: "codex",
+    requestMethod: "item/commandExecution/requestApproval",
+    availableDecisions: ["accept", "acceptWithExecpolicyAmendment", "cancel"]
+  };
+  backend.emitPermissionRequest(request);
+  await flushAsync();
+
+  await harness.processLine("이번 세션 동안 허용");
+
+  assert.equal(
+    harness.voiceOutput.messages.at(-1)?.text,
+    "이번 요청은 세션 허용을 지원하지 않아. 한 번만 허용은 허용, 같은 명령 계속 허용은 같은 명령 계속 허용, 거부는 거부 중 하나로 다시 말해줘."
+  );
+});
+
+test("pass-through queues simultaneous native approvals and advances one at a time", async () => {
+  const backend = new InMemoryAgentBackend();
+  const harness = createPassthroughHarness(backend);
+
+  await harness.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm run build", "sess_1", "approval_2"));
+  await flushAsync();
+
+  assert.deepEqual(
+    harness.voiceOutput.messages.filter((message) => message.category === "permission").map((message) => message.text),
+    ["명령 실행 권한 필요해. 허용할까?"]
+  );
+
+  await harness.processLine("허용");
+  await flushAsync();
+
+  assert.deepEqual(backend.permissions.map((permission) => permission.requestId), ["approval_1"]);
+  assert.deepEqual(
+    harness.voiceOutput.messages.filter((message) => message.category === "permission").map((message) => message.text),
+    ["명령 실행 권한 필요해. 허용할까?", "명령 실행 권한 필요해. 허용할까?"]
+  );
+
+  await harness.processLine("허용");
+
+  assert.deepEqual(backend.permissions.map((permission) => permission.requestId), ["approval_1", "approval_2"]);
+});
+
 test("pass-through mode does not parse agent text into fake approval requests", async () => {
   const backend = new InMemoryAgentBackend();
   const harness = createPassthroughHarness(backend);
