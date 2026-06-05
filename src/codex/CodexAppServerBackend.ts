@@ -523,7 +523,7 @@ export class CodexAppServerBackend implements AgentBackend {
 
   private resolveNativeDecision(decision: PermissionDecision, pending: PendingCodexApproval): unknown {
     if (decision.decision === "deny") {
-      return this.requireAvailableDecision(pending, ["decline", "reject", "deny"]);
+      return this.requireAvailableDecision(pending, ["decline", "reject", "deny", "cancel"]);
     }
 
     if (decision.scope === "tool" || decision.scope === "project") {

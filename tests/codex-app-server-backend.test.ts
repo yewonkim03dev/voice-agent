@@ -175,6 +175,32 @@ test("maps persistent command approval through Codex exec policy amendments", as
   });
 });
 
+test("maps deny approval to cancel when Codex offers cancel as the native decision", async () => {
+  const { backend, child, socket } = createStartedBackend();
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  socket.receive({
+    id: "approval_cancel",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      command: "npm test",
+      availableDecisions: ["accept", "acceptWithExecpolicyAmendment", "cancel"]
+    }
+  });
+  await backend.sendPermission(permission("approval_cancel", "deny"));
+
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "approval_cancel",
+    result: {
+      decision: "cancel"
+    }
+  });
+});
+
 test("terminal harness speaks app-server approvals and routes Korean allow decisions", async () => {
   const { backend, child, socket } = createStartedBackend();
   const harness = new TerminalHarness({
