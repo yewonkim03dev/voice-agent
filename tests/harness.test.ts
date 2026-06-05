@@ -598,12 +598,22 @@ test("parses voice-agent NDJSON speech events", () => {
     op: "voice-agent",
     type: "speech",
     text: "확인했어.",
+    role: "message",
     raw: {
       op: "voice-agent",
       type: "speech",
       text: "확인했어."
     }
   });
+  assert.equal(parseVoiceAgentEventLine(
+    '{"op":"voice-agent","type":"speech","role":"progress","text":"확인 중이야."}'
+  )?.role, "progress");
+  assert.equal(parseVoiceAgentEventLine(
+    '{"op":"voice-agent","type":"speech","role":"final","text":"끝났어."}'
+  )?.role, "final");
+  assert.equal(parseVoiceAgentEventLine(
+    '{"op":"voice-agent","type":"speech","role":"unknown","text":"일반 메시지야."}'
+  )?.role, "message");
   assert.equal(parseVoiceAgentEventLine("plain text"), null);
   assert.equal(parseVoiceAgentEventLine('{"op":"other","type":"speech","text":"no"}'), null);
 });
@@ -629,6 +639,9 @@ test("parses adjacent voice-agent events defensively", () => {
 
 test("voice-agent protocol prefers speech for audible progress", () => {
   assert.match(voiceAgentProtocolPrompt, /Before tool use.+brief speech event/u);
+  assert.match(voiceAgentProtocolPrompt, /role="progress"/u);
+  assert.match(voiceAgentProtocolPrompt, /role=final/u);
+  assert.match(voiceAgentProtocolPrompt, /Missing or unknown roles are treated as message/u);
   assert.match(voiceAgentProtocolPrompt, /During long-running work.+brief speech progress updates/u);
   assert.match(voiceAgentProtocolPrompt, /normal Codex\/Claude CLI working cadence/u);
   assert.match(voiceAgentProtocolPrompt, /Use speech, not status or command, for user-facing progress/u);
@@ -636,6 +649,112 @@ test("voice-agent protocol prefers speech for audible progress", () => {
   assert.match(voiceAgentProtocolPrompt, /command.+only for shell commands, file paths, URLs/u);
   assert.match(voiceAgentProtocolPrompt, /Do not put investigation summaries.+in command/u);
   assert.match(voiceAgentProtocolPrompt, /status.+only for silent UI state/u);
+});
+
+test("pass-through progress TTS keeps only the latest queued progress", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const voiceOutput = new HoldableVoiceOutput();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, lines, visualBridge, undefined, voiceOutput);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","role":"progress","text":"파일 구조 확인 중입니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), ["파일 구조 확인 중입니다."]);
+
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      '{"op":"voice-agent","type":"speech","role":"progress","text":"테스트 추가 중입니다."}\n' +
+      '{"op":"voice-agent","type":"speech","role":"progress","text":"npm test 실행 중입니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(lines.some((line) => line.includes("[agent:speech] 테스트 추가 중입니다.")), true);
+  assert.equal(
+    visualBridge.events.some((event) => event.type === "status" && event.text === "테스트 추가 중입니다."),
+    true
+  );
+
+  voiceOutput.finishLast();
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), [
+    "파일 구조 확인 중입니다.",
+    "npm test 실행 중입니다."
+  ]);
+});
+
+test("pass-through final speech clears queued progress and is spoken", async () => {
+  const backend = new InMemoryAgentBackend();
+  const voiceOutput = new HoldableVoiceOutput();
+  const harness = createPassthroughHarness(backend, [], undefined, undefined, voiceOutput);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","role":"progress","text":"파일 수정 중입니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), ["파일 수정 중입니다."]);
+
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      '{"op":"voice-agent","type":"speech","role":"progress","text":"테스트 실행 중입니다."}\n' +
+      '{"op":"voice-agent","type":"speech","role":"final","text":"완료했습니다. 테스트도 통과했습니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  voiceOutput.finishLast();
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), [
+    "파일 수정 중입니다.",
+    "완료했습니다. 테스트도 통과했습니다."
+  ]);
+  assert.equal(voiceOutput.messages.at(-1)?.category, "completion");
+});
+
+test("pass-through message speech is not dropped as stale progress", async () => {
+  const backend = new InMemoryAgentBackend();
+  const voiceOutput = new HoldableVoiceOutput();
+  const harness = createPassthroughHarness(backend, [], undefined, undefined, voiceOutput);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      '{"op":"voice-agent","type":"speech","role":"progress","text":"파일 확인 중입니다."}\n' +
+      '{"op":"voice-agent","type":"speech","role":"message","text":"이 설정은 재시작 후 적용됩니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), ["파일 확인 중입니다."]);
+
+  voiceOutput.finishLast();
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), [
+    "파일 확인 중입니다.",
+    "이 설정은 재시작 후 적용됩니다."
+  ]);
 });
 
 test("pass-through mode routes voice-agent speech events to TTS immediately", async () => {
@@ -929,6 +1048,40 @@ test("pass-through mode maps interrupt phrases during active work", async () => 
   assert.equal(backend.interrupts.length, 1);
 });
 
+test("pass-through mode does not replay stale speech after interruption", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, lines, visualBridge);
+
+  await harness.start();
+  await harness.processLine("코덱스 긴 작업 처리해줘");
+  const sessionId = backend.prompts[0].sessionId;
+  await harness.processLine("멈춰");
+  backend.emitOutput({
+    sessionId,
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","role":"final","text":"늦게 도착한 답변입니다."}\n',
+    timestamp: 1000
+  });
+  backend.emitOutput({
+    sessionId,
+    type: "task_complete",
+    text: "Task complete",
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), ["멈출게."]);
+  assert.equal(lines.some((line) => line.includes("[agent:stale:speech] 늦게 도착한 답변입니다.")), true);
+  assert.equal(
+    visualBridge.events.some(
+      (event) => event.type === "command" && event.text === "[stale speech] 늦게 도착한 답변입니다."
+    ),
+    true
+  );
+});
+
 function createHarness(): TerminalHarness {
   let id = 0;
 
@@ -947,7 +1100,8 @@ function createPassthroughHarness(
   backend: InMemoryAgentBackend,
   lines: string[] = [],
   visualBridge?: VisualBridgeLike,
-  onExitRequest?: () => void | Promise<void>
+  onExitRequest?: () => void | Promise<void>,
+  voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] }
 ): TerminalHarness {
   let id = 0;
 
@@ -960,7 +1114,8 @@ function createPassthroughHarness(
     createId: (prefix) => `${prefix}_${++id}`,
     writeLine: (line) => lines.push(line),
     visualBridge,
-    onExitRequest
+    onExitRequest,
+    voiceOutput
   });
 }
 

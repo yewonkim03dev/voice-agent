@@ -101,6 +101,23 @@ Codex app-server가 native approval을 요청하면 harness가 permission prompt
 
 Codex thread id는 `.voice-agent.local.json`의 `codex.threadId`에 저장됩니다. 이후 실행은 가능한 경우 같은 app chat thread를 resume합니다.
 
+Real Codex mode는 voice-agent 응답 프로토콜을 사전 프롬프트로 붙입니다. Codex는 줄 단위 JSON 이벤트를 스트리밍하도록 요청받고, harness는 이를 TTS/visual/terminal 출력으로 분리합니다.
+
+```jsonl
+{"op":"voice-agent","type":"speech","role":"message","text":"확인했어. 테스트부터 돌려볼게."}
+{"op":"voice-agent","type":"command","text":"npm test"}
+{"op":"voice-agent","type":"speech","role":"progress","text":"테스트 실행 중이야."}
+{"op":"voice-agent","type":"speech","role":"final","text":"테스트가 끝났어. 전부 통과했어."}
+```
+
+`speech`에는 `role: "progress" | "final" | "message"`를 붙일 수 있습니다. 없거나 알 수 없는 role은 `message`로 처리합니다. `message`는 일반 음성 응답, `progress`는 짧은 작업 진행 상황, `final`은 최종 답변/완료 요약입니다. terminal/visual 로그에는 모든 structured event가 남지만, TTS는 오래된 queued `progress`를 최신 progress로 교체할 수 있습니다. `message`, `final`, permission prompt, warning, error, stop confirmation은 stale progress처럼 버리지 않습니다.
+
+`command`는 shell command, file path, URL, flag, stack trace, raw log처럼 TTS로 읽기 어려운 내용을 표시할 때만 사용하고 읽지는 않습니다. `status`는 조용한 UI 상태, `error`는 짧은 사용자-facing 오류에 사용합니다.
+
+긴 Codex 작업 중에는 always-on STT, agent output, TTS playback을 분리합니다. active request 중 background no-transcript STT 실패와 `No` 같은 non-wake transcript는 기본 모드에서 숨기고, `--debug`에서만 diagnostics를 출력합니다. active work 중 background noise는 wake-rejected TTS를 말하지 않습니다. wake + stop은 active turn을 interrupt하고, wake + 새 명령은 stale queued TTS를 취소한 뒤 새 요청을 라우팅합니다. interrupt된 turn에서 늦게 도착한 output은 stale terminal/visual log로 남기되 새 speech처럼 읽지 않습니다.
+
+Codex app-server approval request는 native approval flow로 전달됩니다. command approval은 기존 command-specific path를 사용하고, 그 외 `requestApproval` 계열 요청은 generic Codex approval prompt로 표시해서 조용히 무시하지 않습니다. 알 수 없는 JSON-RPC request에는 명시적 error response를 보내 app-server가 무기한 기다리지 않게 합니다.
+
 ### Manual Voice Harness
 
 수동 녹음 모드:

@@ -248,9 +248,11 @@ export class TerminalHarness {
   private lastSpokenText: string | undefined;
   private readonly passthroughOutputBuffers = new Map<string, string>();
   private readonly passthroughStructuredSpeechSessions = new Set<string>();
+  private readonly interruptedPassthroughSessions = new Set<string>();
   private readonly scheduledVoiceTasks = new Set<Promise<void>>();
   private voiceQueue: Promise<void> = Promise.resolve();
   private voiceGeneration = 0;
+  private progressVoiceGeneration = 0;
 
   constructor(options: TerminalHarnessOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -398,11 +400,64 @@ export class TerminalHarness {
   }
 
   async stopVoiceOutput(): Promise<void> {
-    this.voiceGeneration += 1;
-    this.voiceQueue = Promise.resolve();
-    this.ttsPlaybackState.recordStopped(this.now());
-    await this.voiceOutput.stop();
+    await this.cancelQueuedVoiceOutput();
     this.restoreCurrentVisualState();
+  }
+
+  async stopActiveTurn(reason: string): Promise<void> {
+    await this.cancelQueuedVoiceOutput();
+    this.clearStalePassthroughOutput();
+
+    try {
+      if (this.runtime) {
+        if (this.isAgentRequestActive()) {
+          await this.runtime.interruptActiveTurn(reason);
+        }
+      } else if (this.isAgentRequestActive()) {
+        this.passthroughState = "INTERRUPTING";
+        this.markCurrentPassthroughSessionInterrupted();
+        await this.backend.interrupt(reason);
+        this.pendingPermission = undefined;
+        this.codexStatus = {
+          ...this.codexStatus,
+          task: "idle"
+        };
+        this.passthroughState = "IDLE";
+      }
+    } catch (error) {
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "error",
+        text: `stop failed: ${formatError(error)}`
+      });
+      await this.speak(`정지 실패. ${formatError(error)}`, "error");
+      return;
+    }
+
+    this.sendVisualState("idle");
+    await this.speak("정지했어.", "status");
+  }
+
+  async prepareForNewAgentTurn(reason: string): Promise<void> {
+    await this.cancelQueuedVoiceOutput();
+    this.clearStalePassthroughOutput();
+
+    if (!this.isAgentRequestActive()) return;
+
+    if (this.runtime) {
+      await this.runtime.interruptActiveTurn(reason);
+      return;
+    }
+
+    this.passthroughState = "INTERRUPTING";
+    this.markCurrentPassthroughSessionInterrupted();
+    await this.backend.interrupt(reason);
+    this.pendingPermission = undefined;
+    this.codexStatus = {
+      ...this.codexStatus,
+      task: "idle"
+    };
+    this.passthroughState = "IDLE";
   }
 
   async speakWakeRejected(text: string, visualText: string): Promise<void> {
@@ -449,6 +504,8 @@ export class TerminalHarness {
 
     if (this.shouldInterrupt(text)) {
       this.passthroughState = "INTERRUPTING";
+      this.clearStalePassthroughOutput();
+      this.markCurrentPassthroughSessionInterrupted();
       await this.backend.interrupt(text);
       await this.speak("멈출게.", "status");
       this.passthroughState = "IDLE";
@@ -474,6 +531,7 @@ export class TerminalHarness {
   }
 
   private async sendPassthroughTranscript(transcript: Transcript): Promise<void> {
+    this.startAgentTurn();
     const prompt: CodexPrompt = {
       sessionId: transcript.sessionId,
       text: transcript.text,
@@ -570,10 +628,18 @@ export class TerminalHarness {
         task: "idle"
       };
       this.passthroughState = "IDLE";
-      if (!this.passthroughStructuredSpeechSessions.has(output.sessionId)) {
+      const interrupted = this.interruptedPassthroughSessions.delete(output.sessionId);
+      if (!interrupted && !this.passthroughStructuredSpeechSessions.has(output.sessionId)) {
         await this.speak("끝났어.", "completion");
       }
       this.passthroughStructuredSpeechSessions.delete(output.sessionId);
+      return;
+    }
+
+    if (this.interruptedPassthroughSessions.has(output.sessionId)) {
+      if (text) {
+        this.handleStalePassthroughOutput(output.type, text);
+      }
       return;
     }
 
@@ -677,12 +743,56 @@ export class TerminalHarness {
     this.printAgentOutputBlock(type, line);
   }
 
+  private handleStalePassthroughOutput(type: CodexOutputEvent["type"], text: string): void {
+    const normalized = text.replace(/\r/g, "\n").trim();
+    if (!normalized) return;
+
+    const parsed = parseVoiceAgentEventSequence(normalized) ?? parseVoiceAgentEventLine(normalized);
+
+    if (Array.isArray(parsed)) {
+      for (const event of parsed) {
+        this.handleStaleVoiceAgentEvent(event);
+      }
+      return;
+    }
+
+    if (parsed) {
+      this.handleStaleVoiceAgentEvent(parsed);
+      return;
+    }
+
+    for (const line of normalized.split("\n")) {
+      const visible = line.trimEnd();
+      if (!visible) continue;
+      this.printAgentOutputBlock(`stale:${type}`, visible);
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "command",
+        text: `[stale ${type}] ${visible}`
+      });
+    }
+  }
+
+  private handleStaleVoiceAgentEvent(event: VoiceAgentEvent): void {
+    this.printAgentOutputBlock(`stale:${event.type}`, event.text);
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "command",
+      text: `[stale ${event.type}] ${event.text}`
+    });
+  }
+
   private handleVoiceAgentEvent(sessionId: string, event: VoiceAgentEvent): void {
     switch (event.type) {
       case "speech":
         this.printAgentOutputBlock("speech", event.text);
+        this.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "status",
+          text: event.text
+        });
         this.passthroughStructuredSpeechSessions.add(sessionId);
-        this.scheduleSpeak(event.text, "speech");
+        this.scheduleStructuredSpeech(event);
         return;
       case "command":
         this.printAgentOutputBlock("command", event.text);
@@ -769,6 +879,29 @@ export class TerminalHarness {
     await task;
   }
 
+  private async cancelQueuedVoiceOutput(): Promise<void> {
+    this.voiceGeneration += 1;
+    this.progressVoiceGeneration += 1;
+    this.voiceQueue = Promise.resolve();
+    this.ttsPlaybackState.recordStopped(this.now());
+    await this.voiceOutput.stop();
+  }
+
+  private startAgentTurn(): void {
+    this.progressVoiceGeneration += 1;
+  }
+
+  private clearStalePassthroughOutput(): void {
+    this.progressVoiceGeneration += 1;
+    this.passthroughOutputBuffers.clear();
+    this.passthroughStructuredSpeechSessions.clear();
+  }
+
+  private markCurrentPassthroughSessionInterrupted(): void {
+    if (this.runtime) return;
+    this.interruptedPassthroughSessions.add(this.currentBackendSessionId());
+  }
+
   private async speakQueuedMessage(
     message: VoiceMessage,
     generation: number,
@@ -810,6 +943,47 @@ export class TerminalHarness {
 
   private scheduleSpeak(text: string, category: VoiceMessage["category"]): void {
     const task = this.speak(text, category);
+    this.scheduledVoiceTasks.add(task);
+    task.finally(() => {
+      this.scheduledVoiceTasks.delete(task);
+    });
+  }
+
+  private scheduleStructuredSpeech(event: VoiceAgentEvent): void {
+    if (event.role === "progress") {
+      this.scheduleProgressSpeak(event.text);
+      return;
+    }
+
+    if (event.role === "final") {
+      this.progressVoiceGeneration += 1;
+      this.scheduleSpeak(event.text, "completion");
+      return;
+    }
+
+    this.scheduleSpeak(event.text, "speech");
+  }
+
+  private scheduleProgressSpeak(text: string): void {
+    const message: VoiceMessage = {
+      id: this.createId("voice"),
+      text,
+      language: voiceMessageLanguage(text),
+      priority: "low",
+      interruptible: true,
+      category: "speech"
+    };
+    const generation = this.voiceGeneration;
+    const progressGeneration = ++this.progressVoiceGeneration;
+    this.ttsPlaybackState.recordQueued(message, this.now());
+    const task = this.voiceQueue
+      .catch(() => {})
+      .then(() => {
+        if (generation !== this.voiceGeneration || progressGeneration !== this.progressVoiceGeneration) return undefined;
+        return this.speakQueuedMessage(message, generation);
+      });
+
+    this.voiceQueue = task.catch(() => {});
     this.scheduledVoiceTasks.add(task);
     task.finally(() => {
       this.scheduledVoiceTasks.delete(task);
@@ -997,10 +1171,8 @@ export class TerminalHarness {
   }
 
   private async requestEmergencyStop(): Promise<void> {
-    this.voiceGeneration += 1;
-    this.voiceQueue = Promise.resolve();
-    this.ttsPlaybackState.recordStopped(this.now());
-    await this.voiceOutput.stop();
+    await this.cancelQueuedVoiceOutput();
+    this.clearStalePassthroughOutput();
 
     this.writeLine(`[visual] emergency stop requested for ${this.agentTarget}.`);
     this.sendVisualEvent({
@@ -1014,6 +1186,7 @@ export class TerminalHarness {
         await this.runtime.interruptActiveTurn("Emergency stop requested from visual");
       } else {
         this.passthroughState = "INTERRUPTING";
+        this.markCurrentPassthroughSessionInterrupted();
         await this.backend.interrupt("Emergency stop requested from visual");
         this.pendingPermission = undefined;
         this.codexStatus = {

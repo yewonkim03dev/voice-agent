@@ -823,6 +823,40 @@ test("always-on voice runner stops TTS on wake plus stop intent", async () => {
   assert.ok(logs.includes('[barge:stop] phrase="코덱스"'));
 });
 
+test("always-on voice runner interrupts active turn on wake plus stop intent", async () => {
+  const voiceOutput = new InspectableTestVoiceOutput();
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 긴 작업 처리해줘",
+        language: "ko"
+      },
+      {
+        text: "코덱스 멈춰",
+        language: "ko"
+      }
+    ],
+    {
+      voiceOutput
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  assert.equal(backend.prompts.length, 1);
+
+  emitAgentSpeech(backend, "계속 처리하고 있어.");
+  await flushAsync();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(voiceOutput.stopCount >= 1, true);
+  assert.deepEqual(backend.interrupts, ["Stop requested from wake speech"]);
+  assert.ok(logs.includes('[barge:stop] phrase="코덱스"'));
+});
+
 test("always-on voice runner stops TTS and routes wake plus new command", async () => {
   const voiceOutput = new InspectableTestVoiceOutput();
   const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
@@ -848,6 +882,32 @@ test("always-on voice runner stops TTS and routes wake plus new command", async 
   assert.equal(backend.prompts.length, 1);
   assert.equal(backend.prompts[0].text, "npm test 다시 돌려줘");
   assert.ok(logs.includes('[barge:command] phrase="코덱스" command="npm test 다시 돌려줘"'));
+});
+
+test("always-on voice runner interrupts active turn before routing wake plus new command", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "코덱스 긴 작업 처리해줘",
+      language: "ko"
+    },
+    {
+      text: "코덱스 새 작업 시작해줘",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  assert.equal(backend.prompts.length, 1);
+
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.deepEqual(backend.interrupts, ["New wake command requested"]);
+  assert.deepEqual(backend.prompts.map((prompt) => prompt.text), ["긴 작업 처리해줘", "새 작업 시작해줘"]);
+  assert.ok(logs.includes('[wake:matched] phrase="코덱스" command="새 작업 시작해줘"'));
 });
 
 test("always-on voice runner ignores non-wake speech during TTS", async () => {
@@ -931,6 +991,56 @@ test("always-on voice runner keeps thinking after recent non-wake speech during 
   assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
 
   await runner.stop();
+});
+
+test("always-on voice runner hides active no-transcript candidate errors in default mode", async () => {
+  const speechProcessor = new SequenceSpeechProcessor([
+    {
+      text: "코덱스 긴 작업 처리해줘",
+      language: "ko"
+    },
+    new Error("Apple Speech produced no transcript.")
+  ]);
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([], {
+    speechProcessor,
+    debug: false
+  });
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  assert.equal(backend.prompts.length, 1);
+
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(logs.some((line) => line.includes("[voice:error]")), false);
+});
+
+test("always-on voice runner prints hidden STT diagnostics with debug enabled", async () => {
+  const speechProcessor = new SequenceSpeechProcessor([
+    {
+      text: "코덱스 긴 작업 처리해줘",
+      language: "ko"
+    },
+    new Error("Apple Speech produced no transcript.")
+  ]);
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([], {
+    speechProcessor,
+    debug: true
+  });
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  assert.equal(backend.prompts.length, 1);
+
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(logs.some((line) => line.includes("[voice:error] Apple Speech produced no transcript.")), true);
 });
 
 test("always-on voice runner keeps pending approval speech working during TTS", async () => {
@@ -1405,13 +1515,15 @@ function createAlwaysOnRunner(
     wakePhrases?: string[];
     voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] };
     visualBridge?: VisualBridgeLike;
+    speechProcessor?: SpeechProcessor;
+    debug?: boolean;
   } = {}
 ): {
   backend: InMemoryAgentBackend;
   harness: TerminalHarness;
   runner: AlwaysOnVoiceHarnessRunner;
   audioInput: FakeAudioInput;
-  speechProcessor: FakeSpeechProcessor;
+  speechProcessor: SpeechProcessor;
   logs: string[];
 } {
   let id = 0;
@@ -1431,7 +1543,7 @@ function createAlwaysOnRunner(
     createId
   });
   const audioInput = new FakeAudioInput();
-  const speechProcessor = new FakeSpeechProcessor(transcripts);
+  const speechProcessor = options.speechProcessor ?? new FakeSpeechProcessor(transcripts);
   const runner = new AlwaysOnVoiceHarnessRunner({
     terminalHarness: harness,
     audioInput,
@@ -1442,7 +1554,7 @@ function createAlwaysOnRunner(
     writeLine: (line) => logs.push(line),
     now: () => 1000,
     createId,
-    debug: true
+    debug: options.debug ?? true
   });
 
   return {
@@ -1550,6 +1662,33 @@ class FakeSpeechProcessor implements SpeechProcessor {
     this.audio.push(audio);
     const next = this.transcripts.shift();
     if (!next) throw new Error("No fake transcript queued.");
+
+    return {
+      id: `tr_${audio.id}`,
+      sessionId: audio.sessionId,
+      text: next.text,
+      normalizedText: normalizeTranscriptText(next.text),
+      language: next.language,
+      confidence: 0.99,
+      startedAt: audio.startedAt,
+      endedAt: audio.endedAt
+    };
+  }
+}
+
+class SequenceSpeechProcessor implements SpeechProcessor {
+  readonly audio: UtteranceAudio[] = [];
+  private readonly results: Array<{ text: string; language: Language } | Error>;
+
+  constructor(results: Array<{ text: string; language: Language } | Error>) {
+    this.results = [...results];
+  }
+
+  async transcribe(audio: UtteranceAudio): Promise<Transcript> {
+    this.audio.push(audio);
+    const next = this.results.shift();
+    if (!next) throw new Error("No fake transcript queued.");
+    if (next instanceof Error) throw next;
 
     return {
       id: `tr_${audio.id}`,

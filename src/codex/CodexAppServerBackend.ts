@@ -461,6 +461,18 @@ export class CodexAppServerBackend implements AgentBackend {
     );
   }
 
+  private sendErrorResponse(id: RequestId, code: number, message: string): void {
+    this.requireSocket().send(
+      JSON.stringify({
+        id,
+        error: {
+          code,
+          message
+        }
+      })
+    );
+  }
+
   private handleSocketMessage(data: unknown): void {
     const message = parseMessage(data);
 
@@ -515,6 +527,17 @@ export class CodexAppServerBackend implements AgentBackend {
         });
         return;
     }
+
+    if (this.isApprovalRequest(message)) {
+      this.handleApprovalRequest(message);
+      return;
+    }
+
+    if (message.id !== undefined) {
+      const method = message.method ?? "(missing method)";
+      this.writeLine(`[codex-app] unhandled request: ${method}`);
+      this.sendErrorResponse(message.id, -32601, `Voice Agent does not handle Codex app-server request ${method}.`);
+    }
   }
 
   private handleCommandApprovalRequest(message: JsonRpcRequest): void {
@@ -529,40 +552,107 @@ export class CodexAppServerBackend implements AgentBackend {
     const proposedNetworkPolicyAmendments = optionalUnknownArray(
       params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments
     );
-    const request: PermissionRequest = {
-      id: requestId,
-      sessionId: this.currentSessionId,
+    const request = this.createApprovalRequest(message, {
       tool: "shell",
       action: "run_command",
       command,
-      riskLevel: "medium",
       rawText: command ? `Run command: ${command} ?` : String(params.reason ?? "Codex requests command approval."),
-      createdAt: this.now(),
-      native: {
-        backend: "codex",
-        requestMethod: message.method,
-        availableDecisions,
-        proposedExecpolicyAmendment,
-        proposedNetworkPolicyAmendments,
-        raw: params
-      }
-    };
+      riskLevel: "medium"
+    });
 
-    this.pendingApprovals.set(request.id, {
-      rpcId: message.id,
-      requestMethod: message.method,
+    this.publishApprovalRequest(message, request, {
       availableDecisions,
       proposedExecpolicyAmendment,
       proposedNetworkPolicyAmendments,
       raw: params
     });
+  }
+
+  private handleApprovalRequest(message: JsonRpcRequest): void {
+    if (message.id === undefined) return;
+
+    const params = asRecord(message.params);
+    const request = this.createApprovalRequest(message, {
+      tool: parseOptionalString(params.tool) ?? "codex",
+      action: parseOptionalString(params.action) ?? parseOptionalString(message.method) ?? "approval_request",
+      command: parseOptionalString(params.command),
+      rawText:
+        parseOptionalString(params.reason) ??
+        parseOptionalString(params.description) ??
+        parseOptionalString(params.title) ??
+        `Codex requests approval for ${message.method ?? "an action"}.`,
+      riskLevel: "medium"
+    });
+
+    this.publishApprovalRequest(message, request, {
+      availableDecisions: optionalUnknownArray(params.availableDecisions ?? params.available_decisions),
+      proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? params.proposed_execpolicy_amendment,
+      proposedNetworkPolicyAmendments: optionalUnknownArray(
+        params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments
+      ),
+      raw: params
+    });
+  }
+
+  private createApprovalRequest(
+    message: JsonRpcRequest,
+    details: {
+      tool: string;
+      action: string;
+      command?: string;
+      rawText: string;
+      riskLevel: PermissionRequest["riskLevel"];
+    }
+  ): PermissionRequest {
+    const params = asRecord(message.params);
+    return {
+      id: String(message.id),
+      sessionId: this.currentSessionId,
+      tool: details.tool,
+      action: details.action,
+      command: details.command,
+      riskLevel: details.riskLevel,
+      rawText: details.rawText,
+      createdAt: this.now(),
+      native: {
+        backend: "codex",
+        requestMethod: message.method,
+        availableDecisions: optionalUnknownArray(params.availableDecisions ?? params.available_decisions),
+        proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? params.proposed_execpolicy_amendment,
+        proposedNetworkPolicyAmendments: optionalUnknownArray(
+          params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments
+        ),
+        raw: params
+      }
+    };
+  }
+
+  private publishApprovalRequest(
+    message: JsonRpcRequest,
+    request: PermissionRequest,
+    pending: Omit<PendingCodexApproval, "rpcId" | "requestMethod">
+  ): void {
+    if (message.id === undefined) return;
+    this.pendingApprovals.set(request.id, {
+      rpcId: message.id,
+      requestMethod: message.method ?? "unknown",
+      ...pending
+    });
     this.writeLine(`[codex-app] approval requested: ${request.command ?? request.action}`);
     this.publishStatus({
       ...this.status,
       task: "waiting_permission",
-      currentTool: "shell"
+      currentTool: request.tool
     });
     this.permissionListeners.forEach((listener) => listener(request));
+  }
+
+  private isApprovalRequest(message: JsonRpcRequest): boolean {
+    if (message.id === undefined) return false;
+
+    const params = asRecord(message.params);
+    if (message.method?.includes("requestApproval")) return true;
+    return optionalUnknownArray(params.availableDecisions ?? params.available_decisions) !== undefined;
   }
 
   private emitCommandExecOutput(message: JsonRpcRequest): void {

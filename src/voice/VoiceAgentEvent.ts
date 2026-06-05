@@ -1,9 +1,11 @@
 export type VoiceAgentEventType = "speech" | "command" | "status" | "error";
+export type VoiceAgentSpeechRole = "progress" | "final" | "message";
 
 export interface VoiceAgentEvent {
   op: "voice-agent";
   type: VoiceAgentEventType;
   text: string;
+  role: VoiceAgentSpeechRole;
   raw: Record<string, unknown>;
 }
 
@@ -12,6 +14,8 @@ export const voiceAgentProtocolPrompt = [
   "When replying to the user in this voice-agent session, emit newline-delimited JSON events.",
   "Each line must be one JSON object with op=\"voice-agent\".",
   "Use {\"op\":\"voice-agent\",\"type\":\"speech\",\"text\":\"...\"} for concise natural-language text the TTS should speak immediately.",
+  "For speech events, optionally include role=\"progress\", role=\"final\", or role=\"message\". Missing or unknown roles are treated as message.",
+  "Use speech role=progress for short working updates, role=final for final answers or completion summaries, and role=message for normal spoken messages.",
   "Before tool use, searches, file reads, or command requests, emit one very brief speech event so the user knows work started.",
   "During long-running work, emit brief speech progress updates after meaningful milestones so the user can hear that work is still moving.",
   "Keep the normal Codex/Claude CLI working cadence: while editing, testing, or inspecting files, emit brief speech updates after each meaningful step, such as files changed, tests added, checks started, and checks passed.",
@@ -74,6 +78,7 @@ function parseVoiceAgentEventJson(json: string): VoiceAgentEvent | null {
     op: "voice-agent",
     type: record.type,
     text: record.text.trim(),
+    role: record.type === "speech" ? parseSpeechRole(record.role) : "message",
     raw: record
   };
 }
@@ -119,6 +124,11 @@ function findJsonObjectEnd(text: string, start: number): number {
 
 function isVoiceAgentEventType(value: unknown): value is VoiceAgentEventType {
   return value === "speech" || value === "command" || value === "status" || value === "error";
+}
+
+function parseSpeechRole(value: unknown): VoiceAgentSpeechRole {
+  if (value === "progress" || value === "final" || value === "message") return value;
+  return "message";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

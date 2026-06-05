@@ -322,6 +322,70 @@ test("maps deny approval to cancel when Codex offers cancel as the native decisi
   });
 });
 
+test("routes generic Codex approval requests instead of silently ignoring them", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const requests: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => requests.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "edit_approval",
+    method: "item/fileChange/requestApproval",
+    params: {
+      reason: "Apply README edits?",
+      availableDecisions: ["accept", "cancel"]
+    }
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].id, "edit_approval");
+  assert.equal(requests[0].tool, "codex");
+  assert.equal(requests[0].action, "item/fileChange/requestApproval");
+  assert.equal(requests[0].rawText, "Apply README edits?");
+
+  await backend.sendPermission(permission("edit_approval", "allow"));
+
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "edit_approval",
+    result: {
+      decision: "accept"
+    }
+  });
+});
+
+test("responds to unhandled Codex app-server requests instead of leaving the server waiting", async () => {
+  const lines: string[] = [];
+  const { backend, child, socket } = createStartedBackend({
+    writeLine: (line) => lines.push(line)
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "unknown_1",
+    method: "item/unknown/request",
+    params: {}
+  });
+
+  assert.equal(lines.some((line) => line.includes("[codex-app] unhandled request: item/unknown/request")), true);
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "unknown_1",
+    error: {
+      code: -32601,
+      message: "Voice Agent does not handle Codex app-server request item/unknown/request."
+    }
+  });
+});
+
 test("terminal harness speaks app-server approvals and routes Korean allow decisions", async () => {
   const { backend, child, socket } = createStartedBackend();
   const harness = new TerminalHarness({
@@ -406,6 +470,7 @@ async function flushAsync(): Promise<void> {
 function createStartedBackend(options: {
   voiceAgentProtocol?: boolean;
   voiceAgentProtocolPrompt?: string;
+  writeLine?: (line: string) => void;
 } = {}): {
   backend: CodexAppServerBackend;
   child: FakeAppServerProcess;
@@ -419,6 +484,7 @@ function createStartedBackend(options: {
       cwd: "/repo",
       voiceAgentProtocol: options.voiceAgentProtocol,
       voiceAgentProtocolPrompt: options.voiceAgentProtocolPrompt,
+      writeLine: options.writeLine,
       spawnProcess: () => child,
       createWebSocket: () => socket
     }),
@@ -467,7 +533,13 @@ class FakeWebSocket {
   onerror: ((event: { message?: string; type?: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   resumeError: string | undefined;
-  readonly sent: Array<{ id: string | number; method?: string; params?: Record<string, unknown>; result?: unknown }> = [];
+  readonly sent: Array<{
+    id: string | number;
+    method?: string;
+    params?: Record<string, unknown>;
+    result?: unknown;
+    error?: { code?: number; message: string };
+  }> = [];
   flushed: Promise<void> = Promise.resolve();
 
   open(): void {
@@ -475,7 +547,13 @@ class FakeWebSocket {
   }
 
   send(data: string): void {
-    const message = JSON.parse(data) as { id: string | number; method?: string; params?: Record<string, unknown>; result?: unknown };
+    const message = JSON.parse(data) as {
+      id: string | number;
+      method?: string;
+      params?: Record<string, unknown>;
+      result?: unknown;
+      error?: { code?: number; message: string };
+    };
     this.sent.push(message);
 
     if (message.method === "initialize") {

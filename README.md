@@ -77,12 +77,19 @@ On first start, Codex mode stores the returned app-server `threadId` under `code
 Real Codex mode also prepends a voice-agent response protocol prompt. The agent is asked to stream newline-delimited JSON events so short spoken responses can be sent to TTS before the full turn is complete:
 
 ```jsonl
-{"op":"voice-agent","type":"speech","text":"확인했어. 테스트부터 돌려볼게."}
+{"op":"voice-agent","type":"speech","role":"message","text":"확인했어. 테스트부터 돌려볼게."}
 {"op":"voice-agent","type":"command","text":"npm test"}
-{"op":"voice-agent","type":"speech","text":"테스트가 끝났어. 전부 통과했어."}
+{"op":"voice-agent","type":"speech","role":"progress","text":"테스트 실행 중이야."}
+{"op":"voice-agent","type":"speech","role":"final","text":"테스트가 끝났어. 전부 통과했어."}
 ```
 
-`speech` events are spoken immediately. Use them for audible progress, findings, conclusions, and short summaries. `command` events are displayed but not spoken; keep them for shell commands, file paths, URLs, flags, stack traces, raw logs, or compact execution lists that would be awkward over TTS. Invalid or non-JSON output is kept as raw `[agent:stdout]` fallback. If a turn already emitted structured speech, the harness does not add the generic `끝났어.` completion TTS on top.
+`speech` events may include `role: "progress" | "final" | "message"`. Missing or unknown roles are treated as `message`. `message` is for normal spoken responses, `progress` is for short working updates, and `final` is for final answers or completion summaries. Terminal and visual logs keep every structured event, but TTS may replace stale queued `progress` speech with the newest progress update. `message`, `final`, permission prompts, warnings, errors, and stop confirmations are not dropped as stale progress.
+
+`command` events are displayed but not spoken; keep them for shell commands, file paths, URLs, flags, stack traces, raw logs, or compact execution lists that would be awkward over TTS. `status` is for silent UI state, and `error` is for brief user-facing errors. Invalid or non-JSON output is kept as raw `[agent:stdout]` fallback. If a turn already emitted structured speech, the harness does not add the generic `끝났어.` completion TTS on top.
+
+During long Codex work, the harness keeps always-on STT, agent output, and TTS playback separate. While a request is active, background no-transcript STT failures and random non-wake transcripts such as `No` are hidden in default mode, while `--debug` still prints diagnostics. Background noise does not trigger spoken wake-rejected warnings during active work. Wake + stop interrupts the active turn, and wake + a new command cancels stale queued TTS before routing the new request. Late output from an interrupted turn is kept as stale terminal/visual log output, but it is not spoken as fresh speech.
+
+Codex app-server approval requests are routed through native approval handling. Command approvals use the command-specific path, and other `requestApproval` requests are surfaced as generic Codex approval prompts instead of being silently ignored. Unknown JSON-RPC requests receive an explicit error response so the app-server is not left waiting indefinitely.
 
 Always-on wake mode keeps listening while TTS is speaking, but raw VAD activity no longer stops TTS. Candidate speech is transcribed first; if it looks like recent TTS text, it is discarded as echo. During TTS, wake-only speech is ignored, `코덱스 멈춰` stops speech, and `코덱스 <new command>` stops speech before routing the new command.
 

@@ -344,7 +344,10 @@ export class AlwaysOnVoiceHarnessRunner {
       }
       await this.routeCandidateTranscript(transcript);
     } catch (error) {
-      this.writeLine(`[voice:error] ${formatError(error)}`);
+      const details = formatError(error);
+      if (!this.shouldSuppressTranscriptionError(source, details)) {
+        this.writeLine(`[voice:error] ${details}`);
+      }
     } finally {
       this.releaseAudio(audio, source);
     }
@@ -404,6 +407,9 @@ export class AlwaysOnVoiceHarnessRunner {
       this.armWakeFollowUp(wake.phrase);
     } else {
       this.clearWakeFollowUp();
+      if (this.terminalHarness.isAgentRequestActive()) {
+        await this.terminalHarness.prepareForNewAgentTurn("New wake command requested");
+      }
     }
 
     const routedTranscript = withTranscriptText(transcript, wake.commandText);
@@ -509,11 +515,11 @@ export class AlwaysOnVoiceHarnessRunner {
         this.sendBargeIgnoredVisualState();
         return;
       case "stop":
-        await this.terminalHarness.stopVoiceOutput();
+        await this.terminalHarness.stopActiveTurn("Stop requested from wake speech");
         this.writeLine(`[barge:stop] phrase="${decision.wake.phrase}"`);
         return;
       case "command":
-        await this.terminalHarness.stopVoiceOutput();
+        await this.terminalHarness.prepareForNewAgentTurn("New wake command requested");
         this.writeLine(`[barge:command] phrase="${decision.wake.phrase}" command="${decision.commandText}"`);
         await this.terminalHarness.processTranscript(this.textContext.apply(withTranscriptText(transcript, decision.commandText)));
         return;
@@ -590,6 +596,12 @@ export class AlwaysOnVoiceHarnessRunner {
     if (detectConfiguredWakePhrase(transcript.text, this.wakePhrases)) return true;
     if (this.wakeFollowUp && this.wakeFollowUp.expiresAt >= this.now()) return true;
     return !this.terminalHarness.isAgentRequestActive();
+  }
+
+  private shouldSuppressTranscriptionError(source: "candidate" | "manual", details: string): boolean {
+    if (this.debug || source !== "candidate") return false;
+    if (!this.terminalHarness.isAgentRequestActive()) return false;
+    return /no transcript|no speech detected|produced no transcript/i.test(details);
   }
 
   private printTranscript(transcript: Transcript): void {
