@@ -8,6 +8,7 @@ export type VisualUiState =
   | "listening"
   | "wake_matched"
   | "stt_processing"
+  | "submitting"
   | "thinking"
   | "running"
   | "speaking"

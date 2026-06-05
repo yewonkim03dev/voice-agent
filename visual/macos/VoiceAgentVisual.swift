@@ -47,6 +47,9 @@ final class AgentCircleView: NSView {
         if state == "stt_processing" {
             amplitude = 6 + sin(phase * 2.0) * 2
         }
+        if state == "submitting" {
+            amplitude = 10 + max(0, sin(phase * 3.1)) * 10
+        }
         drawHalo(center: center, radius: baseRadius + 48, activity: activity)
         drawWaveRing(center: center, baseRadius: baseRadius + 2, amplitude: amplitude, phaseOffset: 0, alpha: 0.92, lineWidth: 3.6)
         drawWaveRing(center: center, baseRadius: baseRadius - 10, amplitude: amplitude * 0.42, phaseOffset: 1.7, alpha: 0.48, lineWidth: 1.6)
@@ -54,6 +57,8 @@ final class AgentCircleView: NSView {
             drawSpeakingWaves(center: center, baseRadius: baseRadius + 20)
         } else if state == "stt_processing" {
             drawProcessingIndicator(center: center, baseRadius: baseRadius + 25)
+        } else if state == "submitting" {
+            drawSubmittingIndicator(center: center, baseRadius: baseRadius + 18)
         } else {
             drawOuterTicks(center: center, baseRadius: baseRadius + 16, amplitude: amplitude)
         }
@@ -75,6 +80,7 @@ final class AgentCircleView: NSView {
         case "approval_pending": return .systemYellow
         case "error": return .systemPink
         case "stt_processing": return .systemBlue
+        case "submitting": return .systemOrange
         case "speaking": return .systemCyan
         case "wake_matched": return .systemOrange
         case "listening": return .systemGreen
@@ -88,6 +94,7 @@ final class AgentCircleView: NSView {
         case "approval_pending": return 0.128
         case "error": return 0.958
         case "stt_processing": return 0.550
+        case "submitting": return 0.100
         case "speaking": return 0.528
         case "wake_matched": return 0.067
         case "listening": return 0.411
@@ -100,6 +107,7 @@ final class AgentCircleView: NSView {
         switch state {
         case "speaking": return 0.42 + sin(phase * 2.2) * 0.08
         case "stt_processing": return 0.50
+        case "submitting": return 0.62
         case "thinking", "running": return 0.28
         case "approval_pending": return 0.34
         case "wake_matched": return 0.72
@@ -111,6 +119,7 @@ final class AgentCircleView: NSView {
         switch state {
         case "speaking": return 0.035
         case "stt_processing": return 0.055
+        case "submitting": return 0.070
         default: return 0
         }
     }
@@ -252,6 +261,43 @@ final class AgentCircleView: NSView {
             )
             color(hueOffset: CGFloat(dot) * 0.022, alpha: 0.32 + pulse * 0.45).setFill()
             NSBezierPath(ovalIn: rect).fill()
+        }
+    }
+
+    private func drawSubmittingIndicator(center: CGPoint, baseRadius: CGFloat) {
+        for lane in 0..<5 {
+            let angle = phase * 2.6 + CGFloat(lane) * CGFloat.pi * 0.42
+            let inner = baseRadius - 24 + CGFloat(lane) * 4
+            let outer = baseRadius + 22 + max(0, sin(phase * 2.4 + CGFloat(lane))) * 14
+            let path = NSBezierPath()
+
+            path.move(to: CGPoint(
+                x: center.x + cos(angle) * inner,
+                y: center.y + sin(angle) * inner
+            ))
+            path.line(to: CGPoint(
+                x: center.x + cos(angle) * outer,
+                y: center.y + sin(angle) * outer
+            ))
+            path.lineWidth = 3.6 - CGFloat(lane) * 0.32
+            color(hueOffset: CGFloat(lane) * 0.033, alpha: 0.78 - CGFloat(lane) * 0.08).setStroke()
+            path.stroke()
+        }
+
+        for arc in 0..<3 {
+            let start = phase * 160 + CGFloat(arc) * 130
+            let path = NSBezierPath()
+
+            path.appendArc(
+                withCenter: center,
+                radius: baseRadius + 30 + CGFloat(arc) * 9,
+                startAngle: start,
+                endAngle: start + 68,
+                clockwise: false
+            )
+            path.lineWidth = 1.8
+            color(hueOffset: 0.078 + CGFloat(arc) * 0.044, alpha: 0.42 - CGFloat(arc) * 0.08).setStroke()
+            path.stroke()
         }
     }
 

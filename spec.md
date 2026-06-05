@@ -409,6 +409,7 @@ UI event:
 {"op":"voice-agent-ui","type":"state","state":"idle"}
 {"op":"voice-agent-ui","type":"volume","rms":0.02,"peak":0.15}
 {"op":"voice-agent-ui","type":"wake","phrase":"코덱스"}
+{"op":"voice-agent-ui","type":"state","state":"submitting","text":"sending to agent"}
 {"op":"voice-agent-ui","type":"command","text":"npm test"}
 ```
 
@@ -422,6 +423,7 @@ control event:
 규칙:
 
 - UI는 Codex/Claude에 직접 coding command를 보내지 않는다.
+- `submitting`은 STT 결과를 Transcript로 확정한 뒤 Codex/Claude에 prompt를 넘기는 짧은 상태다.
 - `command` event는 bounded command panel에 표시하고 TTS로 읽지 않는다.
 - `tts_stop`은 `/tts-stop`과 같은 효과만 낸다.
 - `exit`은 full harness shutdown 요청이다. Terminal readline, visual bridge, audio input, TTS, Codex/Claude backend를 함께 정리한다.

@@ -422,7 +422,7 @@ export class TerminalHarness {
     };
 
     this.passthroughState = "EXECUTING";
-    this.sendVisualState("thinking");
+    this.sendVisualState("submitting", "sending to agent");
     await this.backend.sendPrompt(prompt);
     this.codexStatus = {
       ...this.codexStatus,

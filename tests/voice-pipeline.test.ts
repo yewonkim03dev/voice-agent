@@ -232,16 +232,22 @@ test("always-on voice runner routes a configured custom wake phrase", async () =
 });
 
 test("always-on voice runner routes default Korean and English wake phrases", async () => {
-  const { backend, runner, audioInput } = createAlwaysOnRunner([
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 테스트 돌려줘",
+        language: "ko"
+      },
+      {
+        text: "codex run npm test",
+        language: "en"
+      }
+    ],
     {
-      text: "코덱스 테스트 돌려줘",
-      language: "ko"
-    },
-    {
-      text: "codex run npm test",
-      language: "en"
+      visualBridge
     }
-  ]);
+  );
 
   await runner.start();
   emitCandidate(audioInput, 1000);
@@ -252,6 +258,9 @@ test("always-on voice runner routes default Korean and English wake phrases", as
   assert.equal(backend.prompts.length, 2);
   assert.equal(backend.prompts[0].text, "테스트 돌려줘");
   assert.equal(backend.prompts[1].text, "run npm test");
+  assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "stt_processing"), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "wake" && event.phrase === "코덱스"), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "submitting"), true);
 });
 
 test("always-on voice runner manual /record fallback routes without a wake phrase", async () => {
