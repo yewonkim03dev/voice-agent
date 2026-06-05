@@ -214,6 +214,9 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
 
   assert.match(qml, /ApplicationWindow/u);
   assert.match(qml, /WebSocket/u);
+  assert.match(qml, /Canvas/u);
+  assert.match(qml, /drawWaveRing/u);
+  assert.match(qml, /drawOuterTicks/u);
   assert.match(qml, /TTS Stop/u);
   assert.match(qml, /Commands/u);
   assert.doesNotMatch(qml, /WebView|WebEngine|Chromium|Electron|Tauri/iu);
@@ -224,6 +227,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
 
   assert.match(swift, /import AppKit/u);
   assert.match(swift, /URLSession\.shared\.webSocketTask/u);
+  assert.match(swift, /drawWaveRing/u);
+  assert.match(swift, /drawOuterTicks/u);
   assert.match(swift, /TTS Stop/u);
   assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);
 });

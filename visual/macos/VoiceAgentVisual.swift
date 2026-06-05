@@ -37,32 +37,15 @@ final class AgentCircleView: NSView {
         NSColor(calibratedRed: 0.03, green: 0.04, blue: 0.06, alpha: 1).setFill()
         dirtyRect.fill()
 
-        let base = min(bounds.width, bounds.height) * 0.43
-        let pulse = 1 + sin(phase) * 0.025
-        let radius = base * pulse + rms * 42 + glow * 32
-        let rect = NSRect(
-            x: bounds.midX - radius / 2,
-            y: bounds.midY - radius / 2 + 10,
-            width: radius,
-            height: radius
-        )
-        let path = NSBezierPath(ovalIn: rect)
-        path.lineWidth = 5 + peak * 12
-        stateColor().setStroke()
-        path.stroke()
-
-        if glow > 0 {
-            let glowRect = rect.insetBy(dx: -glow * 18, dy: -glow * 18)
-            let glowPath = NSBezierPath(ovalIn: glowRect)
-            glowPath.lineWidth = 3
-            NSColor.systemOrange.withAlphaComponent(glow).setStroke()
-            glowPath.stroke()
-        }
-
-        let inner = NSBezierPath(ovalIn: rect.insetBy(dx: 22, dy: 22))
-        inner.lineWidth = 1
-        NSColor(calibratedRed: 0.17, green: 0.22, blue: 0.29, alpha: 0.85).setStroke()
-        inner.stroke()
+        let center = CGPoint(x: bounds.midX, y: bounds.midY + 10)
+        let activity = max(rms, peak * 0.45, glow * 0.85)
+        let baseRadius = min(bounds.width, bounds.height) * 0.31 + activity * 16
+        let amplitude = 7 + rms * 42 + peak * 18 + glow * 24
+        drawHalo(center: center, radius: baseRadius + 48, activity: activity)
+        drawWaveRing(center: center, baseRadius: baseRadius + 2, amplitude: amplitude, phaseOffset: 0, alpha: 0.92, lineWidth: 3.6)
+        drawWaveRing(center: center, baseRadius: baseRadius - 10, amplitude: amplitude * 0.42, phaseOffset: 1.7, alpha: 0.48, lineWidth: 1.6)
+        drawOuterTicks(center: center, baseRadius: baseRadius + 16, amplitude: amplitude)
+        drawInnerGuide(center: center, radius: baseRadius - 26)
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
@@ -85,6 +68,117 @@ final class AgentCircleView: NSView {
         case "thinking", "running": return .systemPurple
         default: return NSColor(calibratedRed: 0.36, green: 0.41, blue: 0.47, alpha: 1)
         }
+    }
+
+    private func stateHue() -> CGFloat {
+        switch state {
+        case "approval_pending": return 0.128
+        case "error": return 0.958
+        case "speaking": return 0.528
+        case "wake_matched": return 0.067
+        case "listening": return 0.411
+        case "thinking", "running": return 0.728
+        default: return 0.583
+        }
+    }
+
+    private func drawHalo(center: CGPoint, radius: CGFloat, activity: CGFloat) {
+        guard let gradient = NSGradient(colors: [
+            NSColor(calibratedHue: stateHue(), saturation: 0.92, brightness: 0.72, alpha: 0.24 + activity * 0.18),
+            NSColor(calibratedHue: wrapHue(stateHue() + 0.11), saturation: 0.88, brightness: 0.52, alpha: 0.02)
+        ]) else { return }
+
+        gradient.draw(
+            fromCenter: center,
+            radius: radius * 0.28,
+            toCenter: center,
+            radius: radius,
+            options: []
+        )
+    }
+
+    private func drawWaveRing(center: CGPoint, baseRadius: CGFloat, amplitude: CGFloat, phaseOffset: CGFloat, alpha: CGFloat, lineWidth: CGFloat) {
+        let steps = 192
+        let path = NSBezierPath()
+
+        for index in 0...steps {
+            let angle = CGFloat(index) / CGFloat(steps) * CGFloat.pi * 2
+            let radius = radiusAt(angle: angle, baseRadius: baseRadius, amplitude: amplitude, phaseOffset: phaseOffset)
+            let point = CGPoint(
+                x: center.x + cos(angle) * radius,
+                y: center.y + sin(angle) * radius
+            )
+
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.line(to: point)
+            }
+        }
+
+        path.close()
+        path.lineWidth = lineWidth
+        color(hueOffset: phaseOffset * 0.04, alpha: alpha).setStroke()
+        path.stroke()
+    }
+
+    private func drawOuterTicks(center: CGPoint, baseRadius: CGFloat, amplitude: CGFloat) {
+        let count = 92
+
+        for index in 0..<count {
+            let angle = CGFloat(index) / CGFloat(count) * CGFloat.pi * 2
+            let n = max(0, noise(angle: angle, phaseOffset: 2.8))
+            let burst = max(0, sin(angle * 5.0 - phase * 1.6))
+            let length = 4 + n * amplitude * 0.52 + burst * peak * 36 + glow * 10
+            let inner = baseRadius + n * 7
+            let outer = inner + length
+            let path = NSBezierPath()
+
+            path.move(to: CGPoint(
+                x: center.x + cos(angle) * inner,
+                y: center.y + sin(angle) * inner
+            ))
+            path.line(to: CGPoint(
+                x: center.x + cos(angle) * outer,
+                y: center.y + sin(angle) * outer
+            ))
+            path.lineWidth = 1.1 + n * 2.4 + peak * 2.0
+            color(hueOffset: CGFloat(index) * 0.0047, alpha: 0.30 + n * 0.52 + glow * 0.20).setStroke()
+            path.stroke()
+        }
+    }
+
+    private func drawInnerGuide(center: CGPoint, radius: CGFloat) {
+        let rect = NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+        let path = NSBezierPath(ovalIn: rect)
+        path.lineWidth = 1
+        NSColor(calibratedRed: 0.17, green: 0.22, blue: 0.29, alpha: 0.56).setStroke()
+        path.stroke()
+    }
+
+    private func radiusAt(angle: CGFloat, baseRadius: CGFloat, amplitude: CGFloat, phaseOffset: CGFloat) -> CGFloat {
+        baseRadius + noise(angle: angle, phaseOffset: phaseOffset) * amplitude
+    }
+
+    private func noise(angle: CGFloat, phaseOffset: CGFloat) -> CGFloat {
+        sin(angle * 3.1 + phase * 1.7 + phaseOffset) * 0.42
+            + sin(angle * 7.0 - phase * 1.12 + phaseOffset * 1.9) * 0.28
+            + sin(angle * 13.0 + phase * 0.67 + phaseOffset * 0.6) * 0.18
+            + sin(angle * 21.0 - phase * 0.38 + phaseOffset * 2.4) * 0.12
+    }
+
+    private func color(hueOffset: CGFloat, alpha: CGFloat) -> NSColor {
+        NSColor(
+            calibratedHue: wrapHue(stateHue() + hueOffset),
+            saturation: 0.96,
+            brightness: 0.96,
+            alpha: min(1, max(0, alpha))
+        )
+    }
+
+    private func wrapHue(_ value: CGFloat) -> CGFloat {
+        let wrapped = value.truncatingRemainder(dividingBy: 1)
+        return wrapped < 0 ? wrapped + 1 : wrapped
     }
 }
 

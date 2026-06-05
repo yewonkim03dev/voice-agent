@@ -18,6 +18,7 @@ ApplicationWindow {
     property real rms: 0.0
     property real peak: 0.0
     property real glow: 0.0
+    property real visualPhase: 0.0
     property var commands: []
 
     function argumentValue(name, fallback) {
@@ -55,6 +56,16 @@ ApplicationWindow {
         if (uiState === "listening") return "#47f5a6"
         if (uiState === "thinking" || uiState === "running") return "#9b8cff"
         return "#5a6778"
+    }
+
+    function stateHue() {
+        if (uiState === "approval_pending") return 46
+        if (uiState === "error") return 345
+        if (uiState === "speaking") return 190
+        if (uiState === "wake_matched") return 24
+        if (uiState === "listening") return 148
+        if (uiState === "thinking" || uiState === "running") return 262
+        return 210
     }
 
     WebSocket {
@@ -121,6 +132,16 @@ ApplicationWindow {
         onTriggered: Qt.quit()
     }
 
+    Timer {
+        interval: 33
+        running: true
+        repeat: true
+        onTriggered: {
+            root.visualPhase += 0.045 + root.rms * 0.035 + root.glow * 0.025
+            waveform.requestPaint()
+        }
+    }
+
     NumberAnimation on rms {
         duration: 120
         easing.type: Easing.OutQuad
@@ -135,41 +156,102 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.preferredHeight: 330
 
-            Rectangle {
-                id: circle
-                width: 230 + root.rms * 44 + root.glow * 30
-                height: width
-                radius: width / 2
+            Canvas {
+                id: waveform
+                width: 292
+                height: 292
                 anchors.centerIn: parent
-                color: "transparent"
-                border.width: 6 + root.peak * 10
-                border.color: root.stateColor()
-                opacity: 0.92
+                antialiasing: true
+                opacity: 0.96
 
-                Behavior on width {
-                    NumberAnimation { duration: 130; easing.type: Easing.OutQuad }
-                }
-                Behavior on border.width {
-                    NumberAnimation { duration: 100; easing.type: Easing.OutQuad }
-                }
-                Behavior on border.color {
-                    ColorAnimation { duration: 180 }
+                onPaint: {
+                    var ctx = getContext("2d")
+                    var w = width
+                    var h = height
+                    var cx = w / 2
+                    var cy = h / 2
+                    var phase = root.visualPhase
+                    var hue = root.stateHue()
+                    var activity = Math.max(root.rms, root.peak * 0.45, root.glow * 0.85)
+                    var base = 88 + activity * 16
+                    var amp = 8 + root.rms * 40 + root.peak * 18 + root.glow * 24
+
+                    ctx.clearRect(0, 0, w, h)
+
+                    var halo = ctx.createRadialGradient(cx, cy, 52, cx, cy, 148)
+                    halo.addColorStop(0, "hsla(" + hue + ", 95%, 58%, 0.00)")
+                    halo.addColorStop(0.48, "hsla(" + hue + ", 95%, 58%, " + (0.10 + activity * 0.20) + ")")
+                    halo.addColorStop(1, "hsla(" + ((hue + 38) % 360) + ", 95%, 58%, 0.00)")
+                    ctx.fillStyle = halo
+                    ctx.beginPath()
+                    ctx.arc(cx, cy, 146, 0, Math.PI * 2)
+                    ctx.fill()
+
+                    drawWaveRing(ctx, cx, cy, base + 2, amp, phase, hue, 3.4, 0.88, 0)
+                    drawWaveRing(ctx, cx, cy, base - 10, amp * 0.42, phase * 1.18 + 1.7, (hue + 42) % 360, 1.5, 0.48, 1)
+                    drawOuterTicks(ctx, cx, cy, base + 12, amp, phase, hue)
+
+                    ctx.strokeStyle = "rgba(60, 76, 98, 0.45)"
+                    ctx.lineWidth = 1
+                    ctx.beginPath()
+                    ctx.arc(cx, cy, base - 26, 0, Math.PI * 2)
+                    ctx.stroke()
                 }
 
-                SequentialAnimation on scale {
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 0.98; to: 1.025; duration: 1400; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: 1.025; to: 0.98; duration: 1400; easing.type: Easing.InOutSine }
+                function noise(angle, phase, lane) {
+                    return Math.sin(angle * 3.1 + phase * 1.7 + lane) * 0.42
+                        + Math.sin(angle * 7.0 - phase * 1.12 + lane * 1.9) * 0.28
+                        + Math.sin(angle * 13.0 + phase * 0.67 + lane * 0.6) * 0.18
+                        + Math.sin(angle * 21.0 - phase * 0.38 + lane * 2.4) * 0.12
                 }
 
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.margins: 22
-                    radius: width / 2
-                    color: "transparent"
-                    border.width: 1
-                    border.color: "#263241"
-                    opacity: 0.85
+                function radiusAt(angle, base, amp, phase, lane) {
+                    return base + noise(angle, phase, lane) * amp
+                }
+
+                function drawWaveRing(ctx, cx, cy, base, amp, phase, hue, lineWidth, alpha, lane) {
+                    var steps = 180
+                    ctx.lineWidth = lineWidth
+                    ctx.lineCap = "round"
+                    ctx.lineJoin = "round"
+                    ctx.strokeStyle = "hsla(" + hue + ", 96%, 62%, " + alpha + ")"
+                    ctx.shadowColor = "hsla(" + hue + ", 96%, 58%, 0.45)"
+                    ctx.shadowBlur = 18 + root.glow * 18
+                    ctx.beginPath()
+
+                    for (var index = 0; index <= steps; index += 1) {
+                        var angle = (index / steps) * Math.PI * 2
+                        var r = radiusAt(angle, base, amp, phase, lane)
+                        var x = cx + Math.cos(angle) * r
+                        var y = cy + Math.sin(angle) * r
+                        if (index === 0) ctx.moveTo(x, y)
+                        else ctx.lineTo(x, y)
+                    }
+
+                    ctx.closePath()
+                    ctx.stroke()
+                    ctx.shadowBlur = 0
+                }
+
+                function drawOuterTicks(ctx, cx, cy, base, amp, phase, hue) {
+                    var count = 92
+                    ctx.lineCap = "round"
+                    for (var index = 0; index < count; index += 1) {
+                        var angle = (index / count) * Math.PI * 2
+                        var n = Math.max(0, noise(angle, phase, 2.8))
+                        var burst = Math.max(0, Math.sin(angle * 5.0 - phase * 1.6))
+                        var length = 4 + n * (amp * 0.52) + burst * root.peak * 36 + root.glow * 10
+                        var inner = base + 16 + n * 7
+                        var outer = inner + length
+                        var tickHue = (hue + index * 1.7 + Math.sin(angle * 3 + phase) * 22 + 360) % 360
+
+                        ctx.strokeStyle = "hsla(" + tickHue + ", 96%, 62%, " + (0.32 + n * 0.55 + root.glow * 0.2) + ")"
+                        ctx.lineWidth = 1.2 + n * 2.4 + root.peak * 2.0
+                        ctx.beginPath()
+                        ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner)
+                        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer)
+                        ctx.stroke()
+                    }
                 }
             }
 
