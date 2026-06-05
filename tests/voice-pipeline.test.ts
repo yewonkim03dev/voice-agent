@@ -1085,7 +1085,9 @@ test("voice local settings store persists overrides and reset restores factory d
         sttCommand: "file-stt {audio}",
         sampleRate: 16_000,
         channels: 1,
-        codexThreadId: "thread_123",
+        codex: {
+          threadId: "thread_123"
+        },
         visual: {
           provider: "qtqml"
         }
@@ -1110,13 +1112,17 @@ test("voice local settings store persists overrides and reset restores factory d
       },
       visual: {
         thinkingVolume: 0.47
-      }
+      },
+      codexThreadId: "thread_456"
     });
 
     const updated = JSON.parse(await readFile(join(cwd, configPath), "utf8")) as Record<string, unknown>;
     assert.equal(updated.recorderCommand, "file-recorder");
     assert.equal(updated.sttCommand, "file-stt {audio}");
-    assert.equal(updated.codexThreadId, "thread_123");
+    assert.deepEqual(updated.codex, {
+      threadId: "thread_456"
+    });
+    assert.equal(await readCodexThreadId(join(cwd, configPath)), "thread_456");
     assert.deepEqual(updated.wakePhrases, ["hey jarvis", "자비스"]);
     assert.deepEqual(updated.tts, {
       enabled: true,
@@ -1136,7 +1142,9 @@ test("voice local settings store persists overrides and reset restores factory d
     const reset = JSON.parse(await readFile(join(cwd, configPath), "utf8")) as Record<string, unknown>;
     assert.equal(reset.recorderCommand, "file-recorder");
     assert.equal(reset.sttCommand, "file-stt {audio}");
-    assert.equal(reset.codexThreadId, "thread_123");
+    assert.deepEqual(reset.codex, {
+      threadId: "thread_456"
+    });
     assert.equal("wakePhrases" in reset, false);
     assert.equal("tts" in reset, false);
     assert.deepEqual(reset.visual, {

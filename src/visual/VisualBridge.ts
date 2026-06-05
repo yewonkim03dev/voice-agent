@@ -26,6 +26,7 @@ export type VisualControlAction =
   | "emergency_stop"
   | "reset_settings"
   | "update_wake_phrases"
+  | "update_codex_thread_id"
   | "update_visual_settings"
   | "update_tts_settings";
 
@@ -96,6 +97,7 @@ export type VisualEvent =
       tts?: VisualTtsSettings;
       visual?: VisualRuntimeSettings;
       wakePhrases?: string[];
+      codexThreadId?: string;
     };
 
 export interface VisualControlEvent {
@@ -106,6 +108,7 @@ export interface VisualControlEvent {
   tts?: VisualTtsSettings;
   visual?: VisualRuntimeSettings;
   wakePhrases?: string[];
+  codexThreadId?: string;
 }
 
 export interface VisualBridgeLike {
@@ -221,9 +224,11 @@ export class VisualBridge implements VisualBridgeLike {
       ...(this.latestSettings?.tts !== undefined ? { tts: { ...this.latestSettings.tts } } : {}),
       ...(this.latestSettings?.visual !== undefined ? { visual: { ...this.latestSettings.visual } } : {}),
       ...(this.latestSettings?.wakePhrases !== undefined ? { wakePhrases: [...this.latestSettings.wakePhrases] } : {}),
+      ...(this.latestSettings?.codexThreadId !== undefined ? { codexThreadId: this.latestSettings.codexThreadId } : {}),
       ...(event.tts !== undefined ? { tts: { ...event.tts } } : {}),
       ...(event.visual !== undefined ? { visual: { ...event.visual } } : {}),
-      ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {})
+      ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {}),
+      ...(event.codexThreadId !== undefined ? { codexThreadId: event.codexThreadId } : {})
     };
   }
 }
@@ -251,6 +256,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "emergency_stop" &&
     record.action !== "reset_settings" &&
     record.action !== "update_wake_phrases" &&
+    record.action !== "update_codex_thread_id" &&
     record.action !== "update_tts_settings" &&
     record.action !== "update_visual_settings"
   ) {
@@ -264,7 +270,8 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     ...(typeof record.text === "string" ? { text: record.text } : {}),
     ...(isRecord(record.tts) ? { tts: parseVisualTtsSettings(record.tts) } : {}),
     ...(isRecord(record.visual) ? { visual: parseVisualRuntimeSettings(record.visual) } : {}),
-    ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {})
+    ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {}),
+    ...(typeof record.codexThreadId === "string" ? { codexThreadId: record.codexThreadId.trim() } : {})
   };
 }
 

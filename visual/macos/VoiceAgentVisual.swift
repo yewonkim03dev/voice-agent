@@ -850,6 +850,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let settingsPitchField = NSTextField(string: "1.00")
     private let settingsVolumeField = NSTextField(string: "1.00")
     private let settingsThinkingVolumeField = NSTextField(string: "0.32")
+    private let settingsCodexThreadField = NSTextField(string: "")
     private let settingsWakePhrasesView = NSTextView(frame: .zero)
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
@@ -859,6 +860,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private var ttsVolume = 1.0
     private var thinkingVolume = 0.32
     private var wakePhrases: [String] = []
+    private var codexThreadId = ""
 
     init(bridgeUrl: String) {
         self.bridgeUrl = bridgeUrl
@@ -1007,6 +1009,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             if let phrases = event["wakePhrases"] as? [String] {
                 updateWakePhrases(phrases)
             }
+            if let threadId = event["codexThreadId"] as? String {
+                updateCodexThreadId(threadId)
+            }
         default:
             break
         }
@@ -1067,8 +1072,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
         thinkingPulseSound.volume = Float(thinkingVolume)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
+        codexThreadId = settingsCodexThreadField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         sendTtsSettings()
         sendWakePhrases()
+        sendCodexThreadId()
         settingsWindow?.close()
     }
 
@@ -1121,9 +1128,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         syncSettingsControls()
     }
 
+    private func updateCodexThreadId(_ threadId: String) {
+        codexThreadId = threadId.trimmingCharacters(in: .whitespacesAndNewlines)
+        syncSettingsControls()
+    }
+
     private func makeSettingsWindow() -> NSWindow {
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 508),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 552),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -1131,32 +1143,33 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Settings"
         window.isReleasedWhenClosed = false
 
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 508))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 552))
         window.contentView = view
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
 
-        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 438)
-        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 398)
-        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 358)
-        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 318)
-        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 278)
-        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 238)
-        addSettingsRow(view, label: "Thinking Fx", control: settingsThinkingVolumeField, y: 198)
+        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 482)
+        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 442)
+        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 402)
+        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 362)
+        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 322)
+        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 282)
+        addSettingsRow(view, label: "Thinking Fx", control: settingsThinkingVolumeField, y: 242)
+        addSettingsRow(view, label: "Codex Thread", control: settingsCodexThreadField, y: 202)
 
         let wakeLabel = NSTextField(labelWithString: "Wake")
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        wakeLabel.frame = NSRect(x: 26, y: 160, width: 84, height: 20)
+        wakeLabel.frame = NSRect(x: 26, y: 160, width: 96, height: 20)
         view.addSubview(wakeLabel)
 
-        let wakeScroll = NSScrollView(frame: NSRect(x: 118, y: 70, width: 230, height: 112))
+        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 70, width: 216, height: 112))
         wakeScroll.borderType = .bezelBorder
         wakeScroll.hasVerticalScroller = true
         settingsWakePhrasesView.isVerticallyResizable = true
         settingsWakePhrasesView.isHorizontallyResizable = false
         settingsWakePhrasesView.autoresizingMask = [.width]
-        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 230, height: 112)
+        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 216, height: 112)
         settingsWakePhrasesView.font = NSFont.systemFont(ofSize: 13)
         wakeScroll.documentView = settingsWakePhrasesView
         view.addSubview(wakeScroll)
@@ -1175,8 +1188,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private func addSettingsRow(_ view: NSView, label: String, control: NSView, y: CGFloat) {
         let labelView = NSTextField(labelWithString: label)
         labelView.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        labelView.frame = NSRect(x: 26, y: y + 4, width: 84, height: 20)
-        control.frame = NSRect(x: 118, y: y, width: 230, height: 26)
+        labelView.frame = NSRect(x: 26, y: y + 4, width: 96, height: 20)
+        control.frame = NSRect(x: 132, y: y, width: 216, height: 26)
         view.addSubview(labelView)
         view.addSubview(control)
     }
@@ -1189,6 +1202,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         settingsPitchField.stringValue = String(format: "%.2f", ttsPitch)
         settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
         settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
+        settingsCodexThreadField.stringValue = codexThreadId
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
     }
 
@@ -1222,6 +1236,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             "type": "control",
             "action": "update_wake_phrases",
             "wakePhrases": wakePhrases
+        ])
+    }
+
+    private func sendCodexThreadId() {
+        sendPayload([
+            "op": "voice-agent-ui",
+            "type": "control",
+            "action": "update_codex_thread_id",
+            "codexThreadId": codexThreadId
         ])
     }
 

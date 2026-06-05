@@ -25,6 +25,7 @@ export interface VoiceLocalSettingsOverride {
   wakePhrases?: string[];
   tts?: VoiceTtsFileConfig;
   visual?: VoiceVisualFileConfig;
+  codexThreadId?: string | null;
 }
 
 export interface VoiceSettingsPersistence {
@@ -235,6 +236,23 @@ export async function updateVoiceLocalSettings(
       ...readNestedObject(existing.visual),
       ...overrides.visual
     };
+  }
+
+  if (overrides.codexThreadId !== undefined) {
+    const codex = readNestedObject(existing.codex);
+    const threadId = parseOptionalString(overrides.codexThreadId);
+
+    if (threadId) {
+      codex.threadId = threadId;
+    } else {
+      delete codex.threadId;
+    }
+
+    if (Object.keys(codex).length > 0) {
+      next.codex = codex;
+    } else {
+      delete next.codex;
+    }
   }
 
   await writeJsonObject(fullPath, next);
@@ -459,6 +477,10 @@ function parseOptionalWakePhrases(value: unknown): string[] | undefined {
   }
 
   return undefined;
+}
+
+function parseOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function isNotFound(error: unknown): boolean {

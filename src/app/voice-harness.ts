@@ -19,7 +19,8 @@ import type { VisualProvider } from "../visual/VisualConfig.ts";
 import { VisualBridge, type VisualBridgeLike } from "../visual/VisualBridge.ts";
 import { launchVisualCompanion } from "../visual/run-visual.ts";
 import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
-import { createTerminalHarnessFromArgs, TerminalHarness } from "./harness.ts";
+import { createCodexThreadStore } from "./codex-thread-config.ts";
+import { createTerminalHarnessFromArgs, parseHarnessCliArgs, TerminalHarness } from "./harness.ts";
 import {
   VoiceLocalSettingsStore,
   resolveVoiceHarnessConfig,
@@ -636,6 +637,7 @@ export function createVoiceHarnessRunnerFromConfig(
     speechProcessor?: SpeechProcessor;
     visualBridge?: VisualBridgeLike;
     settingsPersistence?: VoiceSettingsPersistence;
+    codexThreadId?: string;
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
@@ -652,6 +654,7 @@ export function createVoiceHarnessRunnerFromConfig(
     visualConfig: config.visual,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
+    codexThreadId: options.codexThreadId,
     onExitRequest: options.onExitRequest
   });
   const gate = new ManualRecordingGate({
@@ -707,6 +710,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     debug?: boolean;
     visualBridge?: VisualBridgeLike;
     settingsPersistence?: VoiceSettingsPersistence;
+    codexThreadId?: string;
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
@@ -722,6 +726,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     visualConfig: config.visual,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
+    codexThreadId: options.codexThreadId,
     onExitRequest: options.onExitRequest
   });
   const audioInput =
@@ -875,6 +880,7 @@ export async function runVoiceHarness(): Promise<void> {
   const args = defaultCodexArgs(cli.harnessArgs);
   const visualBridge = cli.visual ? new VisualBridge({ writeLine }) : undefined;
   const settingsPersistence = new VoiceLocalSettingsStore();
+  const codexThreadId = await loadCodexThreadIdForVisual(writeLine, parseHarnessCliArgs(args).cwd);
   let shutdownRequested = false;
   let readline: ReturnType<typeof createInterface> | undefined;
   const requestShutdown = (): void => {
@@ -900,6 +906,7 @@ export async function runVoiceHarness(): Promise<void> {
         debug: cli.debug,
         visualBridge,
         settingsPersistence,
+        codexThreadId,
         onExitRequest: requestShutdown
       })
     : createVoiceHarnessRunnerFromConfig(resolution.config, args, {
@@ -907,6 +914,7 @@ export async function runVoiceHarness(): Promise<void> {
         debug: cli.debug,
         visualBridge,
         settingsPersistence,
+        codexThreadId,
         onExitRequest: requestShutdown
       });
 
@@ -947,6 +955,15 @@ function defaultCodexArgs(args: string[]): string[] {
   }
 
   return ["--codex", ...args];
+}
+
+async function loadCodexThreadIdForVisual(writeLine: WriteLine, cwd: string): Promise<string | undefined> {
+  try {
+    return await createCodexThreadStore({ cwd }).load();
+  } catch (error) {
+    writeLine(`[settings:error] ${formatError(error)}`);
+    return undefined;
+  }
 }
 
 function promptIfOpen(readline: ReturnType<typeof createInterface>): void {

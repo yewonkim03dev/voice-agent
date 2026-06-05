@@ -217,6 +217,7 @@ export interface TerminalHarnessOptions {
   visualBridge?: VisualBridgeLike;
   visualConfig?: VoiceVisualFileConfig;
   settingsPersistence?: VoiceSettingsPersistence;
+  codexThreadId?: string;
   onExitRequest?: () => void | Promise<void>;
 }
 
@@ -236,6 +237,7 @@ export class TerminalHarness {
   private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
   private readonly onExitRequest: (() => void | Promise<void>) | undefined;
   private visualSettings: VisualRuntimeSettings;
+  private codexThreadId: string | undefined;
   private idSequence = 0;
   private started = false;
   private exitRequested = false;
@@ -258,6 +260,7 @@ export class TerminalHarness {
     this.settingsPersistence = options.settingsPersistence;
     this.onExitRequest = options.onExitRequest;
     this.visualSettings = visualRuntimeSettingsFromFile(options.visualConfig);
+    this.codexThreadId = parseOptionalThreadId(options.codexThreadId);
     this.routingMode =
       options.routingMode ??
       (options.backend && this.backendLabel !== "mock" ? "passthrough" : "runtime");
@@ -978,6 +981,9 @@ export class TerminalHarness {
       case "reset_settings":
         await this.resetVisualSettings();
         return;
+      case "update_codex_thread_id":
+        await this.updateCodexThreadId(event.codexThreadId ?? event.text ?? "");
+        return;
       case "update_tts_settings":
         await this.updateTtsSettings(event.tts ?? {});
         return;
@@ -1056,7 +1062,8 @@ export class TerminalHarness {
       op: "voice-agent-ui",
       type: "settings",
       tts: this.currentVisualTtsSettings(),
-      visual: this.currentVisualRuntimeSettings()
+      visual: this.currentVisualRuntimeSettings(),
+      codexThreadId: this.codexThreadId ?? ""
     });
   }
 
@@ -1107,6 +1114,23 @@ export class TerminalHarness {
     });
   }
 
+  private async updateCodexThreadId(threadId: string): Promise<void> {
+    this.codexThreadId = parseOptionalThreadId(threadId);
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      codexThreadId: this.codexThreadId ?? ""
+    });
+    await this.persistSettings({
+      codexThreadId: this.codexThreadId ?? null
+    });
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "status",
+      text: this.codexThreadId ? "Codex thread id saved for next restart" : "Codex thread id cleared"
+    });
+  }
+
   private currentVisualTtsSettings(): VisualTtsSettings {
     return visualTtsSettingsFromVoiceOutput(this.voiceOutput.getSettings?.() ?? {});
   }
@@ -1120,6 +1144,7 @@ export class TerminalHarness {
   private async persistSettings(overrides: {
     tts?: ReturnType<typeof ttsFileConfigFromVisualSettings>;
     visual?: VoiceVisualFileConfig;
+    codexThreadId?: string | null;
   }): Promise<void> {
     try {
       await this.settingsPersistence?.update(overrides);
@@ -1256,8 +1281,11 @@ export function createTerminalHarnessFromArgs(
   const cli = parseHarnessCliArgs(args);
 
   if (cli.backendMode === "codex") {
+    const codexThreadId = parseOptionalThreadId(cli.codexThreadId ?? options.codexThreadId);
+
     return new TerminalHarness({
       ...options,
+      codexThreadId,
       ttsCli: cli.tts,
       cwd: cli.cwd,
       backendLabel: "codex",
@@ -1270,7 +1298,7 @@ export function createTerminalHarnessFromArgs(
         voiceAgentProtocol: true,
         now: options.now,
         writeLine: options.writeLine,
-        threadId: cli.codexThreadId,
+        threadId: codexThreadId,
         threadStore: createCodexThreadStore({
           cwd: cli.cwd,
           env: options.env
@@ -1496,6 +1524,10 @@ function requiredValue(args: string[], index: number, option: string): string {
   }
 
   return value;
+}
+
+function parseOptionalThreadId(value: string | undefined): string | undefined {
+  return value?.trim() || undefined;
 }
 
 function parseRequiredTtsProvider(value: string): NonNullable<TtsCliOptions["provider"]> {

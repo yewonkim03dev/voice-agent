@@ -209,6 +209,36 @@ test("visual settings apply persists TTS and visual overrides", async () => {
   ]);
 });
 
+test("visual settings expose and persist Codex thread id for next restart", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const settingsPersistence = new FakeSettingsPersistence();
+  const harness = new TerminalHarness({
+    visualBridge,
+    settingsPersistence,
+    codexThreadId: "thread_existing",
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+
+  assert.equal(
+    visualBridge.events.find((event) => event.type === "settings")?.codexThreadId,
+    "thread_existing"
+  );
+
+  visualBridge.emitCodexThreadControl(" thread_next ");
+  await flushAsync();
+
+  assert.deepEqual(settingsPersistence.updates.at(-1), {
+    codexThreadId: "thread_next"
+  });
+  assert.equal(
+    visualBridge.events.findLast((event) => event.type === "settings")?.codexThreadId,
+    "thread_next"
+  );
+});
+
 test("visual reset_settings restores default TTS runtime settings", async () => {
   const visualBridge = new FakeVisualBridge();
   const voiceOutput = new TtsVoiceOutput({
@@ -600,6 +630,7 @@ test("parses adjacent voice-agent events defensively", () => {
 test("voice-agent protocol prefers speech for audible progress", () => {
   assert.match(voiceAgentProtocolPrompt, /Before tool use.+brief speech event/u);
   assert.match(voiceAgentProtocolPrompt, /During long-running work.+brief speech progress updates/u);
+  assert.match(voiceAgentProtocolPrompt, /normal Codex\/Claude CLI working cadence/u);
   assert.match(voiceAgentProtocolPrompt, /Use speech, not status or command, for user-facing progress/u);
   assert.match(voiceAgentProtocolPrompt, /findings, conclusions, and short summaries/u);
   assert.match(voiceAgentProtocolPrompt, /command.+only for shell commands, file paths, URLs/u);
@@ -1043,6 +1074,17 @@ class FakeVisualBridge implements VisualBridgeLike {
         type: "control",
         action: "update_visual_settings",
         visual
+      })
+    );
+  }
+
+  emitCodexThreadControl(codexThreadId: string): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action: "update_codex_thread_id",
+        codexThreadId
       })
     );
   }

@@ -34,6 +34,7 @@ ApplicationWindow {
     property real ttsVolume: 1.0
     property real thinkingVolume: 0.32
     property var wakePhrases: []
+    property string codexThreadId: ""
     property string voiceGuideText: "한국어\n1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\nEnglish\n1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn."
     property string referenceHelpText: "한국어: 파일명, URL, 조건 같은 참고자료를 적고 Add를 누르세요. 다음 wake 요청에만 붙고 전송 후 비워집니다.\nEnglish: Add filenames, URLs, or constraints here. They are attached only to the next wake request and then cleared."
 
@@ -81,6 +82,12 @@ ApplicationWindow {
                 type: "control",
                 action: "update_wake_phrases",
                 wakePhrases: root.parseWakePhrases(wakeField.text)
+            }))
+            socket.sendTextMessage(JSON.stringify({
+                op: "voice-agent-ui",
+                type: "control",
+                action: "update_codex_thread_id",
+                codexThreadId: codexThreadField.text.trim()
             }))
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
@@ -137,11 +144,17 @@ ApplicationWindow {
         if (event.tts) root.applyTtsSettings(event.tts)
         if (event.visual) root.applyRuntimeVisualSettings(event.visual)
         if (event.wakePhrases) root.applyWakePhrases(event.wakePhrases)
+        if (event.codexThreadId !== undefined) root.applyCodexThreadId(event.codexThreadId)
     }
 
     function applyRuntimeVisualSettings(settings) {
         root.thinkingVolume = settings.thinkingVolume === undefined ? 0.32 : Math.max(0, Math.min(0.8, settings.thinkingVolume))
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
+    }
+
+    function applyCodexThreadId(threadId) {
+        root.codexThreadId = threadId || ""
+        if (codexThreadField) codexThreadField.text = root.codexThreadId
     }
 
     function parseWakePhrases(text) {
@@ -797,7 +810,7 @@ ApplicationWindow {
             visible: root.settingsOpen
             anchors.centerIn: parent
             width: Math.min(parent.width - 44, 460)
-            height: Math.min(parent.height - 60, 620)
+            height: Math.min(parent.height - 24, 660)
             radius: 8
             color: "#0d131c"
             border.color: "#34445c"
@@ -955,6 +968,19 @@ ApplicationWindow {
                         selectByMouse: true
                         wrapMode: TextEdit.WrapAnywhere
                     }
+                }
+
+                Text {
+                    text: "Codex thread id (applies after restart)"
+                    color: "#91a4bd"
+                }
+
+                TextField {
+                    id: codexThreadField
+                    Layout.fillWidth: true
+                    placeholderText: "019e..."
+                    text: root.codexThreadId
+                    selectByMouse: true
                 }
 
                 RowLayout {

@@ -87,6 +87,12 @@ test("visual bridge parses allowed control events only", () => {
     action: "update_wake_phrases",
     wakePhrases: ["코덱스", "자비스"]
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_codex_thread_id","codexThreadId":" 019e-session "}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "update_codex_thread_id",
+    codexThreadId: "019e-session"
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_tts_settings","tts":{"language":"ko","gender":"female","rate":0.61,"pitch":1.1,"volume":0.8,"voiceName":"Yuna"}}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -121,6 +127,7 @@ test("visual bridge replays latest settings to late visual clients", async () =>
   assert.match(source, /event\.wakePhrases !== undefined/u);
   assert.match(source, /event\.tts !== undefined/u);
   assert.match(source, /event\.visual !== undefined/u);
+  assert.match(source, /event\.codexThreadId !== undefined/u);
 });
 
 test("visual bridge accepts websocket clients, sends events, and receives controls", async (context) => {
@@ -325,10 +332,13 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Settings/u);
   assert.match(qml, /update_tts_settings/u);
   assert.match(qml, /update_wake_phrases/u);
+  assert.match(qml, /update_codex_thread_id/u);
   assert.match(qml, /update_visual_settings/u);
   assert.match(qml, /reset_settings/u);
   assert.match(qml, /Restore Defaults/u);
   assert.match(qml, /Wake phrases/u);
+  assert.match(qml, /Codex thread id \(applies after restart\)/u);
+  assert.match(qml, /id: codexThreadField/u);
   assert.match(qml, /voiceGuideText/u);
   assert.match(qml, /referenceHelpText/u);
   assert.match(qml, /id: guideButton/u);
@@ -397,10 +407,13 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /Settings/u);
   assert.match(swift, /update_tts_settings/u);
   assert.match(swift, /update_wake_phrases/u);
+  assert.match(swift, /update_codex_thread_id/u);
   assert.match(swift, /update_visual_settings/u);
   assert.match(swift, /reset_settings/u);
   assert.match(swift, /Restore Defaults/u);
   assert.match(swift, /settingsWakePhrasesView/u);
+  assert.match(swift, /settingsCodexThreadField/u);
+  assert.match(swift, /Codex Thread/u);
   assert.match(swift, /settingsThinkingVolumeField/u);
   assert.match(swift, /Thinking Fx/u);
   assert.match(swift, /thinkingPulseSound\.volume/u);
