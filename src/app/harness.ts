@@ -49,6 +49,10 @@ import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts"
 import { createCodexThreadStore } from "./codex-thread-config.ts";
 
 type WriteLine = (line: string) => void;
+interface SpeakVisualOptions {
+  visualState?: VisualUiState;
+  visualText?: string;
+}
 
 export { ConsoleVoiceOutput } from "../voice/ConsoleVoiceOutput.ts";
 
@@ -379,6 +383,13 @@ export class TerminalHarness {
     this.restoreCurrentVisualState();
   }
 
+  async speakWakeRejected(text: string, visualText: string): Promise<void> {
+    await this.speak(text, "warning", {
+      visualState: "wake_rejected",
+      visualText
+    });
+  }
+
   restoreCurrentVisualState(): void {
     if (this.ttsPlaybackState.isSpeaking()) {
       this.sendVisualEvent({
@@ -671,7 +682,11 @@ export class TerminalHarness {
     );
   }
 
-  private async speak(text: string, category: VoiceMessage["category"]): Promise<void> {
+  private async speak(
+    text: string,
+    category: VoiceMessage["category"],
+    visualOptions: SpeakVisualOptions = {}
+  ): Promise<void> {
     const message: VoiceMessage = {
       id: this.createId("voice"),
       text,
@@ -687,7 +702,7 @@ export class TerminalHarness {
       this.ttsPlaybackState.recordStopped(this.now());
       await this.voiceOutput.stop();
       this.ttsPlaybackState.recordQueued(message, this.now());
-      await this.speakQueuedMessage(message, this.voiceGeneration);
+      await this.speakQueuedMessage(message, this.voiceGeneration, visualOptions);
       return;
     }
 
@@ -695,17 +710,32 @@ export class TerminalHarness {
     const generation = this.voiceGeneration;
     const task = this.voiceQueue
       .catch(() => {})
-      .then(() => this.speakQueuedMessage(message, generation));
+      .then(() => this.speakQueuedMessage(message, generation, visualOptions));
 
     this.voiceQueue = task.catch(() => {});
     await task;
   }
 
-  private async speakQueuedMessage(message: VoiceMessage, generation: number): Promise<void> {
+  private async speakQueuedMessage(
+    message: VoiceMessage,
+    generation: number,
+    visualOptions: SpeakVisualOptions = {}
+  ): Promise<void> {
     if (generation !== this.voiceGeneration) return;
 
     this.lastSpokenText = message.text;
     this.ttsPlaybackState.recordStart(message, this.now());
+    if (visualOptions.visualState) {
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: visualOptions.visualState,
+        text: visualOptions.visualText ?? message.text
+      });
+      await this.voiceOutput.speak(message);
+      return;
+    }
+
     if (message.category === "permission" && this.currentVisualState() === "approval_pending") {
       this.sendVisualState("approval_pending");
       await this.voiceOutput.speak(message);

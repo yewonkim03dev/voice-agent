@@ -229,6 +229,7 @@ test("voice runner does not forward ambiguous approval speech", async () => {
 
 test("always-on voice runner discards candidate speech without a wake phrase", async () => {
   const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new AutoFinishVoiceOutput();
   const { backend, runner, audioInput, speechProcessor, logs } = createAlwaysOnRunner(
     [
       {
@@ -237,7 +238,8 @@ test("always-on voice runner discards candidate speech without a wake phrase", a
       }
     ],
     {
-      visualBridge
+      visualBridge,
+      voiceOutput
     }
   );
 
@@ -249,12 +251,14 @@ test("always-on voice runner discards candidate speech without a wake phrase", a
   assert.equal(speechProcessor.audio.length, 1);
   assert.equal(backend.prompts.length, 0);
   assert.ok(logs.includes("[wake:discard] no configured wake phrase matched."));
-  assert.deepEqual(visualBridge.events.find((event) => event.type === "state" && event.state === "wake_rejected"), {
-    op: "voice-agent-ui",
-    type: "state",
-    state: "wake_rejected",
-    text: "wake phrase not matched"
-  });
+  assert.equal(voiceOutput.messages.at(-1)?.text, "wake 명령어를 확인해 주세요.");
+  const rejected = visualBridge.events.find((event) => event.type === "state" && event.state === "wake_rejected");
+  assert.equal(rejected?.op, "voice-agent-ui");
+  assert.equal(rejected?.type, "state");
+  assert.equal(rejected?.state, "wake_rejected");
+  assert.match(rejected?.text ?? "", /wake 명령어를 확인해 주세요/u);
+  assert.match(rejected?.text ?? "", /코덱스/u);
+  assert.match(rejected?.text ?? "", /hey jarvis/u);
 });
 
 test("always-on voice runner routes a configured custom wake phrase", async () => {

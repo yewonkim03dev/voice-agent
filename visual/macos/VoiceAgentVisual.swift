@@ -74,29 +74,33 @@ final class AgentCircleView: NSView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineBreakMode = .byWordWrapping
-        let fontSize: CGFloat = state == "approval_pending" ? 13 : state == "speaking" ? 20 : 15
+        let fontSize: CGFloat = state == "approval_pending" || state == "wake_rejected" ? 13 : state == "speaking" ? 20 : 15
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: state == "speaking" ? .semibold : .medium),
+            .font: NSFont.systemFont(ofSize: fontSize, weight: state == "speaking" || state == "wake_rejected" ? .semibold : .medium),
             .foregroundColor: NSColor(calibratedRed: 0.86, green: 0.89, blue: 0.94, alpha: 1),
             .paragraphStyle: paragraph
         ]
         let expandedText = bounds.width >= 320 || bounds.height >= 320
         let textHeight = state == "approval_pending"
             ? min(max(bounds.height * 0.46, 156), 240)
+            : state == "wake_rejected"
+                ? min(max(bounds.height * 0.38, 128), 198)
             : state == "speaking"
                 ? min(max(bounds.height * 0.34, 112), 174)
                 : expandedText ? min(max(bounds.height * 0.34, 92), 150) : min(max(bounds.height * 0.18, 56), 78)
         let textRect = NSRect(x: 24, y: 16, width: bounds.width - 48, height: textHeight)
         var options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
-        if !expandedText {
+        if !expandedText && state != "wake_rejected" {
             options.insert(.truncatesLastVisibleLine)
         }
-        if (state == "speaking" || state == "approval_pending"), !statusText.isEmpty {
+        if (state == "speaking" || state == "approval_pending" || state == "wake_rejected"), !statusText.isEmpty {
             let backdropRect = textRect.insetBy(dx: -6, dy: -10)
             NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.82).setFill()
             NSBezierPath(roundedRect: backdropRect, xRadius: 12, yRadius: 12).fill()
             if state == "approval_pending" {
                 NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.36, alpha: 0.68).setStroke()
+            } else if state == "wake_rejected" {
+                NSColor(calibratedRed: 1.0, green: 0.24, blue: 0.37, alpha: 0.72).setStroke()
             } else {
                 NSColor(calibratedRed: 0.12, green: 0.19, blue: 0.27, alpha: 0.72).setStroke()
             }
@@ -824,7 +828,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             circleView.statusText = event["text"] as? String ?? circleView.state
             if circleView.state == "wake_rejected" {
                 circleView.glow = 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) { [weak self] in
                     guard let self, self.circleView.state == "wake_rejected" else { return }
                     self.circleView.state = "idle"
                     self.circleView.statusText = "idle"

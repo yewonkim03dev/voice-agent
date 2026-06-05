@@ -105,6 +105,7 @@ ApplicationWindow {
 
     function statusBandHeight() {
         if (uiState === "approval_pending") return Math.round(Math.min(220, Math.max(148, height * 0.30)))
+        if (uiState === "wake_rejected") return Math.round(Math.min(expandedLayout ? 190 : 150, Math.max(118, height * (expandedLayout ? 0.20 : 0.19))))
         if (uiState === "speaking") return Math.round(Math.min(expandedLayout ? 180 : 132, Math.max(96, height * (expandedLayout ? 0.18 : 0.17))))
         if (expandedLayout) return Math.max(32, commandPanel.y - waveform.y - waveform.height - 20)
         return Math.min(statusLabel.implicitHeight + 8, Math.max(32, commandPanel.y - waveform.y - waveform.height - 20))
@@ -206,7 +207,7 @@ ApplicationWindow {
 
     Timer {
         id: rejectReset
-        interval: 900
+        interval: 3600
         onTriggered: {
             if (root.uiState === "wake_rejected") {
                 root.uiState = "idle"
@@ -496,11 +497,11 @@ ApplicationWindow {
             id: statusBackdrop
             anchors.centerIn: statusLabel
             width: parent.width
-            height: statusLabel.height + (root.uiState === "approval_pending" ? 28 : root.uiState === "speaking" ? 24 : 20)
+            height: statusLabel.height + (root.uiState === "approval_pending" ? 28 : (root.uiState === "speaking" || root.uiState === "wake_rejected") ? 24 : 20)
             radius: root.uiState === "approval_pending" ? 14 : 12
             color: "#05080c"
-            opacity: (root.uiState === "speaking" || root.uiState === "approval_pending") && root.statusText.length > 0 ? 0.82 : 0
-            border.color: root.uiState === "approval_pending" ? "#ffd166" : "#203246"
+            opacity: (root.uiState === "speaking" || root.uiState === "approval_pending" || root.uiState === "wake_rejected") && root.statusText.length > 0 ? 0.82 : 0
+            border.color: root.uiState === "approval_pending" ? "#ffd166" : root.uiState === "wake_rejected" ? "#ff3b5f" : "#203246"
             border.width: opacity > 0 ? 1 : 0
             z: 0
         }
@@ -508,7 +509,7 @@ ApplicationWindow {
         Text {
             id: statusLabel
             anchors.horizontalCenter: parent.horizontalCenter
-            y: root.uiState === "speaking" || root.uiState === "approval_pending"
+            y: root.uiState === "speaking" || root.uiState === "approval_pending" || root.uiState === "wake_rejected"
                 ? Math.max(0, commandPanel.y - height - 10)
                 : Math.max(0, Math.min(waveform.y + waveform.height + 10, commandPanel.y - height - 10))
             width: parent.width
@@ -516,12 +517,12 @@ ApplicationWindow {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.WordWrap
-            maximumLineCount: root.uiState === "approval_pending" ? 8 : root.expandedLayout ? 99 : 3
+            maximumLineCount: root.uiState === "approval_pending" || root.uiState === "wake_rejected" ? 8 : root.expandedLayout ? 99 : 3
             elide: root.expandedLayout ? Text.ElideNone : Text.ElideRight
             text: root.statusText
             color: "#d9e2ef"
-            font.pixelSize: root.uiState === "approval_pending" ? 14 : root.uiState === "speaking" ? (root.expandedLayout ? 24 : 21) : 16
-            font.bold: root.uiState === "speaking"
+            font.pixelSize: root.uiState === "approval_pending" || root.uiState === "wake_rejected" ? 14 : root.uiState === "speaking" ? (root.expandedLayout ? 24 : 21) : 16
+            font.bold: root.uiState === "speaking" || root.uiState === "wake_rejected"
             lineHeight: 1.12
             lineHeightMode: Text.ProportionalHeight
             z: 1

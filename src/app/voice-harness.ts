@@ -355,12 +355,8 @@ export class AlwaysOnVoiceHarnessRunner {
     if (!wake) {
       this.writeLine("[wake:discard] no configured wake phrase matched.");
       if (!this.terminalHarness.isAgentRequestActive()) {
-        this.terminalHarness.sendVisualEvent({
-          op: "voice-agent-ui",
-          type: "state",
-          state: "wake_rejected",
-          text: "wake phrase not matched"
-        });
+        const visualText = formatWakeRejectedVisualText(this.wakePhrases);
+        await this.terminalHarness.speakWakeRejected("wake 명령어를 확인해 주세요.", visualText);
       }
       return;
     }
@@ -986,6 +982,13 @@ function appendSupplementalText(text: string, entries: string[]): string {
   const context = entries.map((entry) => `- ${entry}`).join("\n");
 
   return `${base}\n\n추가 정보:\n${context}`;
+}
+
+function formatWakeRejectedVisualText(wakePhrases: string[]): string {
+  const phrases = [...new Set(wakePhrases.map((phrase) => phrase.trim()).filter(Boolean))];
+  const phraseText = phrases.length > 0 ? phrases.join(" / ") : "설정된 wake 명령어 없음";
+
+  return `wake 명령어를 확인해 주세요.\n유효한 wake 명령어:\n${phraseText}`;
 }
 
 function parseAddContextCommand(text: string): { matched: boolean; argument: string } {
