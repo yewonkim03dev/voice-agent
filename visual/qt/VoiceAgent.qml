@@ -32,9 +32,10 @@ ApplicationWindow {
     property real ttsRate: 0.56
     property real ttsPitch: 1.0
     property real ttsVolume: 1.0
+    property real thinkingVolume: 0.32
     property var wakePhrases: []
-    property string voiceGuideText: "한국어: 호출어를 말한 뒤 자연어로 작업을 요청하세요. Reference는 다음 요청에 참고자료로 붙습니다.\nEnglish: Say a wake phrase, then speak naturally. References are attached to the next request."
-    property string referenceHelpText: "한국어: 참고자료를 적고 Add를 누르면 다음 요청에만 붙습니다.\nEnglish: Add short context here; it is attached to the next request only."
+    property string voiceGuideText: "한국어\n1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\nEnglish\n1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn."
+    property string referenceHelpText: "한국어: 파일명, URL, 조건 같은 참고자료를 적고 Add를 누르세요. 다음 wake 요청에만 붙고 전송 후 비워집니다.\nEnglish: Add filenames, URLs, or constraints here. They are attached only to the next wake request and then cleared."
 
     function argumentValue(name, fallback) {
         var args = Qt.application.arguments
@@ -86,6 +87,8 @@ ApplicationWindow {
     }
 
     function resetSettings() {
+        root.thinkingVolume = 0.32
+        if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (socket.status === WebSocket.Open) {
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
@@ -272,7 +275,7 @@ ApplicationWindow {
     SoundEffect {
         id: thinkingEffect
         source: Qt.resolvedUrl("thinking-pulse.wav")
-        volume: 0.32
+        volume: root.thinkingVolume
     }
 
     Timer {
@@ -342,7 +345,7 @@ ApplicationWindow {
         id: guidePopup
         x: Math.max(18, root.width - width - 18)
         y: guideButton.y + guideButton.height + 8
-        width: Math.min(root.width - 36, 380)
+        width: Math.min(root.width - 36, 460)
         padding: 14
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         z: 13
@@ -358,6 +361,30 @@ ApplicationWindow {
             color: "#d9e2ef"
             font.pixelSize: 13
             lineHeight: 1.18
+            lineHeightMode: Text.ProportionalHeight
+        }
+    }
+
+    Popup {
+        id: referenceHelpPopup
+        x: Math.max(18, Math.min(root.width - width - 18, content.x + commandPanel.x + commandPanel.width - width - 12))
+        y: Math.max(18, content.y + commandPanel.y + 30)
+        width: Math.min(root.width - 36, 380)
+        padding: 12
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        z: 13
+        background: Rectangle {
+            radius: 8
+            color: "#0d131c"
+            border.color: "#3b4c64"
+            border.width: 1
+        }
+        contentItem: Text {
+            text: root.referenceHelpText
+            wrapMode: Text.WordWrap
+            color: "#d9e2ef"
+            font.pixelSize: 13
+            lineHeight: 1.16
             lineHeightMode: Text.ProportionalHeight
         }
     }
@@ -690,9 +717,10 @@ ApplicationWindow {
                         Layout.preferredHeight: 22
                         text: "?"
                         hoverEnabled: true
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 250
-                        ToolTip.text: root.referenceHelpText
+                        onHoveredChanged: {
+                            if (hovered) referenceHelpPopup.open()
+                            else referenceHelpPopup.close()
+                        }
                     }
                 }
 
@@ -755,7 +783,7 @@ ApplicationWindow {
             visible: root.settingsOpen
             anchors.centerIn: parent
             width: Math.min(parent.width - 44, 460)
-            height: Math.min(parent.height - 80, 560)
+            height: Math.min(parent.height - 60, 620)
             radius: 8
             color: "#0d131c"
             border.color: "#34445c"
@@ -882,7 +910,22 @@ ApplicationWindow {
                 }
 
                 Text {
-                    text: "Wake phrases"
+                    text: "Thinking sound " + thinkingVolumeSlider.value.toFixed(2)
+                    color: "#91a4bd"
+                }
+
+                Slider {
+                    id: thinkingVolumeSlider
+                    Layout.fillWidth: true
+                    from: 0.0
+                    to: 0.8
+                    value: root.thinkingVolume
+                    stepSize: 0.01
+                    onValueChanged: root.thinkingVolume = value
+                }
+
+                Text {
+                    text: "Wake phrases replace list"
                     color: "#91a4bd"
                 }
 

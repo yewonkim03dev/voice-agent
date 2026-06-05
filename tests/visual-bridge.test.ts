@@ -274,7 +274,7 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /function isThinkingAudioState\(state\)/u);
   assert.match(qml, /running: root\.isThinkingAudioState\(root\.uiState\)/u);
   assert.match(qml, /source: Qt\.resolvedUrl\("thinking-pulse\.wav"\)/u);
-  assert.match(qml, /volume: 0\.32/u);
+  assert.match(qml, /volume: root\.thinkingVolume/u);
   assert.match(qml, /thinkingPulseTimer/u);
   assert.match(qml, /stt_processing/u);
   assert.match(qml, /submitting/u);
@@ -309,7 +309,12 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /referenceHelpText/u);
   assert.match(qml, /id: guideButton/u);
   assert.match(qml, /id: guidePopup/u);
-  assert.match(qml, /ToolTip\.text: root\.referenceHelpText/u);
+  assert.match(qml, /id: referenceHelpPopup/u);
+  assert.match(qml, /onHoveredChanged/u);
+  assert.match(qml, /Thinking sound/u);
+  assert.match(qml, /thinkingVolumeSlider/u);
+  assert.match(qml, /volume: root\.thinkingVolume/u);
+  assert.match(qml, /Wake phrases replace list/u);
   assert.match(qml, /palette\.button: "#7a2730"/u);
   assert.doesNotMatch(qml, /color: parent\.down \? "#7f0019" : "#b00020"/u);
   assert.match(qml, /languageBox/u);
@@ -341,7 +346,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /final class ThinkingPulseSound/u);
   assert.match(swift, /setActive\(circleView\.state == "thinking" \|\| circleView\.state == "running"\)/u);
   assert.match(swift, /NSSound\(named: NSSound\.Name\("Glass"\)\)/u);
-  assert.match(swift, /sound\.volume = 0\.32/u);
+  assert.match(swift, /var volume: Float = 0\.32/u);
+  assert.match(swift, /sound\.volume = volume/u);
   assert.match(swift, /stt_processing/u);
   assert.match(swift, /submitting/u);
   assert.match(swift, /wake_rejected/u);
@@ -368,6 +374,11 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /reset_settings/u);
   assert.match(swift, /Restore Defaults/u);
   assert.match(swift, /settingsWakePhrasesView/u);
+  assert.match(swift, /settingsThinkingVolumeField/u);
+  assert.match(swift, /Thinking Fx/u);
+  assert.match(swift, /thinkingPulseSound\.volume/u);
+  assert.match(swift, /final class HoverHelpButton/u);
+  assert.match(swift, /NSPopover/u);
   assert.match(swift, /referenceHelpButton/u);
   assert.match(swift, /guideButton/u);
   assert.match(swift, /showVoiceGuide/u);

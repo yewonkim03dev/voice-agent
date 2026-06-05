@@ -480,7 +480,7 @@ final class VisualRootView: NSView {
     private let clearContextButton: NSButton
     private let commandPanel = NSView(frame: .zero)
     private let contextLabel = NSTextField(labelWithString: "References")
-    private let referenceHelpButton = NSButton(title: "?", target: nil, action: nil)
+    private let referenceHelpButton = HoverHelpButton(frame: .zero)
     private let commandLabel = NSTextField(labelWithString: "Commands")
     private let commandScroll = NSScrollView(frame: .zero)
     private let guideButton = NSButton(title: "?", target: nil, action: nil)
@@ -527,9 +527,10 @@ final class VisualRootView: NSView {
         contextLabel.font = NSFont.boldSystemFont(ofSize: 13)
         commandPanel.addSubview(contextLabel)
 
-        referenceHelpButton.bezelStyle = .helpButton
-        referenceHelpButton.toolTip =
-            "한국어: 참고자료를 적으면 다음 요청에만 붙습니다.\nEnglish: Add short context for the next request only."
+        referenceHelpButton.title = "?"
+        referenceHelpButton.helpText =
+            "한국어: 파일명, URL, 조건 같은 참고자료를 적고 Add를 누르세요. 다음 wake 요청에만 붙고 전송 후 비워집니다.\n\n" +
+            "English: Add filenames, URLs, or constraints here. They attach only to the next wake request and then clear."
         commandPanel.addSubview(referenceHelpButton)
 
         contextField.placeholderString = "/add reference text"
@@ -574,8 +575,18 @@ final class VisualRootView: NSView {
         let alert = NSAlert()
         alert.messageText = "Voice Agent Guide"
         alert.informativeText =
-            "한국어: 호출어를 말한 뒤 자연어로 작업을 요청하세요. Reference는 다음 요청에 참고자료로 붙습니다.\n\n" +
-            "English: Say a wake phrase, then speak naturally. References are attached to the next request."
+            "한국어\n" +
+            "1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n" +
+            "2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n" +
+            "3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n" +
+            "4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n" +
+            "5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\n" +
+            "English\n" +
+            "1. Say a wake phrase first, such as codex or jarvis.\n" +
+            "2. Then speak naturally; the command is passed through to the agent.\n" +
+            "3. During approvals, say approve, deny, or approve for this session.\n" +
+            "4. References are attached to the next request only.\n" +
+            "5. STOP interrupts the current agent turn."
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
@@ -688,6 +699,7 @@ final class VisualRootView: NSView {
 final class ThinkingPulseSound {
     private var timer: Timer?
     private lazy var sound: NSSound? = Self.makePulseSound() ?? NSSound(named: NSSound.Name("Glass"))
+    var volume: Float = 0.32
 
     func setActive(_ active: Bool) {
         if active {
@@ -706,7 +718,7 @@ final class ThinkingPulseSound {
     private func play() {
         guard let sound else { return }
         sound.stop()
-        sound.volume = 0.32
+        sound.volume = volume
         sound.play()
     }
 
@@ -760,6 +772,66 @@ final class ThinkingPulseSound {
     }
 }
 
+final class HoverHelpButton: NSButton {
+    var helpText = ""
+    private var trackingArea: NSTrackingArea?
+    private let popover = NSPopover()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        bezelStyle = .helpButton
+        popover.behavior = .transient
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+
+        let next = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        trackingArea = next
+        addTrackingArea(next)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        showHelp()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        popover.close()
+    }
+
+    private func showHelp() {
+        guard !helpText.isEmpty, !popover.isShown else { return }
+
+        let label = NSTextField(wrappingLabelWithString: helpText)
+        label.textColor = NSColor(calibratedRed: 0.85, green: 0.89, blue: 0.94, alpha: 1)
+        label.font = NSFont.systemFont(ofSize: 13)
+        label.frame = NSRect(x: 14, y: 12, width: 310, height: 120)
+
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 338, height: 144))
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 1).cgColor
+        view.addSubview(label)
+
+        let controller = NSViewController()
+        controller.view = view
+        popover.contentViewController = controller
+        popover.contentSize = view.bounds.size
+        popover.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+    }
+}
+
 final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
@@ -777,6 +849,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let settingsRateField = NSTextField(string: "0.56")
     private let settingsPitchField = NSTextField(string: "1.00")
     private let settingsVolumeField = NSTextField(string: "1.00")
+    private let settingsThinkingVolumeField = NSTextField(string: "0.32")
     private let settingsWakePhrasesView = NSTextView(frame: .zero)
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
@@ -784,6 +857,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private var ttsRate = 0.56
     private var ttsPitch = 1.0
     private var ttsVolume = 1.0
+    private var thinkingVolume = 0.32
     private var wakePhrases: [String] = []
 
     init(bridgeUrl: String) {
@@ -987,6 +1061,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         ttsRate = clampedDouble(settingsRateField.stringValue, fallback: ttsRate, min: 0.1, max: 1)
         ttsPitch = clampedDouble(settingsPitchField.stringValue, fallback: ttsPitch, min: 0.5, max: 2)
         ttsVolume = clampedDouble(settingsVolumeField.stringValue, fallback: ttsVolume, min: 0, max: 1)
+        thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
+        thinkingPulseSound.volume = Float(thinkingVolume)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
         sendTtsSettings()
         sendWakePhrases()
@@ -994,6 +1070,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func resetSettings() {
+        thinkingVolume = 0.32
+        thinkingPulseSound.volume = Float(thinkingVolume)
+        syncSettingsControls()
         sendControl("reset_settings")
     }
 
@@ -1033,7 +1112,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeSettingsWindow() -> NSWindow {
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 468),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 508),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -1041,18 +1120,19 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Settings"
         window.isReleasedWhenClosed = false
 
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 468))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 508))
         window.contentView = view
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
 
-        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 398)
-        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 358)
-        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 318)
-        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 278)
-        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 238)
-        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 198)
+        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 438)
+        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 398)
+        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 358)
+        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 318)
+        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 278)
+        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 238)
+        addSettingsRow(view, label: "Thinking Fx", control: settingsThinkingVolumeField, y: 198)
 
         let wakeLabel = NSTextField(labelWithString: "Wake")
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
@@ -1097,6 +1177,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         settingsRateField.stringValue = String(format: "%.2f", ttsRate)
         settingsPitchField.stringValue = String(format: "%.2f", ttsPitch)
         settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
+        settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
     }
 
