@@ -44,14 +44,15 @@ export interface ResolveTtsConfigOptions {
 export function resolveTtsConfig(options: ResolveTtsConfigOptions = {}): VoiceTtsConfig {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
-  const file = normalizeFileConfig(options.file);
-  const envConfig = configFromEnv(env);
+  const file = definedTtsOptions(normalizeFileConfig(options.file));
+  const envConfig = definedTtsOptions(configFromEnv(env));
+  const cli = options.cli ? definedTtsOptions(options.cli) : undefined;
   const merged: TtsCliOptions = {
     ...file,
     ...envConfig,
-    ...options.cli
+    ...cli
   };
-  const enabled = resolveEnabled(merged, file, envConfig, options.cli);
+  const enabled = resolveEnabled(merged, file, envConfig, cli);
   const provider = merged.provider ?? (platform === "darwin" ? "macos-apple" : "console");
 
   if (!enabled) {
@@ -183,6 +184,12 @@ function configFromEnv(env: NodeJS.ProcessEnv): TtsCliOptions {
     pitch: parseOptionalNumber(env.VOICE_AGENT_TTS_PITCH),
     volume: parseOptionalNumber(env.VOICE_AGENT_TTS_VOLUME)
   };
+}
+
+function definedTtsOptions(options: TtsCliOptions): TtsCliOptions {
+  return Object.fromEntries(
+    Object.entries(options).filter((entry): entry is [string, Exclude<unknown, undefined>] => entry[1] !== undefined)
+  ) as TtsCliOptions;
 }
 
 function resolveEnabled(

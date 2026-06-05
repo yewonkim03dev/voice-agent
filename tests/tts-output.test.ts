@@ -85,6 +85,35 @@ test("TTS env config enables provider, voice, gender, and rate", () => {
   });
 });
 
+test("TTS file config survives empty env and plain --tts CLI enable", () => {
+  assert.deepEqual(resolveTtsConfig({
+    file: {
+      enabled: true,
+      provider: "macos-apple",
+      language: "ko",
+      voiceName: "Yuna",
+      gender: "female",
+      rate: 0.62,
+      pitch: 1.1,
+      volume: 0.8
+    },
+    cli: {
+      enabled: true
+    },
+    env: {},
+    platform: "darwin"
+  }), {
+    enabled: true,
+    provider: "macos-apple",
+    language: "ko",
+    voiceName: "Yuna",
+    gender: "female",
+    rate: 0.62,
+    pitch: 1.1,
+    volume: 0.8
+  });
+});
+
 test("explicit console provider disables real TTS process usage", async () => {
   const spawns: unknown[] = [];
   const output = createVoiceOutput({
