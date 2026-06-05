@@ -16,6 +16,7 @@ Slash commands simulate Codex-side events in mock mode:
 - `/permission <command>` creates a mock shell permission request.
 - `/complete` sends a mock task-complete event.
 - `/error <message>` sends a mock error event.
+- `/tts-stop` stops the current TTS output.
 - `/quit` stops the session.
 
 To connect the terminal harness to a real local Codex app-server:

@@ -272,12 +272,12 @@ export class TerminalHarness {
     this.started = true;
     this.printStartupBanner();
     if (this.runtime) {
-      this.writeLine("  Type text to send a transcript, or /status, /permission <command>, /complete, /error <message>, /quit.");
+      this.writeLine("  Type text to send a transcript, or /status, /permission <command>, /complete, /error <message>, /tts-stop, /quit.");
     } else {
       this.writeLine("  Wake: 코덱스 <명령> / 클로드 <명령>");
       this.writeLine("  Plain text also passes through in development mode.");
       this.writeLine("  Approval: 허용 / 거부 / 이번 세션 동안 허용");
-      this.writeLine("  Commands: /status /quit");
+      this.writeLine("  Commands: /status /tts-stop /quit");
     }
   }
 
@@ -605,13 +605,17 @@ export class TerminalHarness {
       case "/error":
         await this.handleMockOutput("error", argument || "Harness error");
         return "continue";
+      case "/tts-stop":
+        await this.stopVoiceOutput();
+        this.writeLine("[tts] stopped.");
+        return "continue";
       case "/quit":
         await this.stop();
         this.writeLine("Harness stopped.");
         return "quit";
       default:
         this.writeLine(`[harness] unknown command: ${command}`);
-        this.writeLine("Commands: /status, /permission <command>, /complete, /error <message>, /quit");
+        this.writeLine("Commands: /status, /permission <command>, /complete, /error <message>, /tts-stop, /quit");
         return "continue";
     }
   }

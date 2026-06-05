@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
 import { parseVoiceAgentEventLine } from "../src/voice/VoiceAgentEvent.ts";
+import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
 
 test("routes terminal text to the in-memory backend as a Codex prompt", async () => {
   const harness = createHarness();
@@ -44,6 +45,23 @@ test("asks for stronger confirmation before allowing a high-risk slash permissio
   assert.equal(harness.runtime.getContext().pendingPermission?.riskLevel, "high");
   assert.equal(backend.permissions.length, 0);
   assert.equal(harness.voiceOutput.messages.at(-1)?.text, "위험도가 높아. 정말 실행할까?");
+});
+
+test("tts-stop slash command stops current voice output", async () => {
+  const lines: string[] = [];
+  const voiceOutput = new StoppableVoiceOutput();
+  const harness = new TerminalHarness({
+    voiceOutput,
+    now: () => 1000,
+    createId: createTestId(),
+    writeLine: (line) => lines.push(line)
+  });
+
+  await harness.start();
+  await harness.processLine("/tts-stop");
+
+  assert.equal(voiceOutput.stopCount, 1);
+  assert.ok(lines.includes("[tts] stopped."));
 });
 
 test("parses real harness mode with extra Codex app-server args", () => {
@@ -347,6 +365,11 @@ function createHarness(): TerminalHarness {
   });
 }
 
+function createTestId(): (prefix: string) => string {
+  let id = 0;
+  return (prefix) => `${prefix}_${++id}`;
+}
+
 function createPassthroughHarness(backend: InMemoryAgentBackend, lines: string[] = []): TerminalHarness {
   let id = 0;
 
@@ -364,4 +387,23 @@ function createPassthroughHarness(backend: InMemoryAgentBackend, lines: string[]
 async function flushAsync(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+class StoppableVoiceOutput {
+  readonly messages: VoiceMessage[] = [];
+  private readonly finishedListeners: Array<(id: string) => void> = [];
+  stopCount = 0;
+
+  async speak(message: VoiceMessage): Promise<void> {
+    this.messages.push(message);
+    this.finishedListeners.forEach((listener) => listener(message.id));
+  }
+
+  async stop(): Promise<void> {
+    this.stopCount += 1;
+  }
+
+  onFinished(callback: (id: string) => void): void {
+    this.finishedListeners.push(callback);
+  }
 }
