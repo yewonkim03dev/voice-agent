@@ -306,6 +306,31 @@ test("always-on voice runner routes default Korean and English wake phrases", as
   assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "submitting"), true);
 });
 
+test("always-on voice runner routes normalized and fuzzy wake speech", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "코 덱스 테스트 돌려줘",
+      language: "ko"
+    },
+    {
+      text: "코넥스 npm test 돌려줘",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 2);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.equal(backend.prompts[1].text, "npm test 돌려줘");
+  assert.ok(logs.includes('[wake:normalized] heard="코 덱스" normalized="코덱스"'));
+  assert.ok(logs.includes('[wake:fuzzy] heard="코넥스" matched="코덱스" distance=1'));
+});
+
 test("always-on voice runner appends /add text to the next routed STT transcript", async () => {
   const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
     {

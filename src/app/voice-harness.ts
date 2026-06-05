@@ -360,6 +360,12 @@ export class AlwaysOnVoiceHarnessRunner {
     }
   ): Promise<void> {
     this.writeLine(`[wake:matched] phrase="${wake.phrase}" command="${wake.commandText}"`);
+    if (wake.strategy === "normalized" && wake.heardText && wake.normalizedText) {
+      this.writeLine(`[wake:normalized] heard="${wake.heardText}" normalized="${wake.normalizedText}"`);
+    }
+    if (wake.strategy === "fuzzy" && wake.heardText && wake.distance !== undefined) {
+      this.writeLine(`[wake:fuzzy] heard="${wake.heardText}" matched="${wake.phrase}" distance=${wake.distance}`);
+    }
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
       type: "wake",
