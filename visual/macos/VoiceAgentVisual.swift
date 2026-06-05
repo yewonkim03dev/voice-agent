@@ -62,6 +62,8 @@ final class AgentCircleView: NSView {
             drawProcessingIndicator(center: center, baseRadius: baseRadius + 25)
         } else if state == "submitting" {
             drawSubmittingIndicator(center: center, baseRadius: baseRadius + 18)
+        } else if state == "thinking" {
+            drawThinkingIndicator(center: center, baseRadius: baseRadius + 18)
         } else if state == "wake_rejected" {
             drawRejectedIndicator(center: center, baseRadius: baseRadius + 15)
         } else {
@@ -83,6 +85,25 @@ final class AgentCircleView: NSView {
         var options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
         if !expandedText {
             options.insert(.truncatesLastVisibleLine)
+        }
+        if state == "speaking", !statusText.isEmpty {
+            let measured = (statusText as NSString).boundingRect(
+                with: textRect.size,
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: attrs
+            )
+            let backdropWidth = min(textRect.width, ceil(measured.width) + 44)
+            let backdropHeight = min(textRect.height, ceil(measured.height) + 18)
+            let backdropRect = NSRect(
+                x: textRect.midX - backdropWidth / 2,
+                y: textRect.midY - backdropHeight / 2,
+                width: backdropWidth,
+                height: backdropHeight
+            )
+            NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.72).setFill()
+            NSBezierPath(roundedRect: backdropRect, xRadius: 12, yRadius: 12).fill()
+            NSColor(calibratedRed: 0.12, green: 0.19, blue: 0.27, alpha: 0.62).setStroke()
+            NSBezierPath(roundedRect: backdropRect, xRadius: 12, yRadius: 12).stroke()
         }
         (statusText as NSString).draw(
             with: textRect,
@@ -140,6 +161,7 @@ final class AgentCircleView: NSView {
         case "stt_processing": return 0.055
         case "submitting": return 0.070
         case "wake_rejected": return 0.090
+        case "thinking": return 0.025
         default: return 0
         }
     }
@@ -321,6 +343,39 @@ final class AgentCircleView: NSView {
         }
     }
 
+    private func drawThinkingIndicator(center: CGPoint, baseRadius: CGFloat) {
+        for orbit in 0..<4 {
+            let radius = baseRadius + 10 + CGFloat(orbit) * 11 + sin(phase * 1.35 + CGFloat(orbit)) * 4
+            let start = phase * (31.5 + CGFloat(orbit) * 4.6) + CGFloat(orbit) * 25
+            let path = NSBezierPath()
+            path.appendArc(
+                withCenter: center,
+                radius: radius,
+                startAngle: start,
+                endAngle: start + CGFloat(61 + orbit * 5),
+                clockwise: false
+            )
+            path.lineWidth = 2.2 - CGFloat(orbit) * 0.22
+            color(hueOffset: CGFloat(orbit) * 0.042, alpha: 0.42 - CGFloat(orbit) * 0.055).setStroke()
+            path.stroke()
+        }
+
+        for dot in 0..<12 {
+            let angle = phase * 0.9 + CGFloat(dot) * CGFloat.pi * 2 / 12
+            let pulse = 0.45 + sin(phase * 1.8 + CGFloat(dot) * 0.7) * 0.25
+            let radius = baseRadius - 12 + pulse * 8
+            let size = 2.0 + pulse * 2.2
+            let rect = NSRect(
+                x: center.x + cos(angle) * radius - size,
+                y: center.y + sin(angle) * radius - size,
+                width: size * 2,
+                height: size * 2
+            )
+            color(hueOffset: CGFloat(dot) * 0.008, alpha: 0.24 + pulse * 0.34).setFill()
+            NSBezierPath(ovalIn: rect).fill()
+        }
+    }
+
     private func drawRejectedIndicator(center: CGPoint, baseRadius: CGFloat) {
         let count = 84
 
@@ -487,7 +542,16 @@ final class VisualRootView: NSView {
         let bottomLimit = commandPanel.frame.maxY + 12
         let topLimit = bounds.height - inset
         let centerClearance = max(110, min(topLimit - center.y, center.y - bottomLimit))
-        let circleSize = max(220, min(contentWidth, bounds.height * 0.46, centerClearance * 2, 340))
+        let maxCircle: CGFloat = expanded ? 720 : 360
+        let circleSize = max(
+            220,
+            min(
+                contentWidth * (expanded ? 0.78 : 0.84),
+                bounds.height * (expanded ? 0.60 : 0.48),
+                centerClearance * 2,
+                maxCircle
+            )
+        )
         circleView.frame = NSRect(
             x: center.x - circleSize / 2,
             y: center.y - circleSize / 2,
@@ -497,10 +561,86 @@ final class VisualRootView: NSView {
     }
 }
 
+final class ThinkingPulseSound {
+    private var timer: Timer?
+    private lazy var sound: NSSound? = Self.makePulseSound()
+
+    func setActive(_ active: Bool) {
+        if active {
+            guard timer == nil else { return }
+            play()
+            timer = Timer.scheduledTimer(withTimeInterval: 2.6, repeats: true) { [weak self] _ in
+                self?.play()
+            }
+            return
+        }
+
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func play() {
+        guard let sound else { return }
+        sound.stop()
+        sound.volume = 0.055
+        sound.play()
+    }
+
+    private static func makePulseSound() -> NSSound? {
+        let sampleRate = 12_000
+        let frameCount = Int(Double(sampleRate) * 0.12)
+        var data = Data()
+
+        appendAscii("RIFF", to: &data)
+        appendUInt32(UInt32(36 + frameCount * 2), to: &data)
+        appendAscii("WAVE", to: &data)
+        appendAscii("fmt ", to: &data)
+        appendUInt32(16, to: &data)
+        appendUInt16(1, to: &data)
+        appendUInt16(1, to: &data)
+        appendUInt32(UInt32(sampleRate), to: &data)
+        appendUInt32(UInt32(sampleRate * 2), to: &data)
+        appendUInt16(2, to: &data)
+        appendUInt16(16, to: &data)
+        appendAscii("data", to: &data)
+        appendUInt32(UInt32(frameCount * 2), to: &data)
+
+        for index in 0..<frameCount {
+            let t = Double(index) / Double(sampleRate)
+            let envelope = pow(sin(Double.pi * Double(index) / Double(frameCount)), 2)
+            let sample = (sin(2 * Double.pi * 392 * t) * 0.35 + sin(2 * Double.pi * 523.25 * t) * 0.20) * envelope * 0.18
+            let clipped = max(-1, min(1, sample))
+            appendInt16(Int16(clipped * Double(Int16.max)), to: &data)
+        }
+
+        return NSSound(data: data)
+    }
+
+    private static func appendAscii(_ string: String, to data: inout Data) {
+        data.append(contentsOf: string.utf8)
+    }
+
+    private static func appendUInt16(_ value: UInt16, to data: inout Data) {
+        var littleEndian = value.littleEndian
+        withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+    }
+
+    private static func appendUInt32(_ value: UInt32, to data: inout Data) {
+        var littleEndian = value.littleEndian
+        withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+    }
+
+    private static func appendInt16(_ value: Int16, to data: inout Data) {
+        var littleEndian = value.littleEndian
+        withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+    }
+}
+
 final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
     private let commandView = NSTextView(frame: .zero)
+    private let thinkingPulseSound = ThinkingPulseSound()
     private var webSocket: URLSessionWebSocketTask?
     private var commands: [String] = []
 
@@ -566,6 +706,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     self.circleView.state = "error"
                     self.circleView.statusText = "bridge disconnected"
+                    self.thinkingPulseSound.setActive(false)
                 }
             }
         }
@@ -616,6 +757,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         default:
             break
         }
+
+        thinkingPulseSound.setActive(circleView.state == "thinking")
     }
 
     private func pushCommand(_ text: String) {

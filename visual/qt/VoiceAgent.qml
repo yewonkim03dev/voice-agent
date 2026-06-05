@@ -22,7 +22,7 @@ ApplicationWindow {
     property bool expandedLayout: width >= 760 || height >= 760
     property int controlsHeight: 38
     property int commandPanelHeight: Math.round(Math.max(86, Math.min(expandedLayout ? 150 : 112, height * (expandedLayout ? 0.15 : 0.17))))
-    property int visualDiameter: Math.round(Math.max(220, Math.min(width - 48, height * 0.44, height - commandPanelHeight - controlsHeight - 96, 340)))
+    property int visualDiameter: Math.round(Math.max(220, Math.min(width * (expandedLayout ? 0.78 : 0.84), height * (expandedLayout ? 0.60 : 0.48), height - commandPanelHeight - controlsHeight - 92, expandedLayout ? 720 : 360)))
     property var commands: []
 
     function argumentValue(name, fallback) {
@@ -103,10 +103,16 @@ ApplicationWindow {
         onTextMessageReceived: function(message) {
             var event = JSON.parse(message)
             if (event.op !== "voice-agent-ui") return
+            var previousState = root.uiState
 
             if (event.type === "state") {
                 root.uiState = event.state
                 root.statusText = event.text || event.state
+                if (event.state === "thinking" && previousState !== "thinking") {
+                    root.glow = Math.max(root.glow, 0.18)
+                    thinkingEffect.play()
+                    thinkingPulseTimer.restart()
+                }
                 if (event.state === "wake_rejected") {
                     root.glow = 1
                     rejectReset.restart()
@@ -145,6 +151,23 @@ ApplicationWindow {
         volume: 0.25
     }
 
+    SoundEffect {
+        id: thinkingEffect
+        source: "data:audio/wav;base64,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"
+        volume: 0.055
+    }
+
+    Timer {
+        id: thinkingPulseTimer
+        interval: 2600
+        running: root.uiState === "thinking"
+        repeat: true
+        onTriggered: {
+            root.glow = Math.max(root.glow, 0.18)
+            thinkingEffect.play()
+        }
+    }
+
     Timer {
         id: glowReset
         interval: 650
@@ -174,7 +197,7 @@ ApplicationWindow {
         running: true
         repeat: true
         onTriggered: {
-            var stateBoost = root.uiState === "speaking" ? 0.035 : root.uiState === "stt_processing" ? 0.055 : root.uiState === "submitting" ? 0.07 : root.uiState === "wake_rejected" ? 0.09 : 0
+            var stateBoost = root.uiState === "speaking" ? 0.035 : root.uiState === "stt_processing" ? 0.055 : root.uiState === "submitting" ? 0.07 : root.uiState === "wake_rejected" ? 0.09 : root.uiState === "thinking" ? 0.025 : 0
             root.visualPhase += 0.045 + root.rms * 0.035 + root.glow * 0.025 + stateBoost
             waveform.requestPaint()
         }
@@ -206,23 +229,24 @@ ApplicationWindow {
                     var cy = h / 2
                     var phase = root.visualPhase
                     var hue = root.stateHue()
+                    var scale = Math.min(w, h) / 300
                     var activity = Math.max(root.rms, root.peak * 0.45, root.glow * 0.85, root.stateActivityFloor())
-                    var base = 88 + activity * 16
-                    var amp = 8 + root.rms * 40 + root.peak * 18 + root.glow * 24
-                    if (root.uiState === "speaking") amp += 12 + Math.max(0, Math.sin(phase * 2.2)) * 12
-                    if (root.uiState === "stt_processing") amp = 6 + Math.sin(phase * 2.0) * 2
-                    if (root.uiState === "submitting") amp = 10 + Math.max(0, Math.sin(phase * 3.1)) * 10
-                    if (root.uiState === "wake_rejected") amp = 16 + Math.max(0, Math.sin(phase * 5.1)) * 18
+                    var base = Math.min(w, h) * 0.31 + activity * 16 * scale
+                    var amp = (8 + root.rms * 40 + root.peak * 18 + root.glow * 24) * scale
+                    if (root.uiState === "speaking") amp += (12 + Math.max(0, Math.sin(phase * 2.2)) * 12) * scale
+                    if (root.uiState === "stt_processing") amp = (6 + Math.sin(phase * 2.0) * 2) * scale
+                    if (root.uiState === "submitting") amp = (10 + Math.max(0, Math.sin(phase * 3.1)) * 10) * scale
+                    if (root.uiState === "wake_rejected") amp = (16 + Math.max(0, Math.sin(phase * 5.1)) * 18) * scale
 
                     ctx.clearRect(0, 0, w, h)
 
-                    var halo = ctx.createRadialGradient(cx, cy, 52, cx, cy, 148)
+                    var halo = ctx.createRadialGradient(cx, cy, 52 * scale, cx, cy, 148 * scale)
                     halo.addColorStop(0, "hsla(" + hue + ", 95%, 58%, 0.00)")
                     halo.addColorStop(0.48, "hsla(" + hue + ", 95%, 58%, " + (0.10 + activity * 0.20) + ")")
                     halo.addColorStop(1, "hsla(" + ((hue + 38) % 360) + ", 95%, 58%, 0.00)")
                     ctx.fillStyle = halo
                     ctx.beginPath()
-                    ctx.arc(cx, cy, 146, 0, Math.PI * 2)
+                    ctx.arc(cx, cy, 146 * scale, 0, Math.PI * 2)
                     ctx.fill()
 
                     drawWaveRing(ctx, cx, cy, base + 2, amp, phase, hue, 3.4, 0.88, 0)
@@ -233,6 +257,8 @@ ApplicationWindow {
                         drawProcessingIndicator(ctx, cx, cy, base + 25, phase, hue)
                     } else if (root.uiState === "submitting") {
                         drawSubmittingIndicator(ctx, cx, cy, base + 18, phase, hue)
+                    } else if (root.uiState === "thinking") {
+                        drawThinkingIndicator(ctx, cx, cy, base + 18, phase, hue)
                     } else if (root.uiState === "wake_rejected") {
                         drawRejectedIndicator(ctx, cx, cy, base + 15, phase, hue)
                     } else {
@@ -377,6 +403,31 @@ ApplicationWindow {
                     }
                 }
 
+                function drawThinkingIndicator(ctx, cx, cy, base, phase, hue) {
+                    ctx.lineCap = "round"
+                    for (var orbit = 0; orbit < 4; orbit += 1) {
+                        var radius = base + 10 + orbit * 11 + Math.sin(phase * 1.35 + orbit) * 4
+                        var start = phase * (0.55 + orbit * 0.08) + orbit * Math.PI * 0.44
+                        var sweep = Math.PI * (0.34 + orbit * 0.025)
+                        ctx.strokeStyle = "hsla(" + ((hue + orbit * 15) % 360) + ", 95%, 68%, " + (0.42 - orbit * 0.055) + ")"
+                        ctx.lineWidth = 2.2 - orbit * 0.22
+                        ctx.beginPath()
+                        ctx.arc(cx, cy, radius, start, start + sweep)
+                        ctx.stroke()
+                    }
+
+                    for (var dot = 0; dot < 12; dot += 1) {
+                        var angle = phase * 0.9 + dot * Math.PI * 2 / 12
+                        var pulse = 0.45 + Math.sin(phase * 1.8 + dot * 0.7) * 0.25
+                        var dotRadius = base - 12 + pulse * 8
+                        var size = 2.0 + pulse * 2.2
+                        ctx.fillStyle = "hsla(" + ((hue + dot * 2.8) % 360) + ", 95%, 72%, " + (0.24 + pulse * 0.34) + ")"
+                        ctx.beginPath()
+                        ctx.arc(cx + Math.cos(angle) * dotRadius, cy + Math.sin(angle) * dotRadius, size, 0, Math.PI * 2)
+                        ctx.fill()
+                    }
+                }
+
             function drawRejectedIndicator(ctx, cx, cy, base, phase, hue) {
                     ctx.lineCap = "round"
                     for (var index = 0; index < 84; index += 1) {
@@ -404,6 +455,19 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            id: statusBackdrop
+            anchors.centerIn: statusLabel
+            width: Math.min(parent.width, statusLabel.paintedWidth + 44)
+            height: statusLabel.paintedHeight + 18
+            radius: 12
+            color: "#05080c"
+            opacity: root.uiState === "speaking" && root.statusText.length > 0 ? 0.72 : 0
+            border.color: "#203246"
+            border.width: opacity > 0 ? 1 : 0
+            z: 0
+        }
+
         Text {
             id: statusLabel
             anchors.horizontalCenter: parent.horizontalCenter
@@ -422,6 +486,7 @@ ApplicationWindow {
             font.pixelSize: 16
             lineHeight: 1.12
             lineHeightMode: Text.ProportionalHeight
+            z: 1
         }
 
         Rectangle {
