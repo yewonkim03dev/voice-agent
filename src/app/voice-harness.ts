@@ -31,6 +31,7 @@ export interface VoiceHarnessRunnerOptions {
   recordingController: RecordingController;
   speechProcessor: SpeechProcessor;
   writeLine?: WriteLine;
+  debug?: boolean;
 }
 
 export interface AlwaysOnVoiceHarnessRunnerOptions {
@@ -54,6 +55,7 @@ export class VoiceHarnessRunner {
   private readonly recordingController: RecordingController;
   private readonly speechProcessor: SpeechProcessor;
   private readonly writeLine: WriteLine;
+  private readonly debug: boolean;
   private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private started = false;
@@ -64,6 +66,7 @@ export class VoiceHarnessRunner {
     this.recordingController = options.recordingController;
     this.speechProcessor = options.speechProcessor;
     this.writeLine = options.writeLine ?? noop;
+    this.debug = options.debug ?? false;
     this.textContext = new SupplementalTextBuffer(this.writeLine);
     this.recordingController.onUtterance((audio) => {
       const task = this.transcribeAndRoute(audio).finally(() => {
@@ -143,6 +146,8 @@ export class VoiceHarnessRunner {
   }
 
   private printAudioDiagnostics(audio: UtteranceAudio): void {
+    if (!this.debug) return;
+
     const bytes = audio.data.byteLength;
     const durationMs = Math.max(0, audio.endedAt - audio.startedAt);
     const rms = audio.rms === undefined ? "n/a" : audio.rms.toFixed(4);
@@ -169,6 +174,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private manualRecording = false;
+  private candidateVisualState = false;
   private started = false;
   private lastVolumeEventAt = 0;
   private wakeFollowUp:
@@ -340,12 +346,14 @@ export class AlwaysOnVoiceHarnessRunner {
 
     if (!wake) {
       this.writeLine("[wake:discard] no configured wake phrase matched.");
-      this.terminalHarness.sendVisualEvent({
-        op: "voice-agent-ui",
-        type: "state",
-        state: "wake_rejected",
-        text: "wake phrase not matched"
-      });
+      if (!this.terminalHarness.isAgentRequestActive()) {
+        this.terminalHarness.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "state",
+          state: "wake_rejected",
+          text: "wake phrase not matched"
+        });
+      }
       return;
     }
 
@@ -479,16 +487,22 @@ export class AlwaysOnVoiceHarnessRunner {
   private printWakeEvent(event: AlwaysOnWakeGateEvent): void {
     switch (event.type) {
       case "candidate_start":
-        this.sendListeningVisualState("listening");
-        this.writeLine(
-          `[wake:candidate] start preRollFrames=${event.preRollFrames} preRollBytes=${event.preRollBytes}`
-        );
+        this.candidateVisualState = this.shouldShowCandidateVisualState();
+        if (this.candidateVisualState) this.sendListeningVisualState("listening");
+        if (this.debug) {
+          this.writeLine(
+            `[wake:candidate] start preRollFrames=${event.preRollFrames} preRollBytes=${event.preRollBytes}`
+          );
+        }
         return;
       case "candidate_end":
-        this.sendListeningVisualState("stt_processing");
-        this.writeLine(
-          `[wake:candidate] end reason=${event.reason} speechDurationMs=${event.speechDurationMs}`
-        );
+        if (this.candidateVisualState) this.sendListeningVisualState("stt_processing");
+        this.candidateVisualState = false;
+        if (this.debug) {
+          this.writeLine(
+            `[wake:candidate] end reason=${event.reason} speechDurationMs=${event.speechDurationMs}`
+          );
+        }
         return;
       case "buffer_cleanup":
         if (this.debug) {
@@ -517,6 +531,10 @@ export class AlwaysOnVoiceHarnessRunner {
     });
   }
 
+  private shouldShowCandidateVisualState(): boolean {
+    return Boolean(this.wakeFollowUp && this.wakeFollowUp.expiresAt >= this.now()) && !this.terminalHarness.isAgentRequestActive();
+  }
+
   private printTranscript(transcript: Transcript): void {
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
@@ -527,6 +545,8 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private printAudioDiagnostics(audio: UtteranceAudio): void {
+    if (!this.debug) return;
+
     const bytes = audio.data.byteLength;
     const durationMs = Math.max(0, audio.endedAt - audio.startedAt);
     const rms = audio.rms === undefined ? "n/a" : audio.rms.toFixed(4);
@@ -562,6 +582,7 @@ export function createVoiceHarnessRunnerFromConfig(
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
+    debug?: boolean;
   } = {}
 ): VoiceHarnessRunner {
   const writeLine = options.writeLine ?? noop;
@@ -600,7 +621,8 @@ export function createVoiceHarnessRunnerFromConfig(
     new CommandSpeechProcessor({
       commandTemplate: config.sttCommand,
       now: options.now,
-      createId: options.createId
+      createId: options.createId,
+      diagnosticLine: options.debug ? writeLine : undefined
     });
 
   return new VoiceHarnessRunner({
@@ -608,7 +630,8 @@ export function createVoiceHarnessRunnerFromConfig(
     gate,
     recordingController,
     speechProcessor,
-    writeLine
+    writeLine,
+    debug: options.debug
   });
 }
 
@@ -651,7 +674,8 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     new CommandSpeechProcessor({
       commandTemplate: config.sttCommand,
       now: options.now,
-      createId: options.createId
+      createId: options.createId,
+      diagnosticLine: options.debug ? writeLine : undefined
     });
 
   return new AlwaysOnVoiceHarnessRunner({
@@ -725,10 +749,56 @@ export function parseVoiceHarnessCliArgs(args: string[]): VoiceHarnessCliOptions
   };
 }
 
+export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
+  const visible = stripAnsi(line).trimStart();
+  if (!visible.trim()) return true;
+
+  if (visible.startsWith("[agent:")) return true;
+  if (/^\[stt:(ko|en|mixed|unknown)\]/u.test(visible)) return true;
+  if (/^\[voice:(ack|permission|completion|speech|status|error|warning)\]/u.test(visible)) return true;
+  if (visible.startsWith("[voice:context]")) return true;
+  if (visible.startsWith("[voice:capability]")) return true;
+  if (visible.startsWith("[harness")) return true;
+  if (visible.startsWith("[status]")) return true;
+  if (visible.startsWith("[tts]")) return true;
+  if (visible.startsWith("[visual] unavailable")) return true;
+  if (visible.startsWith("[voice]")) return true;
+  if (visible === "Harness stopped.") return true;
+
+  if (
+    visible.includes("VOICE AGENT HARNESS READY") ||
+    visible.startsWith("+---") ||
+    visible.startsWith("|") ||
+    visible.startsWith("backend:") ||
+    visible.startsWith("mode:") ||
+    visible.startsWith("agent:") ||
+    visible.startsWith("Local layer ") ||
+    visible.startsWith("Wake:") ||
+    visible.startsWith("Plain text ") ||
+    visible.startsWith("Approval:") ||
+    visible.startsWith("Commands:") ||
+    visible.startsWith("Voice input:") ||
+    visible.startsWith("Wake phrases:") ||
+    visible.startsWith("Manual fallback:") ||
+    visible.startsWith("/add ") ||
+    visible.startsWith("STT output ")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function runVoiceHarness(): Promise<void> {
-  const writeLine = (line: string): void => {
+  const cli = parseVoiceHarnessCliArgs(process.argv.slice(2));
+  const rawWriteLine = (line: string): void => {
     stdout.write(`${line}\n`);
   };
+  const writeLine = cli.debug
+    ? rawWriteLine
+    : (line: string): void => {
+        if (shouldWriteDefaultVoiceHarnessLine(line)) rawWriteLine(line);
+      };
   const resolution = await resolveVoiceHarnessConfig();
 
   if (!resolution.config) {
@@ -737,7 +807,6 @@ export async function runVoiceHarness(): Promise<void> {
     return;
   }
 
-  const cli = parseVoiceHarnessCliArgs(process.argv.slice(2));
   const args = defaultCodexArgs(cli.harnessArgs);
   const visualBridge = cli.visual ? new VisualBridge({ writeLine }) : undefined;
   let shutdownRequested = false;
@@ -768,6 +837,7 @@ export async function runVoiceHarness(): Promise<void> {
       })
     : createVoiceHarnessRunnerFromConfig(resolution.config, args, {
         writeLine,
+        debug: cli.debug,
         visualBridge,
         onExitRequest: requestShutdown
       });
@@ -797,6 +867,10 @@ export async function runVoiceHarness(): Promise<void> {
     await runner.stop();
     await visualBridge?.stop();
   }
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(/\x1B\[[0-?]*[ -/]*[@-~]/gu, "");
 }
 
 function defaultCodexArgs(args: string[]): string[] {

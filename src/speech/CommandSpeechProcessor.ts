@@ -32,6 +32,7 @@ export interface CommandSpeechProcessorOptions {
   now?: () => number;
   createId?: (prefix: string) => string;
   spawnProcess?: SpawnSpeechProcess;
+  diagnosticLine?: (line: string) => void;
 }
 
 export class CommandSpeechProcessor implements SpeechProcessor {
@@ -41,6 +42,7 @@ export class CommandSpeechProcessor implements SpeechProcessor {
   private readonly now: () => number;
   private readonly createId: (prefix: string) => string;
   private readonly spawnProcess: SpawnSpeechProcess;
+  private readonly diagnosticLine: ((line: string) => void) | undefined;
 
   constructor(options: CommandSpeechProcessorOptions) {
     this.commandTemplate = options.commandTemplate;
@@ -52,6 +54,7 @@ export class CommandSpeechProcessor implements SpeechProcessor {
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? ((prefix) => `${prefix}_${this.now()}`);
     this.spawnProcess = options.spawnProcess ?? spawn;
+    this.diagnosticLine = options.diagnosticLine;
   }
 
   async transcribe(audio: UtteranceAudio): Promise<Transcript> {
@@ -94,7 +97,7 @@ export class CommandSpeechProcessor implements SpeechProcessor {
         for (const line of chunk.toString().split(/\r?\n/)) {
           const trimmed = line.trim();
           if (trimmed.startsWith("[stt:")) {
-            console.error(trimmed);
+            this.diagnosticLine?.(trimmed);
           }
         }
       });

@@ -8,7 +8,12 @@ import type { AudioFrame, AudioInput } from "../src/audio/AudioFrame.ts";
 import { InMemoryAgentBackend, TerminalHarness } from "../src/app/harness.ts";
 import { readCodexThreadId, writeCodexThreadId } from "../src/app/codex-thread-config.ts";
 import { detectVoiceSetup, resolveVoiceHarnessConfig, writeVoiceConfigFile } from "../src/app/voice-config.ts";
-import { AlwaysOnVoiceHarnessRunner, VoiceHarnessRunner, parseVoiceHarnessCliArgs } from "../src/app/voice-harness.ts";
+import {
+  AlwaysOnVoiceHarnessRunner,
+  VoiceHarnessRunner,
+  parseVoiceHarnessCliArgs,
+  shouldWriteDefaultVoiceHarnessLine
+} from "../src/app/voice-harness.ts";
 import { AlwaysOnWakeGate } from "../src/listening/AlwaysOnWakeGate.ts";
 import { AudioRingBuffer } from "../src/listening/AudioRingBuffer.ts";
 import { EndOfSpeechDetector } from "../src/listening/EndOfSpeechDetector.ts";
@@ -301,7 +306,6 @@ test("always-on voice runner routes default Korean and English wake phrases", as
   assert.equal(backend.prompts.length, 2);
   assert.equal(backend.prompts[0].text, "테스트 돌려줘");
   assert.equal(backend.prompts[1].text, "run npm test");
-  assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "stt_processing"), true);
   assert.equal(visualBridge.events.some((event) => event.type === "wake" && event.phrase === "코덱스"), true);
   assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "submitting"), true);
 });
@@ -532,6 +536,45 @@ test("always-on voice runner keeps visual speaking state while TTS is active", a
   assert.notEqual(firstSpeakingIndex, -1);
   assert.equal(laterStates.some((event) => event.state === "listening" || event.state === "stt_processing"), false);
   assert.equal(laterStates.some((event) => event.state === "speaking"), true);
+});
+
+test("always-on voice runner keeps agent visual state during non-wake background speech", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 날씨 확인해줘",
+        language: "ko"
+      },
+      {
+        text: "옆에서 나는 소리",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+
+  const eventsAfterSubmit = visualBridge.events.length;
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
+
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+
+  const laterStates = visualBridge.events.slice(eventsAfterSubmit).filter(isStateEvent);
+  assert.equal(
+    laterStates.some((event) => event.state === "listening" || event.state === "stt_processing" || event.state === "wake_rejected"),
+    false
+  );
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
+
+  await runner.stop();
 });
 
 test("wake-only status response marks the visual as speaking", async () => {
@@ -958,6 +1001,18 @@ test("voice harness CLI parses visual provider without forwarding it to Codex", 
     visualProvider: "macos-native",
     harnessArgs: ["--codex", "-c", "model=\"gpt\""]
   });
+});
+
+test("default voice harness output keeps user-facing lines and hides diagnostics", () => {
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[agent:speech] 확인했어."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[stt:ko] 코덱스 날씨 확인해줘"), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:permission] 명령 실행 권한 필요해."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("  Wake: 코덱스 <명령>"), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[codex-app] turn/start sess_1: 날씨 확인해줘"), false);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[wake:candidate] start preRollFrames=8 preRollBytes=32768"), false);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[audio] bytes=1024 durationMs=100 rms=0.01 peak=0.1"), false);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[stt:apple] locale=ko-KR status=start"), false);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[visual] listening on ws://127.0.0.1:1234"), false);
 });
 
 test("voice setup detection writes a config when recorder and STT commands exist", async () => {

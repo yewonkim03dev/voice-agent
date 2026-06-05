@@ -352,6 +352,17 @@ export class TerminalHarness {
     return Boolean(this.pendingPermission);
   }
 
+  isAgentRequestActive(): boolean {
+    if (this.runtime) {
+      return !["IDLE", "LISTENING"].includes(this.runtime.getContext().state);
+    }
+
+    return (
+      ["EXECUTING", "WAITING_CODEX", "CONFIRMING", "INTERRUPTING"].includes(this.passthroughState) ||
+      this.codexStatus.task !== "idle"
+    );
+  }
+
   async stopVoiceOutput(): Promise<void> {
     this.ttsPlaybackState.recordStopped(this.now());
     await this.voiceOutput.stop();
