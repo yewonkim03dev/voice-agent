@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import type { VoiceTtsFileConfig } from "../voice/TtsConfig.ts";
 import { defaultWakePhrases, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 
 export const defaultVoiceConfigPath = ".voice-agent.local.json";
@@ -11,6 +12,7 @@ export interface VoiceHarnessConfig {
   sampleRate: number;
   channels: number;
   wakePhrases: string[];
+  tts?: VoiceTtsFileConfig;
 }
 
 export interface VoiceHarnessResolution {
@@ -226,7 +228,8 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
         sttCommand,
         sampleRate: parsePositiveInteger(String(parsed.sampleRate ?? ""), 16_000),
         channels: parsePositiveInteger(String(parsed.channels ?? ""), 1),
-        wakePhrases: parseWakePhrases(parsed.wakePhrases)
+        wakePhrases: parseWakePhrases(parsed.wakePhrases),
+        tts: parseTtsFileConfig(parsed)
       },
       errors,
       source: "file"
@@ -262,6 +265,15 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
 function parseWakePhrases(value: unknown): string[] {
   return parseOptionalWakePhrases(value) ?? defaultWakePhrases;
+}
+
+function parseTtsFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<string, unknown>): VoiceTtsFileConfig | undefined {
+  const tts = parsed.tts;
+  if (tts && typeof tts === "object" && !Array.isArray(tts)) {
+    return tts as VoiceTtsFileConfig;
+  }
+
+  return undefined;
 }
 
 function parseOptionalWakePhrases(value: unknown): string[] | undefined {

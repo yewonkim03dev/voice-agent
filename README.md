@@ -112,6 +112,61 @@ export VOICE_AGENT_WAKE_PHRASES='자비스,코덱스,codex'
 
 `VOICE_AGENT_RECORDER_COMMAND` must stream 16kHz mono `pcm_s16le` audio to stdout. `VOICE_AGENT_STT_COMMAND` receives a WAV file path through `{audio}` and should print either plain transcript text or JSON like `{"text":"코덱스 npm test 돌려줘","language":"ko","confidence":0.99}`.
 
+Real TTS output can be enabled with:
+
+```sh
+npm run harness:wake:codex -- --tts
+```
+
+On macOS, `--tts` defaults to the built-in Apple `AVSpeechSynthesizer` provider. Unsupported platforms keep the console voice output fallback unless a provider is explicitly added later. Console voice lines remain visible even when TTS is enabled.
+
+TTS options can be passed as CLI flags:
+
+```sh
+npm run harness:wake:codex -- --tts --tts-voice Yuna --tts-gender female --tts-rate fast
+```
+
+To test only TTS without starting Codex:
+
+```sh
+npm run tts:test
+npm run tts:test -- --ko "코덱스 음성 출력 테스트야."
+npm run tts:test -- --en "Codex voice output test."
+npm run tts:test -- --voice Yuna --ko "유나 목소리 테스트야."
+npm run tts:test -- --list-voices
+```
+
+or configured through env:
+
+```sh
+export VOICE_AGENT_TTS_ENABLED=true
+export VOICE_AGENT_TTS_PROVIDER=macos-apple
+export VOICE_AGENT_TTS_VOICE=Yuna
+export VOICE_AGENT_TTS_GENDER=female
+export VOICE_AGENT_TTS_RATE=fast
+```
+
+or in `.voice-agent.local.json`:
+
+```json
+{
+  "recorderCommand": "exec swift src/audio/macos-record-pcm.swift",
+  "sttCommand": "swift src/speech/macos-transcribe.swift {audio}",
+  "sampleRate": 16000,
+  "channels": 1,
+  "wakePhrases": ["자비스", "코덱스", "codex"],
+  "tts": {
+    "enabled": true,
+    "provider": "macos-apple",
+    "language": "auto",
+    "gender": "auto",
+    "rate": "fast"
+  }
+}
+```
+
+The macOS helper is `src/voice/macos-speak.swift`. It uses `AVSpeechSynthesizer`, selects Korean or English voices from the message language, and can list installed system voices through `npm run tts:test -- --list-voices`.
+
 If either capability is missing, setup prints `[voice:setup]` guidance and the harness prints an exact `[voice:capability]` message before starting Codex.
 
 Claude mode is exposed as:
@@ -122,4 +177,4 @@ npm run harness:claude
 
 It probes the local `claude` CLI. If the CLI is broken or no supported structured approval transport is available, it prints the exact missing capability instead of pretending to drive Claude through an unsafe PTY shim.
 
-This branch intentionally does not implement real TTS, visual UI, production wake-word ML, or a third-party PTY dependency. Always-on wake mode uses VAD plus one STT pass per candidate utterance, then discards transcripts that do not start with a configured wake phrase.
+This branch intentionally does not implement visual UI, production wake-word ML, cloud TTS providers, or a third-party PTY dependency. Always-on wake mode uses VAD plus one STT pass per candidate utterance, then discards transcripts that do not start with a configured wake phrase.

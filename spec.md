@@ -318,7 +318,20 @@ interface VoiceOutput {
 [voice:completion] 끝났어.
 ```
 
-real TTS는 추후 adapter로 붙인다.
+TTS를 켜면 `TtsVoiceOutput`이 console line을 계속 출력하면서 provider에 같은 메시지를 전달한다. macOS MVP provider는 Apple `AVSpeechSynthesizer` helper다.
+
+```bash
+npm run harness:wake:codex -- --tts
+```
+
+provider 선택 규칙:
+
+- TTS disabled: `ConsoleVoiceOutput`
+- TTS enabled + macOS + provider 미지정: `macos-apple`
+- TTS enabled + non-macOS + provider 미지정: `ConsoleVoiceOutput`
+- explicit provider `console`: real TTS 비활성
+
+TTS는 `ack`, permission prompt, retry, completion, error/warning 같은 짧은 voice message만 말한다. raw stdout token stream, 긴 로그, test output, STT diagnostics는 읽지 않는다.
 
 ---
 
@@ -648,9 +661,10 @@ agent 전송:
 - 긴 idle 시간과 잡음 환경에서 메모리/CPU 사용량 검증
 - production wake-word ML 모델 도입 여부 평가
 
-### Goal 3: Voice output and visual feedback
+### Goal 3: Voice output and visual feedback hardening
 
-- real TTS adapter 추가
+- macOS TTS voice/rate preset 튜닝
+- Azure/OpenAI TTS provider 추가 여부 평가
 - speaking state를 terminal 또는 작은 UI에 표시
 - agent stdout/stderr log panel 제공
 - 사용자의 recognized speech를 별도 영역에 표시
@@ -672,8 +686,8 @@ agent 전송:
 - real Codex PTY 직접 조작을 primary path로 사용
 - fake approval prompt를 만들어 Codex/Claude에 다시 전송
 - production-grade wake word ML model
-- real TTS production 구현
 - 시각 UI production 구현
+- Azure/OpenAI cloud TTS provider 구현
 - Claude approval protocol 완성
 - 클라우드 STT 의존성 강제
 

@@ -19,11 +19,24 @@ import {
   withTranscriptText,
   type Transcript
 } from "../speech/Transcript.ts";
+import { ConsoleVoiceOutput, type InspectableVoiceOutput } from "../voice/ConsoleVoiceOutput.ts";
+import { createVoiceOutput } from "../voice/createVoiceOutput.ts";
+import {
+  parseOptionalNumber,
+  parseTtsGender,
+  parseTtsLanguage,
+  parseTtsProvider,
+  parseTtsRate,
+  type TtsCliOptions,
+  type VoiceTtsFileConfig
+} from "../voice/TtsConfig.ts";
 import type { VoiceMessage } from "../voice/VoiceMessage.ts";
-import type { VoiceOutput } from "../voice/VoiceOutput.ts";
+import type { SpawnTtsProcess } from "../voice/MacosAppleTtsProvider.ts";
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
 
 type WriteLine = (line: string) => void;
+
+export { ConsoleVoiceOutput } from "../voice/ConsoleVoiceOutput.ts";
 
 export type HarnessLineResult = "continue" | "quit";
 
@@ -152,33 +165,6 @@ export class InMemoryAgentBackend implements AgentBackend {
   }
 }
 
-export interface ConsoleVoiceOutputOptions {
-  writeLine?: WriteLine;
-}
-
-export class ConsoleVoiceOutput implements VoiceOutput {
-  readonly messages: VoiceMessage[] = [];
-
-  private readonly writeLine: WriteLine;
-  private readonly finishedListeners: Array<(id: string) => void> = [];
-
-  constructor(options: ConsoleVoiceOutputOptions = {}) {
-    this.writeLine = options.writeLine ?? noop;
-  }
-
-  async speak(message: VoiceMessage): Promise<void> {
-    this.messages.push(message);
-    this.writeLine(`[voice:${message.category}] ${message.text}`);
-    this.finishedListeners.forEach((listener) => listener(message.id));
-  }
-
-  async stop(): Promise<void> {}
-
-  onFinished(callback: (id: string) => void): void {
-    this.finishedListeners.push(callback);
-  }
-}
-
 export interface TerminalHarnessOptions {
   now?: () => number;
   writeLine?: WriteLine;
@@ -187,12 +173,18 @@ export interface TerminalHarnessOptions {
   backendLabel?: string;
   routingMode?: "runtime" | "passthrough";
   agentTarget?: AgentTarget;
-  voiceOutput?: ConsoleVoiceOutput;
+  voiceOutput?: InspectableVoiceOutput;
+  ttsCli?: TtsCliOptions;
+  ttsConfig?: VoiceTtsFileConfig;
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  cwd?: string;
+  spawnTtsProcess?: SpawnTtsProcess;
 }
 
 export class TerminalHarness {
   readonly backend: AgentBackend;
-  readonly voiceOutput: ConsoleVoiceOutput;
+  readonly voiceOutput: InspectableVoiceOutput;
   readonly runtime: RuntimeController | undefined;
 
   private readonly now: () => number;
@@ -230,8 +222,14 @@ export class TerminalHarness {
       });
     this.voiceOutput =
       options.voiceOutput ??
-      new ConsoleVoiceOutput({
-        writeLine: this.writeLine
+      createVoiceOutput({
+        cli: options.ttsCli,
+        file: options.ttsConfig,
+        env: options.env,
+        platform: options.platform,
+        writeLine: this.writeLine,
+        cwd: options.cwd,
+        spawnTtsProcess: options.spawnTtsProcess
       });
 
     if (this.routingMode === "runtime") {
@@ -717,6 +715,7 @@ export interface HarnessCliOptions {
   codexArgs: string[];
   claudeCommand: string;
   cwd: string;
+  tts?: TtsCliOptions;
 }
 
 export function createTerminalHarnessFromArgs(
@@ -728,6 +727,8 @@ export function createTerminalHarnessFromArgs(
   if (cli.backendMode === "codex") {
     return new TerminalHarness({
       ...options,
+      ttsCli: cli.tts,
+      cwd: cli.cwd,
       backendLabel: "codex",
       routingMode: "passthrough",
       agentTarget: "codex",
@@ -744,6 +745,8 @@ export function createTerminalHarnessFromArgs(
   if (cli.backendMode === "claude") {
     return new TerminalHarness({
       ...options,
+      ttsCli: cli.tts,
+      cwd: cli.cwd,
       backendLabel: "claude",
       routingMode: "passthrough",
       agentTarget: "claude",
@@ -758,6 +761,8 @@ export function createTerminalHarnessFromArgs(
 
   return new TerminalHarness({
     ...options,
+    ttsCli: cli.tts,
+    cwd: cli.cwd,
     backendLabel: "mock",
     routingMode: "runtime",
     agentTarget: "codex"
@@ -772,6 +777,7 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
   let codexCommand = "codex";
   let claudeCommand = "claude";
   let cwd = defaultCwd;
+  let tts: TtsCliOptions | undefined;
 
   for (let index = 0; index < harnessArgs.length; index += 1) {
     const arg = harnessArgs[index];
@@ -796,6 +802,67 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
       case "--cwd":
         cwd = requiredValue(harnessArgs, ++index, "--cwd");
         break;
+      case "--tts":
+        tts = {
+          ...tts,
+          enabled: true
+        };
+        break;
+      case "--no-tts":
+        tts = {
+          ...tts,
+          enabled: false
+        };
+        break;
+      case "--tts-provider":
+        tts = {
+          ...tts,
+          enabled: true,
+          provider: parseRequiredTtsProvider(requiredValue(harnessArgs, ++index, "--tts-provider"))
+        };
+        break;
+      case "--tts-voice":
+        tts = {
+          ...tts,
+          enabled: true,
+          voiceName: requiredValue(harnessArgs, ++index, "--tts-voice")
+        };
+        break;
+      case "--tts-gender":
+        tts = {
+          ...tts,
+          enabled: true,
+          gender: parseRequiredTtsGender(requiredValue(harnessArgs, ++index, "--tts-gender"))
+        };
+        break;
+      case "--tts-rate":
+        tts = {
+          ...tts,
+          enabled: true,
+          rate: parseRequiredTtsRate(requiredValue(harnessArgs, ++index, "--tts-rate"))
+        };
+        break;
+      case "--tts-language":
+        tts = {
+          ...tts,
+          enabled: true,
+          language: parseRequiredTtsLanguage(requiredValue(harnessArgs, ++index, "--tts-language"))
+        };
+        break;
+      case "--tts-pitch":
+        tts = {
+          ...tts,
+          enabled: true,
+          pitch: parseRequiredNumber(requiredValue(harnessArgs, ++index, "--tts-pitch"), "--tts-pitch")
+        };
+        break;
+      case "--tts-volume":
+        tts = {
+          ...tts,
+          enabled: true,
+          volume: parseRequiredNumber(requiredValue(harnessArgs, ++index, "--tts-volume"), "--tts-volume")
+        };
+        break;
       default:
         extraCodexArgs.push(arg);
     }
@@ -806,7 +873,8 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
     codexCommand,
     codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", ...extraCodexArgs],
     claudeCommand,
-    cwd
+    cwd,
+    ...(tts ? { tts } : {})
   };
 }
 
@@ -886,6 +954,36 @@ function requiredValue(args: string[], index: number, option: string): string {
   }
 
   return value;
+}
+
+function parseRequiredTtsProvider(value: string): NonNullable<TtsCliOptions["provider"]> {
+  const provider = parseTtsProvider(value);
+  if (!provider) throw new Error(`Unsupported --tts-provider value: ${value}.`);
+  return provider;
+}
+
+function parseRequiredTtsGender(value: string): NonNullable<TtsCliOptions["gender"]> {
+  const gender = parseTtsGender(value);
+  if (!gender) throw new Error(`Unsupported --tts-gender value: ${value}.`);
+  return gender;
+}
+
+function parseRequiredTtsLanguage(value: string): NonNullable<TtsCliOptions["language"]> {
+  const language = parseTtsLanguage(value);
+  if (!language) throw new Error(`Unsupported --tts-language value: ${value}.`);
+  return language;
+}
+
+function parseRequiredTtsRate(value: string): number {
+  const rate = parseTtsRate(value);
+  if (rate === undefined) throw new Error(`Unsupported --tts-rate value: ${value}.`);
+  return rate;
+}
+
+function parseRequiredNumber(value: string, option: string): number {
+  const parsed = parseOptionalNumber(value);
+  if (parsed === undefined) throw new Error(`${option} requires a numeric value.`);
+  return parsed;
 }
 
 function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["intent"]): PermissionDecision["scope"] {

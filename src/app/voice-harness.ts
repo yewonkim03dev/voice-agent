@@ -87,6 +87,9 @@ export class VoiceHarnessRunner {
 
     if (text === "/record") {
       this.gate.toggle();
+      if (this.gate.isOpen) {
+        await this.terminalHarness.voiceOutput.stop();
+      }
       await this.recordingController.drain();
       this.writeLine(this.gate.isOpen ? "[voice] recording started. Type /record to stop." : "[voice] recording stopped.");
       return "continue";
@@ -230,6 +233,7 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     this.wakeGate.reset();
+    void this.terminalHarness.voiceOutput.stop();
     this.manualRecorder.begin(this.createId("voice_sess"), {
       mode: "manual",
       timestamp: this.now()
@@ -303,6 +307,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private printWakeEvent(event: AlwaysOnWakeGateEvent): void {
     switch (event.type) {
       case "candidate_start":
+        void this.terminalHarness.voiceOutput.stop();
         this.writeLine(
           `[wake:candidate] start preRollFrames=${event.preRollFrames} preRollBytes=${event.preRollBytes}`
         );
@@ -352,7 +357,8 @@ export function createVoiceHarnessRunnerFromConfig(
   const terminalHarness = createTerminalHarnessFromArgs(harnessArgs, {
     writeLine,
     now: options.now,
-    createId: options.createId
+    createId: options.createId,
+    ttsConfig: config.tts
   });
   const gate = new ManualRecordingGate({
     now: options.now
@@ -411,7 +417,8 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
   const terminalHarness = createTerminalHarnessFromArgs(harnessArgs, {
     writeLine,
     now: options.now,
-    createId: options.createId
+    createId: options.createId,
+    ttsConfig: config.tts
   });
   const audioInput =
     options.audioInput ??

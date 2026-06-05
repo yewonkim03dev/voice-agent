@@ -367,6 +367,46 @@ test("voice harness config lets env wake phrases override file wake phrases", as
   }
 });
 
+test("voice harness config loads TTS settings from the local config file", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+
+  try {
+    await writeFile(
+      join(cwd, ".voice-agent.local.json"),
+      JSON.stringify({
+        recorderCommand: "file-recorder",
+        sttCommand: "file-stt {audio}",
+        sampleRate: 16_000,
+        channels: 1,
+        tts: {
+          enabled: true,
+          provider: "macos-apple",
+          voice: "Yuna",
+          gender: "female",
+          rate: "fast"
+        }
+      }),
+      "utf8"
+    );
+
+    const resolution = await resolveVoiceHarnessConfig({
+      env: {},
+      cwd
+    });
+
+    assert.equal(resolution.config?.tts?.enabled, true);
+    assert.equal(resolution.config?.tts?.provider, "macos-apple");
+    assert.equal(resolution.config?.tts?.voice, "Yuna");
+    assert.equal(resolution.config?.tts?.gender, "female");
+    assert.equal(resolution.config?.tts?.rate, "fast");
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
 test("voice harness CLI parses always-on flags without forwarding them to Codex", () => {
   assert.deepEqual(parseVoiceHarnessCliArgs(["--codex", "--always-on", "--debug", "-c", "model=\"gpt\""]), {
     alwaysOn: true,

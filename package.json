@@ -12,6 +12,7 @@
     "harness:wake:codex": "node src/app/voice-harness.ts --codex --always-on",
     "setup:voice": "node src/app/setup-voice.ts",
     "start": "node src/app/main.ts",
+    "tts:test": "node src/app/tts-test.ts",
     "test": "node --test tests/*.test.ts"
   }
 }
