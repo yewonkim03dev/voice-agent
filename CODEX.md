@@ -4,6 +4,13 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
+## Project Branch Policy
+
+- Keep `main` for stable documentation baselines and direct updates to `spec.md` or `CODEX.md`.
+- Keep `develop` as the integration branch for implementation work.
+- For all work other than `spec.md` or `CODEX.md`, start from a small branch created from `develop`.
+- Do not commit implementation changes directly to `main` or `develop`.
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
