@@ -144,6 +144,36 @@ test("voice runner routes English STT transcript through wake pass-through", asy
   assert.equal(backend.prompts[0].text, "run npm test");
 });
 
+test("voice runner appends /add text to the next manual STT transcript", async () => {
+  const { backend, runner, audioInput } = createVoiceRunner([
+    {
+      text: "코덱스 테스트 돌려줘",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  await runner.processLine("/add 파일은 src/app/voice-harness.ts야");
+
+  assert.equal(backend.prompts.length, 0);
+
+  await recordOnce(runner, audioInput);
+  await runner.drain();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘\n\n추가 정보:\n- 파일은 src/app/voice-harness.ts야");
+});
+
+test("voice runner routes plain typed text immediately", async () => {
+  const { backend, runner } = createVoiceRunner([]);
+
+  await runner.start();
+  await runner.processLine("그냥 지금 상태 알려줘");
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "그냥 지금 상태 알려줘");
+});
+
 test("voice runner maps spoken allow and deny only while native approval is pending", async () => {
   const { backend, runner, audioInput } = createVoiceRunner([
     {
@@ -274,6 +304,39 @@ test("always-on voice runner routes default Korean and English wake phrases", as
   assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "stt_processing"), true);
   assert.equal(visualBridge.events.some((event) => event.type === "wake" && event.phrase === "코덱스"), true);
   assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "submitting"), true);
+});
+
+test("always-on voice runner appends /add text to the next routed STT transcript", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "코덱스 테스트 돌려줘",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  await runner.processLine("/add 관련 파일은 README.md야");
+
+  assert.equal(backend.prompts.length, 0);
+
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘\n\n추가 정보:\n- 관련 파일은 README.md야");
+  assert.ok(logs.includes("[voice:context] queued 1 item(s)."));
+  assert.ok(logs.includes("[voice:context] applied 1 item(s)."));
+});
+
+test("always-on voice runner routes plain typed text immediately", async () => {
+  const { backend, runner } = createAlwaysOnRunner([]);
+
+  await runner.start();
+  await runner.processLine("그냥 지금 상태 알려줘");
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "그냥 지금 상태 알려줘");
 });
 
 test("always-on voice runner manual /record fallback routes without a wake phrase", async () => {

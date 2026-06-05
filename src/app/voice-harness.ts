@@ -54,6 +54,7 @@ export class VoiceHarnessRunner {
   private readonly recordingController: RecordingController;
   private readonly speechProcessor: SpeechProcessor;
   private readonly writeLine: WriteLine;
+  private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private started = false;
 
@@ -63,6 +64,7 @@ export class VoiceHarnessRunner {
     this.recordingController = options.recordingController;
     this.speechProcessor = options.speechProcessor;
     this.writeLine = options.writeLine ?? noop;
+    this.textContext = new SupplementalTextBuffer(this.writeLine);
     this.recordingController.onUtterance((audio) => {
       const task = this.transcribeAndRoute(audio).finally(() => {
         this.pendingTranscripts.delete(task);
@@ -78,6 +80,7 @@ export class VoiceHarnessRunner {
     await this.recordingController.start();
     this.started = true;
     this.writeLine("  Voice input: /record to start, /record again to stop.");
+    this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
   }
 
@@ -92,6 +95,7 @@ export class VoiceHarnessRunner {
 
   async processLine(line: string): Promise<"continue" | "quit"> {
     const text = line.trim();
+    if (!text) return "continue";
 
     if (text === "/record") {
       this.gate.toggle();
@@ -109,6 +113,13 @@ export class VoiceHarnessRunner {
       return "quit";
     }
 
+    const addContext = parseAddContextCommand(text);
+
+    if (addContext.matched) {
+      this.textContext.queue(addContext.argument);
+      return "continue";
+    }
+
     return this.terminalHarness.processLine(line);
   }
 
@@ -121,7 +132,7 @@ export class VoiceHarnessRunner {
       this.printAudioDiagnostics(audio);
       const transcript = await this.speechProcessor.transcribe(audio);
       this.printTranscript(transcript);
-      await this.terminalHarness.processTranscript(transcript);
+      await this.terminalHarness.processTranscript(this.textContext.apply(transcript));
     } catch (error) {
       this.writeLine(`[voice:error] ${formatError(error)}`);
     }
@@ -155,6 +166,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly now: () => number;
   private readonly createId: (prefix: string) => string;
   private readonly manualRecorder: UtteranceRecorder;
+  private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private manualRecording = false;
   private started = false;
@@ -179,6 +191,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy();
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? ((prefix) => `${prefix}_${this.now()}`);
+    this.textContext = new SupplementalTextBuffer(this.writeLine);
     this.manualRecorder = new UtteranceRecorder({
       now: this.now,
       createId: this.createId
@@ -197,6 +210,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  Voice input: always-on wake listening enabled.");
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ")}`);
     this.writeLine("  Manual fallback: /record to start, /record again to stop.");
+    this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
   }
 
@@ -217,6 +231,7 @@ export class AlwaysOnVoiceHarnessRunner {
 
   async processLine(line: string): Promise<"continue" | "quit"> {
     const text = line.trim();
+    if (!text) return "continue";
 
     if (text === "/record") {
       this.toggleManualRecording();
@@ -227,6 +242,13 @@ export class AlwaysOnVoiceHarnessRunner {
       await this.stop();
       this.writeLine("Harness stopped.");
       return "quit";
+    }
+
+    const addContext = parseAddContextCommand(text);
+
+    if (addContext.matched) {
+      this.textContext.queue(addContext.argument);
+      return "continue";
     }
 
     return this.terminalHarness.processLine(line);
@@ -286,7 +308,7 @@ export class AlwaysOnVoiceHarnessRunner {
       this.printTranscript(transcript);
 
       if (source === "manual") {
-        await this.terminalHarness.processTranscript(transcript);
+        await this.terminalHarness.processTranscript(this.textContext.apply(transcript));
         return;
       }
 
@@ -350,7 +372,8 @@ export class AlwaysOnVoiceHarnessRunner {
       this.clearWakeFollowUp();
     }
 
-    await this.terminalHarness.processTranscript(withTranscriptText(transcript, wake.commandText));
+    const routedTranscript = withTranscriptText(transcript, wake.commandText);
+    await this.terminalHarness.processTranscript(wake.commandText ? this.textContext.apply(routedTranscript) : routedTranscript);
   }
 
   private async tryRouteWakeFollowUp(transcript: Transcript): Promise<boolean> {
@@ -372,7 +395,7 @@ export class AlwaysOnVoiceHarnessRunner {
       await this.terminalHarness.stopVoiceOutput();
     }
     this.writeLine(`[wake:followup] phrase="${followUp.phrase}" command="${transcript.text.trim()}"`);
-    await this.terminalHarness.processTranscript(transcript);
+    await this.terminalHarness.processTranscript(this.textContext.apply(transcript));
     return true;
   }
 
@@ -424,7 +447,7 @@ export class AlwaysOnVoiceHarnessRunner {
       case "command":
         await this.terminalHarness.stopVoiceOutput();
         this.writeLine(`[barge:command] phrase="${decision.wake.phrase}" command="${decision.commandText}"`);
-        await this.terminalHarness.processTranscript(withTranscriptText(transcript, decision.commandText));
+        await this.terminalHarness.processTranscript(this.textContext.apply(withTranscriptText(transcript, decision.commandText)));
         return;
     }
   }
@@ -796,6 +819,56 @@ function closeReadline(readline: ReturnType<typeof createInterface>): void {
 
 function isReadlineClosedError(error: unknown): boolean {
   return error instanceof Error && /readline was closed/i.test(error.message);
+}
+
+class SupplementalTextBuffer {
+  private readonly writeLine: WriteLine;
+  private readonly entries: string[] = [];
+
+  constructor(writeLine: WriteLine) {
+    this.writeLine = writeLine;
+  }
+
+  queue(text: string): void {
+    if (!text) {
+      this.writeLine("[voice:context] usage: /add <text>");
+      return;
+    }
+
+    this.entries.push(text);
+    this.writeLine(`[voice:context] queued ${this.entries.length} item(s).`);
+  }
+
+  apply(transcript: Transcript): Transcript {
+    if (this.entries.length === 0) return transcript;
+
+    const entries = this.entries.splice(0);
+    this.writeLine(`[voice:context] applied ${entries.length} item(s).`);
+    return withTranscriptText(transcript, appendSupplementalText(transcript.text, entries));
+  }
+}
+
+function appendSupplementalText(text: string, entries: string[]): string {
+  const base = text.trim();
+  const context = entries.map((entry) => `- ${entry}`).join("\n");
+
+  return `${base}\n\n추가 정보:\n${context}`;
+}
+
+function parseAddContextCommand(text: string): { matched: boolean; argument: string } {
+  const match = text.match(/^\/add(?:\s+([\s\S]*))?$/u);
+
+  if (!match) {
+    return {
+      matched: false,
+      argument: ""
+    };
+  }
+
+  return {
+    matched: true,
+    argument: (match[1] ?? "").trim()
+  };
 }
 
 function formatError(error: unknown): string {

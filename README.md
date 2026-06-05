@@ -81,6 +81,8 @@ This mode uses manual recording first so it can later swap `ManualRecordingGate`
 AudioInput -> ListeningGate -> RecordingController -> UtteranceRecorder -> STT -> Transcript -> Agent pass-through
 ```
 
+In voice modes, slash commands are still handled by the harness, and plain typed terminal text still routes normally. Use `/add <text>` to queue supplemental context for the next routed STT transcript; queued text is appended under `추가 정보:`.
+
 Always-on wake listening is exposed as:
 
 ```sh

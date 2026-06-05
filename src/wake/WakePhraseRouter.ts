@@ -19,11 +19,11 @@ const wakePatterns: Array<{
 }> = [
   {
     target: "codex",
-    pattern: /^(?:(?:야|헤이|hey)\s+)?(코덱스|codex)(?:야)?(?:$|[\s,.:;!?，。]+)(.*)$/iu
+    pattern: /^(?:(?:야|헤이|hey)\s+)?(코덱스|codex)(?:야)?(?:$|[\s,.:;!?，。]+)([\s\S]*)$/iu
   },
   {
     target: "claude",
-    pattern: /^(?:(?:야|헤이|hey)\s+)?(클로드|claude)(?:야)?(?:$|[\s,.:;!?，。]+)(.*)$/iu
+    pattern: /^(?:(?:야|헤이|hey)\s+)?(클로드|claude)(?:야)?(?:$|[\s,.:;!?，。]+)([\s\S]*)$/iu
   }
 ];
 

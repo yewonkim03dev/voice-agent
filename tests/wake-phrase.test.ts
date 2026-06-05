@@ -11,6 +11,14 @@ test("detects Codex wake phrases and strips the phrase", () => {
   });
 });
 
+test("detects wake phrases with multiline command context", () => {
+  assert.deepEqual(detectWakePhrase("코덱스 테스트 돌려줘\n\n추가 정보:\n- README.md"), {
+    target: "codex",
+    phrase: "코덱스",
+    commandText: "테스트 돌려줘\n\n추가 정보:\n- README.md"
+  });
+});
+
 test("detects Claude wake phrases", () => {
   assert.deepEqual(detectWakePhrase("헤이 클로드 status 확인해"), {
     target: "claude",
