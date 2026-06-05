@@ -53,6 +53,34 @@ npm run harness:codex -- -c 'model="gpt-5-codex"'
 
 `npm run harness:real` is kept as an alias for `npm run harness:codex`.
 
+Voice input mode is exposed as:
+
+```sh
+npm run setup:voice
+npm run harness:voice:codex
+```
+
+This mode uses manual recording first so it can later swap `ManualRecordingGate` for a wake/VAD gate without changing STT or agent routing. Type `/record` to start recording and `/record` again to stop. The voice path is:
+
+```text
+AudioInput -> ListeningGate -> RecordingController -> UtteranceRecorder -> STT -> Transcript -> Agent pass-through
+```
+
+`npm run setup:voice` detects supported local recorder/STT commands and writes `.voice-agent.local.json`. On macOS with `/usr/bin/swift`, setup uses the built-in microphone through AVFoundation and Apple Speech for STT. The file is ignored by git and is read automatically by `npm run harness:voice:codex`.
+
+Voice setup is provider-based: macOS Swift support is the first provider, and Windows/Linux providers can be added without changing `VoiceHarnessRunner`, STT routing, or agent pass-through.
+
+If auto-detection cannot find a supported command, configure manually with environment variables or by writing `.voice-agent.local.json`:
+
+```sh
+export VOICE_AGENT_RECORDER_COMMAND='rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -'
+export VOICE_AGENT_STT_COMMAND='your-local-whisper-command {audio}'
+```
+
+`VOICE_AGENT_RECORDER_COMMAND` must stream 16kHz mono `pcm_s16le` audio to stdout. `VOICE_AGENT_STT_COMMAND` receives a WAV file path through `{audio}` and should print either plain transcript text or JSON like `{"text":"코덱스 npm test 돌려줘","language":"ko","confidence":0.99}`.
+
+If either capability is missing, setup prints `[voice:setup]` guidance and the harness prints an exact `[voice:capability]` message before starting Codex.
+
 Claude mode is exposed as:
 
 ```sh
@@ -61,4 +89,4 @@ npm run harness:claude
 
 It probes the local `claude` CLI. If the CLI is broken or no supported structured approval transport is available, it prints the exact missing capability instead of pretending to drive Claude through an unsafe PTY shim.
 
-This branch intentionally does not implement real microphone capture, real STT, real TTS, or a third-party PTY dependency. The current terminal input and `DevelopmentTranscriptInput` are the development adapters for future wake/STT wiring.
+This branch intentionally does not implement real TTS, visual UI, always-on wake, or a third-party PTY dependency. Voice input uses the manual recording gate first so wake/VAD can replace only the gate later.

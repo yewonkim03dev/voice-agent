@@ -8,6 +8,8 @@
     "harness:codex": "node src/app/harness.ts --codex",
     "harness:claude": "node src/app/harness.ts --claude",
     "harness:real": "node src/app/harness.ts --codex",
+    "harness:voice:codex": "node src/app/voice-harness.ts --codex",
+    "setup:voice": "node src/app/setup-voice.ts",
     "start": "node src/app/main.ts",
     "test": "node --test tests/*.test.ts"
   }

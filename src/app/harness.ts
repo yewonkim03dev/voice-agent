@@ -286,13 +286,17 @@ export class TerminalHarness {
       return this.handleSlashCommand(text);
     }
 
+    await this.processTranscript(this.createTranscript(text));
+    return "continue";
+  }
+
+  async processTranscript(transcript: Transcript): Promise<void> {
     if (this.runtime) {
-      await this.runtime.handleTranscript(this.createTranscript(text));
-      return "continue";
+      await this.runtime.handleTranscript(transcript);
+      return;
     }
 
-    await this.handlePassthroughLine(text);
-    return "continue";
+    await this.handlePassthroughTranscript(transcript);
   }
 
   private bindPassthroughBackend(): void {
@@ -307,7 +311,9 @@ export class TerminalHarness {
     });
   }
 
-  private async handlePassthroughLine(text: string): Promise<void> {
+  private async handlePassthroughTranscript(transcript: Transcript): Promise<void> {
+    const text = transcript.text.trim();
+
     if (this.pendingPermission) {
       await this.handleNativeApprovalSpeech(text);
       return;
@@ -336,11 +342,7 @@ export class TerminalHarness {
       return;
     }
 
-    await this.sendPassthroughPrompt(promptText);
-  }
-
-  private async sendPassthroughPrompt(text: string): Promise<void> {
-    await this.sendPassthroughTranscript(this.createTranscript(text));
+    await this.sendPassthroughTranscript(wake ? withTranscriptText(transcript, promptText) : transcript);
   }
 
   private async sendPassthroughTranscript(transcript: Transcript): Promise<void> {
@@ -841,6 +843,17 @@ function createPermissionRequest(command: string, sessionId: string, id: string,
     riskLevel: "medium",
     rawText: `Run command: ${command} ?`,
     createdAt: now
+  };
+}
+
+function withTranscriptText(transcript: Transcript, text: string): Transcript {
+  const normalizedText = normalizeTranscriptText(text);
+
+  return {
+    ...transcript,
+    text,
+    normalizedText,
+    language: detectLanguage(normalizedText)
   };
 }
 
