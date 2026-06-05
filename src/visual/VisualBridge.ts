@@ -118,6 +118,7 @@ export class VisualBridge implements VisualBridgeLike {
   private readonly writeLine: WriteLine;
   private readonly clients = new Set<WebSocketClient>();
   private readonly controlListeners: Array<(event: VisualControlEvent) => void> = [];
+  private latestSettings: Extract<VisualEvent, { type: "settings" }> | undefined;
   private server: Server | undefined;
   private bridgeUrl: string | undefined;
 
@@ -144,6 +145,9 @@ export class VisualBridge implements VisualBridgeLike {
             type: "state",
             state: "idle"
           });
+          if (this.latestSettings) {
+            readyClient.send(this.latestSettings);
+          }
         },
         onControl: (event) => this.handleControl(event),
         onClose: (closedClient) => this.clients.delete(closedClient)
@@ -185,6 +189,7 @@ export class VisualBridge implements VisualBridgeLike {
   }
 
   send(event: VisualEvent): void {
+    this.rememberSettings(event);
     const payload = serializeVisualEvent(event);
     for (const client of this.clients) {
       client.sendRaw(payload);
@@ -198,6 +203,19 @@ export class VisualBridge implements VisualBridgeLike {
   private handleControl(event: VisualControlEvent): void {
     this.writeLine(`[visual] control ${event.action}`);
     this.controlListeners.forEach((listener) => listener(event));
+  }
+
+  private rememberSettings(event: VisualEvent): void {
+    if (event.type !== "settings") return;
+
+    this.latestSettings = {
+      op: "voice-agent-ui",
+      type: "settings",
+      ...(this.latestSettings?.tts !== undefined ? { tts: { ...this.latestSettings.tts } } : {}),
+      ...(this.latestSettings?.wakePhrases !== undefined ? { wakePhrases: [...this.latestSettings.wakePhrases] } : {}),
+      ...(event.tts !== undefined ? { tts: { ...event.tts } } : {}),
+      ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {})
+    };
   }
 }
 

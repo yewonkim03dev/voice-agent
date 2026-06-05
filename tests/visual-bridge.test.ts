@@ -104,6 +104,16 @@ test("visual bridge parses allowed control events only", () => {
   assert.equal(parseVisualControlEvent("not-json"), null);
 });
 
+test("visual bridge replays latest settings to late visual clients", async () => {
+  const source = await readFile("src/visual/VisualBridge.ts", "utf8");
+
+  assert.match(source, /private latestSettings/u);
+  assert.match(source, /this\.rememberSettings\(event\)/u);
+  assert.match(source, /readyClient\.send\(this\.latestSettings\)/u);
+  assert.match(source, /event\.wakePhrases !== undefined/u);
+  assert.match(source, /event\.tts !== undefined/u);
+});
+
 test("visual bridge accepts websocket clients, sends events, and receives controls", async (context) => {
   const controls: VisualControlEvent[] = [];
   const bridge = new VisualBridge({
