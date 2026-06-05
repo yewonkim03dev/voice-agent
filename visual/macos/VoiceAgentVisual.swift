@@ -741,12 +741,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let settingsRateField = NSTextField(string: "0.56")
     private let settingsPitchField = NSTextField(string: "1.00")
     private let settingsVolumeField = NSTextField(string: "1.00")
+    private let settingsWakePhrasesView = NSTextView(frame: .zero)
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
     private var ttsVoiceName = ""
     private var ttsRate = 0.56
     private var ttsPitch = 1.0
     private var ttsVolume = 1.0
+    private var wakePhrases: [String] = []
 
     init(bridgeUrl: String) {
         self.bridgeUrl = bridgeUrl
@@ -892,7 +894,12 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         case "context":
             updateContext(event["entries"] as? [String] ?? [])
         case "settings":
-            updateTtsSettings(event["tts"] as? [String: Any] ?? [:])
+            if let tts = event["tts"] as? [String: Any] {
+                updateTtsSettings(tts)
+            }
+            if let phrases = event["wakePhrases"] as? [String] {
+                updateWakePhrases(phrases)
+            }
         default:
             break
         }
@@ -950,8 +957,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         ttsRate = clampedDouble(settingsRateField.stringValue, fallback: ttsRate, min: 0.1, max: 1)
         ttsPitch = clampedDouble(settingsPitchField.stringValue, fallback: ttsPitch, min: 0.5, max: 2)
         ttsVolume = clampedDouble(settingsVolumeField.stringValue, fallback: ttsVolume, min: 0, max: 1)
+        wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
         sendTtsSettings()
+        sendWakePhrases()
         settingsWindow?.close()
+    }
+
+    @objc private func resetSettings() {
+        sendControl("reset_settings")
     }
 
     @objc private func exitVisual() {
@@ -983,9 +996,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         syncSettingsControls()
     }
 
+    private func updateWakePhrases(_ phrases: [String]) {
+        wakePhrases = normalizedPhrases(phrases)
+        syncSettingsControls()
+    }
+
     private func makeSettingsWindow() -> NSWindow {
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 326),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 468),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -993,18 +1011,38 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Settings"
         window.isReleasedWhenClosed = false
 
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 326))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 468))
         window.contentView = view
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
 
-        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 258)
-        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 218)
-        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 178)
-        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 138)
-        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 98)
-        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 58)
+        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 398)
+        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 358)
+        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 318)
+        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 278)
+        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 238)
+        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 198)
+
+        let wakeLabel = NSTextField(labelWithString: "Wake")
+        wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
+        wakeLabel.frame = NSRect(x: 26, y: 160, width: 84, height: 20)
+        view.addSubview(wakeLabel)
+
+        let wakeScroll = NSScrollView(frame: NSRect(x: 118, y: 70, width: 230, height: 112))
+        wakeScroll.borderType = .bezelBorder
+        wakeScroll.hasVerticalScroller = true
+        settingsWakePhrasesView.isVerticallyResizable = true
+        settingsWakePhrasesView.isHorizontallyResizable = false
+        settingsWakePhrasesView.autoresizingMask = [.width]
+        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 230, height: 112)
+        settingsWakePhrasesView.font = NSFont.systemFont(ofSize: 13)
+        wakeScroll.documentView = settingsWakePhrasesView
+        view.addSubview(wakeScroll)
+
+        let reset = button("Restore Defaults", action: #selector(resetSettings))
+        reset.frame = NSRect(x: 26, y: 18, width: 150, height: 28)
+        view.addSubview(reset)
 
         let apply = button("Apply", action: #selector(applySettings))
         apply.frame = NSRect(x: 236, y: 18, width: 112, height: 28)
@@ -1029,6 +1067,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         settingsRateField.stringValue = String(format: "%.2f", ttsRate)
         settingsPitchField.stringValue = String(format: "%.2f", ttsPitch)
         settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
+        settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
     }
 
     private func sendTtsSettings() {
@@ -1044,6 +1083,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
                 "pitch": ttsPitch,
                 "volume": ttsVolume
             ]
+        ])
+    }
+
+    private func sendWakePhrases() {
+        sendPayload([
+            "op": "voice-agent-ui",
+            "type": "control",
+            "action": "update_wake_phrases",
+            "wakePhrases": wakePhrases
         ])
     }
 
@@ -1078,6 +1126,19 @@ private extension NSPopUpButton {
 private func clampedDouble(_ value: String, fallback: Double, min: Double, max: Double) -> Double {
     guard let parsed = Double(value) else { return fallback }
     return Swift.min(max, Swift.max(min, parsed))
+}
+
+private func normalizedPhrases(_ values: [String]) -> [String] {
+    var result: [String] = []
+    for rawValue in values {
+        for part in rawValue.components(separatedBy: CharacterSet(charactersIn: ",\n")) {
+            let phrase = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !phrase.isEmpty && !result.contains(phrase) {
+                result.append(phrase)
+            }
+        }
+    }
+    return result
 }
 
 func argumentValue(_ name: String, _ fallback: String = "") -> String {

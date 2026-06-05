@@ -168,7 +168,8 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly audioInput: AudioInput;
   private readonly wakeGate: AlwaysOnWakeGate;
   private readonly speechProcessor: SpeechProcessor;
-  private readonly wakePhrases: string[];
+  private readonly defaultWakePhrases: string[];
+  private wakePhrases: string[];
   private readonly writeLine: WriteLine;
   private readonly debug: boolean;
   private readonly echoGuard: EchoGuard;
@@ -195,7 +196,8 @@ export class AlwaysOnVoiceHarnessRunner {
     this.audioInput = options.audioInput;
     this.wakeGate = options.wakeGate;
     this.speechProcessor = options.speechProcessor;
-    this.wakePhrases = normalizedWakePhrases(options.wakePhrases);
+    this.defaultWakePhrases = normalizedWakePhrases(options.wakePhrases);
+    this.wakePhrases = [...this.defaultWakePhrases];
     this.writeLine = options.writeLine ?? noop;
     this.debug = options.debug ?? false;
     this.echoGuard = options.echoGuard ?? new EchoGuard();
@@ -206,6 +208,7 @@ export class AlwaysOnVoiceHarnessRunner {
       sendVisualContextEvent(options.visualBridge, entries)
     );
     bindVisualContextControls(this.textContext, options.visualBridge);
+    bindVisualWakeSettingsControls(this, options.visualBridge);
     this.manualRecorder = new UtteranceRecorder({
       now: this.now,
       createId: this.createId
@@ -219,6 +222,7 @@ export class AlwaysOnVoiceHarnessRunner {
     if (this.started) return;
 
     await this.terminalHarness.start();
+    this.sendVisualWakeSettings();
     await this.audioInput.start();
     this.started = true;
     this.writeLine("  Voice input: always-on wake listening enabled.");
@@ -441,6 +445,25 @@ export class AlwaysOnVoiceHarnessRunner {
 
   private clearWakeFollowUp(): void {
     this.wakeFollowUp = undefined;
+  }
+
+  updateWakePhrases(wakePhrases: readonly string[]): void {
+    this.wakePhrases = normalizedWakePhrases(wakePhrases);
+    this.clearWakeFollowUp();
+    this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ") || "(none)"}`);
+    this.sendVisualWakeSettings();
+  }
+
+  resetWakePhrases(): void {
+    this.updateWakePhrases(this.defaultWakePhrases);
+  }
+
+  private sendVisualWakeSettings(): void {
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      wakePhrases: [...this.wakePhrases]
+    });
   }
 
   private async routeSpeakingTranscript(transcript: Transcript): Promise<void> {
@@ -963,6 +986,22 @@ function bindVisualContextControls(textContext: SupplementalTextBuffer, visualBr
 
     if (event.action === "clear_context") {
       textContext.clear();
+    }
+  });
+}
+
+function bindVisualWakeSettingsControls(
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases">,
+  visualBridge: VisualBridgeLike | undefined
+): void {
+  visualBridge?.onControl((event) => {
+    if (event.action === "update_wake_phrases") {
+      runner.updateWakePhrases(event.wakePhrases ?? []);
+      return;
+    }
+
+    if (event.action === "reset_settings") {
+      runner.resetWakePhrases();
     }
   });
 }

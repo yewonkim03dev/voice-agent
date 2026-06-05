@@ -32,6 +32,7 @@ ApplicationWindow {
     property real ttsRate: 0.56
     property real ttsPitch: 1.0
     property real ttsVolume: 1.0
+    property var wakePhrases: []
 
     function argumentValue(name, fallback) {
         var args = Qt.application.arguments
@@ -72,8 +73,24 @@ ApplicationWindow {
                     volume: volumeSlider.value
                 }
             }))
+            socket.sendTextMessage(JSON.stringify({
+                op: "voice-agent-ui",
+                type: "control",
+                action: "update_wake_phrases",
+                wakePhrases: root.parseWakePhrases(wakeField.text)
+            }))
         }
         settingsOpen = false
+    }
+
+    function resetSettings() {
+        if (socket.status === WebSocket.Open) {
+            socket.sendTextMessage(JSON.stringify({
+                op: "voice-agent-ui",
+                type: "control",
+                action: "reset_settings"
+            }))
+        }
     }
 
     function indexOfValue(values, value) {
@@ -96,6 +113,30 @@ ApplicationWindow {
         if (rateSlider) rateSlider.value = root.ttsRate
         if (pitchSlider) pitchSlider.value = root.ttsPitch
         if (volumeSlider) volumeSlider.value = root.ttsVolume
+    }
+
+    function applyWakePhrases(phrases) {
+        root.wakePhrases = root.normalizedPhrases(phrases || [])
+        if (wakeField) wakeField.text = root.wakePhrases.join("\n")
+    }
+
+    function applyVisualSettings(event) {
+        if (event.tts) root.applyTtsSettings(event.tts)
+        if (event.wakePhrases) root.applyWakePhrases(event.wakePhrases)
+    }
+
+    function parseWakePhrases(text) {
+        return root.normalizedPhrases(text.split(/[,\n]/))
+    }
+
+    function normalizedPhrases(values) {
+        var result = []
+        for (var index = 0; index < values.length; index += 1) {
+            var phrase = String(values[index]).trim()
+            if (phrase.length === 0) continue
+            if (result.indexOf(phrase) === -1) result.push(phrase)
+        }
+        return result
     }
 
     function addContextFromInput() {
@@ -213,7 +254,7 @@ ApplicationWindow {
                 root.contextEntries = event.entries || []
                 if (root.contextEntries.length === 0) contextInput.text = ""
             } else if (event.type === "settings") {
-                root.applyTtsSettings(event.tts || {})
+                root.applyVisualSettings(event)
             }
         }
     }
@@ -659,8 +700,8 @@ ApplicationWindow {
             id: settingsPanel
             visible: root.settingsOpen
             anchors.centerIn: parent
-            width: Math.min(parent.width - 44, 430)
-            height: Math.min(parent.height - 80, 430)
+            width: Math.min(parent.width - 44, 460)
+            height: Math.min(parent.height - 80, 560)
             radius: 8
             color: "#0d131c"
             border.color: "#34445c"
@@ -786,10 +827,40 @@ ApplicationWindow {
                     stepSize: 0.01
                 }
 
-                Button {
+                Text {
+                    text: "Wake phrases"
+                    color: "#91a4bd"
+                }
+
+                ScrollView {
                     Layout.fillWidth: true
-                    text: "Apply"
-                    onClicked: root.sendSettings()
+                    Layout.preferredHeight: 92
+                    clip: true
+
+                    TextArea {
+                        id: wakeField
+                        text: root.wakePhrases.join("\n")
+                        placeholderText: "코덱스\n자비스\nhey jarvis"
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Restore Defaults"
+                        onClicked: root.resetSettings()
+                    }
+
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Apply"
+                        onClicked: root.sendSettings()
+                    }
                 }
             }
         }

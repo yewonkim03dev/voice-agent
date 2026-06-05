@@ -284,6 +284,75 @@ test("always-on voice runner routes a configured custom wake phrase", async () =
   assert.equal(speechProcessor.audio[0].data.byteLength, 0);
 });
 
+test("always-on voice runner updates wake phrases from visual settings", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "컴퓨터 테스트 돌려줘",
+        language: "ko"
+      },
+      {
+        text: "코덱스 다시 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      wakePhrases: ["코덱스"],
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  visualBridge.emitControl("update_wake_phrases", undefined, ["컴퓨터"]);
+  emitCandidate(audioInput, 1000);
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "settings" }> => event.type === "settings").at(-1)?.wakePhrases,
+    ["컴퓨터"]
+  );
+});
+
+test("always-on voice runner restores default wake phrases from visual settings", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "컴퓨터 테스트 돌려줘",
+        language: "ko"
+      },
+      {
+        text: "코덱스 다시 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      wakePhrases: ["코덱스"],
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  visualBridge.emitControl("update_wake_phrases", undefined, ["컴퓨터"]);
+  visualBridge.emitControl("reset_settings");
+  emitCandidate(audioInput, 1000);
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "다시 돌려줘");
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "settings" }> => event.type === "settings").at(-1)?.wakePhrases,
+    ["코덱스"]
+  );
+});
+
 test("always-on voice runner routes default Korean and English wake phrases", async () => {
   const visualBridge = new FakeVisualBridge();
   const { backend, runner, audioInput } = createAlwaysOnRunner(
@@ -1433,13 +1502,14 @@ class FakeVisualBridge implements VisualBridgeLike {
     this.controlListeners.push(callback);
   }
 
-  emitControl(action: VisualControlEvent["action"], text?: string): void {
+  emitControl(action: VisualControlEvent["action"], text?: string, wakePhrases?: string[]): void {
     this.controlListeners.forEach((listener) =>
       listener({
         op: "voice-agent-ui",
         type: "control",
         action,
-        ...(text ? { text } : {})
+        ...(text ? { text } : {}),
+        ...(wakePhrases ? { wakePhrases } : {})
       })
     );
   }

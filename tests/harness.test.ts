@@ -160,6 +160,48 @@ test("visual control update_tts_settings updates TTS runtime settings", async ()
   });
 });
 
+test("visual reset_settings restores default TTS runtime settings", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new TtsVoiceOutput({
+    provider: new BlockingTtsProvider(),
+    language: "ko",
+    voiceName: "Yuna",
+    gender: "female",
+    rate: 0.7,
+    pitch: 1.2,
+    volume: 0.5
+  });
+  const harness = new TerminalHarness({
+    voiceOutput,
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  visualBridge.emitControl("reset_settings");
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.getSettings(), {
+    language: "auto",
+    gender: "auto",
+    rate: 0.56,
+    pitch: 1,
+    volume: 1
+  });
+  assert.deepEqual(visualBridge.events.findLast((event) => event.type === "settings"), {
+    op: "voice-agent-ui",
+    type: "settings",
+    tts: {
+      language: "auto",
+      gender: "auto",
+      rate: 0.56,
+      pitch: 1,
+      volume: 1
+    }
+  });
+});
+
 test("visual exit control requests full harness shutdown", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];

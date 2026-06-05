@@ -930,6 +930,10 @@ export class TerminalHarness {
         return;
       case "add_context":
       case "clear_context":
+      case "update_wake_phrases":
+        return;
+      case "reset_settings":
+        this.resetTtsSettings();
         return;
       case "update_tts_settings":
         this.updateTtsSettings(event.tts ?? {});
@@ -1021,6 +1025,20 @@ export class TerminalHarness {
       op: "voice-agent-ui",
       type: "status",
       text: "TTS settings updated"
+    });
+  }
+
+  private resetTtsSettings(): void {
+    const applied = this.voiceOutput.updateSettings?.(defaultVisualTtsSettings()) ?? defaultVisualTtsSettings();
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      tts: visualTtsSettingsFromVoiceOutput(applied)
+    });
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "status",
+      text: "TTS settings restored"
     });
   }
 
@@ -1428,6 +1446,17 @@ function sanitizeVisualTtsSettings(settings: VisualTtsSettings): VisualTtsSettin
     ...(settings.rate !== undefined ? { rate: clamp(settings.rate, 0.1, 1) } : {}),
     ...(settings.pitch !== undefined ? { pitch: clamp(settings.pitch, 0.5, 2) } : {}),
     ...(settings.volume !== undefined ? { volume: clamp(settings.volume, 0, 1) } : {})
+  };
+}
+
+function defaultVisualTtsSettings(): VisualTtsSettings {
+  return {
+    language: "auto",
+    voiceName: "",
+    gender: "auto",
+    rate: 0.56,
+    pitch: 1,
+    volume: 1
   };
 }
 

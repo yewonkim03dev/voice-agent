@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import {
@@ -73,6 +75,17 @@ test("visual bridge parses allowed control events only", () => {
     op: "voice-agent-ui",
     type: "control",
     action: "emergency_stop"
+  });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"reset_settings"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "reset_settings"
+  });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_wake_phrases","wakePhrases":["코덱스","  자비스  ",""]}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "update_wake_phrases",
+    wakePhrases: ["코덱스", "자비스"]
   });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_tts_settings","tts":{"language":"ko","gender":"female","rate":0.61,"pitch":1.1,"volume":0.8,"voiceName":"Yuna"}}'), {
     op: "voice-agent-ui",
@@ -288,6 +301,10 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /emergency_stop/u);
   assert.match(qml, /Settings/u);
   assert.match(qml, /update_tts_settings/u);
+  assert.match(qml, /update_wake_phrases/u);
+  assert.match(qml, /reset_settings/u);
+  assert.match(qml, /Restore Defaults/u);
+  assert.match(qml, /Wake phrases/u);
   assert.match(qml, /languageBox/u);
   assert.match(qml, /genderBox/u);
   assert.match(qml, /rateSlider/u);
@@ -340,6 +357,10 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /emergency_stop/u);
   assert.match(swift, /Settings/u);
   assert.match(swift, /update_tts_settings/u);
+  assert.match(swift, /update_wake_phrases/u);
+  assert.match(swift, /reset_settings/u);
+  assert.match(swift, /Restore Defaults/u);
+  assert.match(swift, /settingsWakePhrasesView/u);
   assert.match(swift, /settingsLanguagePopup/u);
   assert.match(swift, /settingsGenderPopup/u);
   assert.match(swift, /settingsRateField/u);
@@ -353,9 +374,37 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);
 });
 
+test("macOS native companion typechecks with Swift", async (context) => {
+  if (process.platform !== "darwin") {
+    context.skip("Swift/AppKit typecheck is macOS-only");
+    return;
+  }
+
+  try {
+    await execFileAsync("swiftc", [
+      "-typecheck",
+      "visual/macos/VoiceAgentVisual.swift"
+    ], {
+      env: {
+        ...process.env,
+        CLANG_MODULE_CACHE_PATH: join(tmpdir(), "voice-agent-swift-module-cache")
+      }
+    });
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      context.skip("swiftc is not available");
+      return;
+    }
+
+    throw error;
+  }
+});
+
 class FakeChildProcess extends EventEmitter {
   unref(): void {}
 }
+
+const execFileAsync = promisify(execFile);
 
 async function connectWebSocket(url: string): Promise<Socket> {
   const parsed = new URL(url);
@@ -490,4 +539,8 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 function isListenPermissionError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "EPERM";
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

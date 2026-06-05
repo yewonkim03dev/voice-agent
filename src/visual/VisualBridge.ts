@@ -24,6 +24,8 @@ export type VisualControlAction =
   | "add_context"
   | "clear_context"
   | "emergency_stop"
+  | "reset_settings"
+  | "update_wake_phrases"
   | "update_tts_settings";
 
 export interface VisualTtsSettings {
@@ -86,7 +88,8 @@ export type VisualEvent =
   | {
       op: "voice-agent-ui";
       type: "settings";
-      tts: VisualTtsSettings;
+      tts?: VisualTtsSettings;
+      wakePhrases?: string[];
     };
 
 export interface VisualControlEvent {
@@ -95,6 +98,7 @@ export interface VisualControlEvent {
   action: VisualControlAction;
   text?: string;
   tts?: VisualTtsSettings;
+  wakePhrases?: string[];
 }
 
 export interface VisualBridgeLike {
@@ -218,6 +222,8 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "add_context" &&
     record.action !== "clear_context" &&
     record.action !== "emergency_stop" &&
+    record.action !== "reset_settings" &&
+    record.action !== "update_wake_phrases" &&
     record.action !== "update_tts_settings"
   ) {
     return null;
@@ -228,8 +234,16 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     type: "control",
     action: record.action,
     ...(typeof record.text === "string" ? { text: record.text } : {}),
-    ...(isRecord(record.tts) ? { tts: parseVisualTtsSettings(record.tts) } : {})
+    ...(isRecord(record.tts) ? { tts: parseVisualTtsSettings(record.tts) } : {}),
+    ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {})
   };
+}
+
+function parseWakePhrases(values: unknown[]): string[] {
+  return values
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
 function parseVisualTtsSettings(record: Record<string, unknown>): VisualTtsSettings {
