@@ -25,6 +25,13 @@ ApplicationWindow {
     property int visualDiameter: Math.round(Math.max(220, Math.min(width * (expandedLayout ? 0.78 : 0.84), height * (expandedLayout ? 0.60 : 0.48), height - commandPanelHeight - controlsHeight - 92, expandedLayout ? 720 : 360)))
     property var commands: []
     property var contextEntries: []
+    property bool settingsOpen: false
+    property string ttsLanguage: "auto"
+    property string ttsGender: "auto"
+    property string ttsVoiceName: ""
+    property real ttsRate: 0.56
+    property real ttsPitch: 1.0
+    property real ttsVolume: 1.0
 
     function argumentValue(name, fallback) {
         var args = Qt.application.arguments
@@ -48,6 +55,47 @@ ApplicationWindow {
         if (action === "clear_commands") commands = []
         if (action === "clear_context") contextEntries = []
         if (action === "exit") exitTimer.restart()
+    }
+
+    function sendSettings() {
+        if (socket.status === WebSocket.Open) {
+            socket.sendTextMessage(JSON.stringify({
+                op: "voice-agent-ui",
+                type: "control",
+                action: "update_tts_settings",
+                tts: {
+                    language: languageBox.currentText,
+                    gender: genderBox.currentText,
+                    voiceName: voiceField.text.trim(),
+                    rate: rateSlider.value,
+                    pitch: pitchSlider.value,
+                    volume: volumeSlider.value
+                }
+            }))
+        }
+        settingsOpen = false
+    }
+
+    function indexOfValue(values, value) {
+        for (var index = 0; index < values.length; index += 1) {
+            if (values[index] === value) return index
+        }
+        return 0
+    }
+
+    function applyTtsSettings(settings) {
+        root.ttsLanguage = settings.language || "auto"
+        root.ttsGender = settings.gender || "auto"
+        root.ttsVoiceName = settings.voiceName || ""
+        root.ttsRate = settings.rate === undefined ? 0.56 : settings.rate
+        root.ttsPitch = settings.pitch === undefined ? 1.0 : settings.pitch
+        root.ttsVolume = settings.volume === undefined ? 1.0 : settings.volume
+        if (languageBox) languageBox.currentIndex = root.indexOfValue(["auto", "ko", "en"], root.ttsLanguage)
+        if (genderBox) genderBox.currentIndex = root.indexOfValue(["auto", "female", "male"], root.ttsGender)
+        if (voiceField) voiceField.text = root.ttsVoiceName
+        if (rateSlider) rateSlider.value = root.ttsRate
+        if (pitchSlider) pitchSlider.value = root.ttsPitch
+        if (volumeSlider) volumeSlider.value = root.ttsVolume
     }
 
     function addContextFromInput() {
@@ -164,6 +212,8 @@ ApplicationWindow {
             } else if (event.type === "context") {
                 root.contextEntries = event.entries || []
                 if (root.contextEntries.length === 0) contextInput.text = ""
+            } else if (event.type === "settings") {
+                root.applyTtsSettings(event.tts || {})
             }
         }
     }
@@ -605,6 +655,145 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            id: settingsPanel
+            visible: root.settingsOpen
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 44, 430)
+            height: Math.min(parent.height - 80, 430)
+            radius: 8
+            color: "#0d131c"
+            border.color: "#34445c"
+            border.width: 1
+            z: 8
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Settings"
+                        color: "#f4f7fb"
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+
+                    Button {
+                        text: "Close"
+                        onClicked: root.settingsOpen = false
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text {
+                        text: "Language"
+                        color: "#91a4bd"
+                        Layout.preferredWidth: 76
+                    }
+
+                    ComboBox {
+                        id: languageBox
+                        Layout.fillWidth: true
+                        model: ["auto", "ko", "en"]
+                        currentIndex: root.indexOfValue(["auto", "ko", "en"], root.ttsLanguage)
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text {
+                        text: "Gender"
+                        color: "#91a4bd"
+                        Layout.preferredWidth: 76
+                    }
+
+                    ComboBox {
+                        id: genderBox
+                        Layout.fillWidth: true
+                        model: ["auto", "female", "male"]
+                        currentIndex: root.indexOfValue(["auto", "female", "male"], root.ttsGender)
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text {
+                        text: "Voice"
+                        color: "#91a4bd"
+                        Layout.preferredWidth: 76
+                    }
+
+                    TextField {
+                        id: voiceField
+                        Layout.fillWidth: true
+                        placeholderText: "Yuna, Samantha..."
+                        text: root.ttsVoiceName
+                        selectByMouse: true
+                    }
+                }
+
+                Text {
+                    text: "Rate " + rateSlider.value.toFixed(2)
+                    color: "#91a4bd"
+                }
+
+                Slider {
+                    id: rateSlider
+                    Layout.fillWidth: true
+                    from: 0.35
+                    to: 0.78
+                    value: root.ttsRate
+                    stepSize: 0.01
+                }
+
+                Text {
+                    text: "Pitch " + pitchSlider.value.toFixed(2)
+                    color: "#91a4bd"
+                }
+
+                Slider {
+                    id: pitchSlider
+                    Layout.fillWidth: true
+                    from: 0.7
+                    to: 1.4
+                    value: root.ttsPitch
+                    stepSize: 0.01
+                }
+
+                Text {
+                    text: "Volume " + volumeSlider.value.toFixed(2)
+                    color: "#91a4bd"
+                }
+
+                Slider {
+                    id: volumeSlider
+                    Layout.fillWidth: true
+                    from: 0.2
+                    to: 1.0
+                    value: root.ttsVolume
+                    stepSize: 0.01
+                }
+
+                Button {
+                    Layout.fillWidth: true
+                    text: "Apply"
+                    onClicked: root.sendSettings()
+                }
+            }
+        }
+
         RowLayout {
             id: controls
             anchors.left: parent.left
@@ -615,12 +804,17 @@ ApplicationWindow {
 
             Button {
                 Layout.fillWidth: true
+                text: "Settings"
+                onClicked: root.settingsOpen = !root.settingsOpen
+            }
+            Button {
+                Layout.fillWidth: true
                 text: "TTS Stop"
                 onClicked: root.sendControl("tts_stop")
             }
             Button {
                 Layout.fillWidth: true
-                text: "Clear"
+                text: "Clear Cmds"
                 onClicked: root.sendControl("clear_commands")
             }
             Button {

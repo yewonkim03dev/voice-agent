@@ -69,6 +69,19 @@ test("visual bridge parses allowed control events only", () => {
     action: "add_context",
     text: "README 참고"
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_tts_settings","tts":{"language":"ko","gender":"female","rate":0.61,"pitch":1.1,"volume":0.8,"voiceName":"Yuna"}}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "update_tts_settings",
+    tts: {
+      language: "ko",
+      gender: "female",
+      rate: 0.61,
+      pitch: 1.1,
+      volume: 0.8,
+      voiceName: "Yuna"
+    }
+  });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
   assert.equal(parseVisualControlEvent("not-json"), null);
 });
@@ -266,6 +279,13 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Text\.ElideNone/u);
   assert.doesNotMatch(qml, /Layout\.fillHeight: true\s*\n\s*radius: 8/u);
   assert.match(qml, /TTS Stop/u);
+  assert.match(qml, /Settings/u);
+  assert.match(qml, /update_tts_settings/u);
+  assert.match(qml, /languageBox/u);
+  assert.match(qml, /genderBox/u);
+  assert.match(qml, /rateSlider/u);
+  assert.match(qml, /pitchSlider/u);
+  assert.match(qml, /volumeSlider/u);
   assert.match(qml, /Commands/u);
   assert.match(qml, /References/u);
   assert.match(qml, /add_context/u);
@@ -309,6 +329,13 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /\.now\(\) \+ 3\.6/u);
   assert.doesNotMatch(swift, /greaterThanOrEqualToConstant:\s*180/u);
   assert.match(swift, /TTS Stop/u);
+  assert.match(swift, /Settings/u);
+  assert.match(swift, /update_tts_settings/u);
+  assert.match(swift, /settingsLanguagePopup/u);
+  assert.match(swift, /settingsGenderPopup/u);
+  assert.match(swift, /settingsRateField/u);
+  assert.match(swift, /settingsPitchField/u);
+  assert.match(swift, /settingsVolumeField/u);
   assert.match(swift, /Clear Cmds/u);
   assert.match(swift, /References/u);
   assert.match(swift, /add_context/u);

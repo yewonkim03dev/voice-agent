@@ -734,6 +734,19 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private var webSocket: URLSessionWebSocketTask?
     private var commands: [String] = []
     private var contextEntries: [String] = []
+    private var settingsWindow: NSWindow?
+    private let settingsLanguagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsGenderPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsVoiceField = NSTextField(string: "")
+    private let settingsRateField = NSTextField(string: "0.56")
+    private let settingsPitchField = NSTextField(string: "1.00")
+    private let settingsVolumeField = NSTextField(string: "1.00")
+    private var ttsLanguage = "auto"
+    private var ttsGender = "auto"
+    private var ttsVoiceName = ""
+    private var ttsRate = 0.56
+    private var ttsPitch = 1.0
+    private var ttsVolume = 1.0
 
     init(bridgeUrl: String) {
         self.bridgeUrl = bridgeUrl
@@ -756,6 +769,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildContentView() -> NSView {
         let controls = NSStackView()
+        controls.addArrangedSubview(button("Settings", action: #selector(showSettings)))
         controls.addArrangedSubview(button("TTS Stop", action: #selector(stopTts)))
         controls.addArrangedSubview(button("Clear Cmds", action: #selector(clearCommands)))
         controls.addArrangedSubview(button("Exit", action: #selector(exitVisual)))
@@ -858,6 +872,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             circleView.statusText = event["text"] as? String ?? "approval pending"
         case "context":
             updateContext(event["entries"] as? [String] ?? [])
+        case "settings":
+            updateTtsSettings(event["tts"] as? [String: Any] ?? [:])
         default:
             break
         }
@@ -895,6 +911,26 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         sendControl("clear_context")
     }
 
+    @objc private func showSettings() {
+        if settingsWindow == nil {
+            settingsWindow = makeSettingsWindow()
+        }
+        syncSettingsControls()
+        settingsWindow?.center()
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func applySettings() {
+        ttsLanguage = settingsLanguagePopup.titleOfSelectedItem ?? "auto"
+        ttsGender = settingsGenderPopup.titleOfSelectedItem ?? "auto"
+        ttsVoiceName = settingsVoiceField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        ttsRate = clampedDouble(settingsRateField.stringValue, fallback: ttsRate, min: 0.1, max: 1)
+        ttsPitch = clampedDouble(settingsPitchField.stringValue, fallback: ttsPitch, min: 0.5, max: 2)
+        ttsVolume = clampedDouble(settingsVolumeField.stringValue, fallback: ttsVolume, min: 0, max: 1)
+        sendTtsSettings()
+        settingsWindow?.close()
+    }
+
     @objc private func exitVisual() {
         sendControl("exit")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
@@ -914,8 +950,82 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         contextSummary.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.40, alpha: 1)
     }
 
+    private func updateTtsSettings(_ settings: [String: Any]) {
+        ttsLanguage = settings["language"] as? String ?? ttsLanguage
+        ttsGender = settings["gender"] as? String ?? ttsGender
+        ttsVoiceName = settings["voiceName"] as? String ?? ttsVoiceName
+        ttsRate = settings["rate"] as? Double ?? ttsRate
+        ttsPitch = settings["pitch"] as? Double ?? ttsPitch
+        ttsVolume = settings["volume"] as? Double ?? ttsVolume
+        syncSettingsControls()
+    }
+
+    private func makeSettingsWindow() -> NSWindow {
+        let window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 326),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Settings"
+        window.isReleasedWhenClosed = false
+
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 326))
+        window.contentView = view
+
+        settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
+        settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
+
+        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 258)
+        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 218)
+        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 178)
+        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 138)
+        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 98)
+        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 58)
+
+        let apply = button("Apply", action: #selector(applySettings))
+        apply.frame = NSRect(x: 236, y: 18, width: 112, height: 28)
+        view.addSubview(apply)
+
+        return window
+    }
+
+    private func addSettingsRow(_ view: NSView, label: String, control: NSView, y: CGFloat) {
+        let labelView = NSTextField(labelWithString: label)
+        labelView.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
+        labelView.frame = NSRect(x: 26, y: y + 4, width: 84, height: 20)
+        control.frame = NSRect(x: 118, y: y, width: 230, height: 26)
+        view.addSubview(labelView)
+        view.addSubview(control)
+    }
+
+    private func syncSettingsControls() {
+        settingsLanguagePopup.selectItem(withTitle: ttsLanguage)
+        settingsGenderPopup.selectItem(withTitle: ttsGender)
+        settingsVoiceField.stringValue = ttsVoiceName
+        settingsRateField.stringValue = String(format: "%.2f", ttsRate)
+        settingsPitchField.stringValue = String(format: "%.2f", ttsPitch)
+        settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
+    }
+
+    private func sendTtsSettings() {
+        sendPayload([
+            "op": "voice-agent-ui",
+            "type": "control",
+            "action": "update_tts_settings",
+            "tts": [
+                "language": ttsLanguage,
+                "gender": ttsGender,
+                "voiceName": ttsVoiceName,
+                "rate": ttsRate,
+                "pitch": ttsPitch,
+                "volume": ttsVolume
+            ]
+        ])
+    }
+
     private func sendControl(_ action: String, text: String? = nil) {
-        var payload: [String: String] = [
+        var payload: [String: Any] = [
             "op": "voice-agent-ui",
             "type": "control",
             "action": action
@@ -923,13 +1033,28 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         if let text {
             payload["text"] = text
         }
+        sendPayload(payload)
+    }
+
+    private func sendPayload(_ payload: [String: Any]) {
         guard
             let data = try? JSONSerialization.data(withJSONObject: payload),
             let text = String(data: data, encoding: .utf8)
         else { return }
-
         webSocket?.send(.string(text)) { _ in }
     }
+}
+
+private extension NSPopUpButton {
+    func addItemsIfNeeded(_ titles: [String]) {
+        if numberOfItems > 0 { return }
+        addItems(withTitles: titles)
+    }
+}
+
+private func clampedDouble(_ value: String, fallback: Double, min: Double, max: Double) -> Double {
+    guard let parsed = Double(value) else { return fallback }
+    return Swift.min(max, Swift.max(min, parsed))
 }
 
 func argumentValue(_ name: String, _ fallback: String = "") -> String {

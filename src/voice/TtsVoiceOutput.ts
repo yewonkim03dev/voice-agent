@@ -1,5 +1,5 @@
 import type { VoiceMessage } from "./VoiceMessage.ts";
-import type { InspectableVoiceOutput } from "./ConsoleVoiceOutput.ts";
+import type { InspectableVoiceOutput, VoiceOutputSettings } from "./ConsoleVoiceOutput.ts";
 import type { TtsGender, TtsLanguage, TtsProvider } from "./TtsProvider.ts";
 
 type WriteLine = (line: string) => void;
@@ -21,12 +21,12 @@ export class TtsVoiceOutput implements InspectableVoiceOutput {
 
   private readonly provider: TtsProvider;
   private readonly writeLine: WriteLine;
-  private readonly language: TtsLanguage;
-  private readonly voiceName: string | undefined;
-  private readonly gender: TtsGender;
-  private readonly rate: number;
-  private readonly pitch: number | undefined;
-  private readonly volume: number | undefined;
+  private language: TtsLanguage;
+  private voiceName: string | undefined;
+  private gender: TtsGender;
+  private rate: number;
+  private pitch: number | undefined;
+  private volume: number | undefined;
   private readonly maxChunkLength: number;
   private readonly finishedListeners: Array<(id: string) => void> = [];
   private queue: Promise<void> = Promise.resolve();
@@ -74,6 +74,27 @@ export class TtsVoiceOutput implements InspectableVoiceOutput {
 
   onFinished(callback: (id: string) => void): void {
     this.finishedListeners.push(callback);
+  }
+
+  getSettings(): VoiceOutputSettings {
+    return {
+      language: this.language,
+      ...(this.voiceName ? { voiceName: this.voiceName } : {}),
+      gender: this.gender,
+      rate: this.rate,
+      ...(this.pitch !== undefined ? { pitch: this.pitch } : {}),
+      ...(this.volume !== undefined ? { volume: this.volume } : {})
+    };
+  }
+
+  updateSettings(settings: VoiceOutputSettings): VoiceOutputSettings {
+    if (settings.language !== undefined) this.language = settings.language;
+    if (settings.voiceName !== undefined) this.voiceName = settings.voiceName || undefined;
+    if (settings.gender !== undefined) this.gender = settings.gender;
+    if (settings.rate !== undefined) this.rate = clamp(settings.rate, 0.1, 1);
+    if (settings.pitch !== undefined) this.pitch = clamp(settings.pitch, 0.5, 2);
+    if (settings.volume !== undefined) this.volume = clamp(settings.volume, 0, 1);
+    return this.getSettings();
   }
 
   private async speakQueued(message: VoiceMessage, generation: number): Promise<void> {
@@ -147,3 +168,7 @@ function formatError(error: unknown): string {
 }
 
 function noop(_line: string): void {}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}

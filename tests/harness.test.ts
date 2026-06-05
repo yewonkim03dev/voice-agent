@@ -89,6 +89,51 @@ test("visual control tts_stop stops current voice output", async () => {
   assert.equal(voiceOutput.stopCount, 1);
 });
 
+test("visual control update_tts_settings updates TTS runtime settings", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new TtsVoiceOutput({
+    provider: new BlockingTtsProvider()
+  });
+  const harness = new TerminalHarness({
+    voiceOutput,
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  visualBridge.emitControl("update_tts_settings", {
+    language: "ko",
+    gender: "female",
+    voiceName: "Yuna",
+    rate: 0.62,
+    pitch: 1.1,
+    volume: 0.8
+  });
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.getSettings(), {
+    language: "ko",
+    voiceName: "Yuna",
+    gender: "female",
+    rate: 0.62,
+    pitch: 1.1,
+    volume: 0.8
+  });
+  assert.deepEqual(visualBridge.events.findLast((event) => event.type === "settings"), {
+    op: "voice-agent-ui",
+    type: "settings",
+    tts: {
+      language: "ko",
+      voiceName: "Yuna",
+      gender: "female",
+      rate: 0.62,
+      pitch: 1.1,
+      volume: 0.8
+    }
+  });
+});
+
 test("visual exit control requests full harness shutdown", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
@@ -804,12 +849,13 @@ class FakeVisualBridge implements VisualBridgeLike {
     this.controlListeners.push(callback);
   }
 
-  emitControl(action: VisualControlEvent["action"]): void {
+  emitControl(action: VisualControlEvent["action"], tts?: VisualControlEvent["tts"]): void {
     this.controlListeners.forEach((listener) =>
       listener({
         op: "voice-agent-ui",
         type: "control",
-        action
+        action,
+        ...(tts ? { tts } : {})
       })
     );
   }

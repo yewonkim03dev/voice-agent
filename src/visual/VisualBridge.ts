@@ -17,7 +17,22 @@ export type VisualUiState =
   | "error"
   | "shutdown";
 
-export type VisualControlAction = "tts_stop" | "exit" | "clear_commands" | "add_context" | "clear_context";
+export type VisualControlAction =
+  | "tts_stop"
+  | "exit"
+  | "clear_commands"
+  | "add_context"
+  | "clear_context"
+  | "update_tts_settings";
+
+export interface VisualTtsSettings {
+  language?: "ko" | "en" | "auto";
+  voiceName?: string;
+  gender?: "male" | "female" | "auto";
+  rate?: number;
+  pitch?: number;
+  volume?: number;
+}
 
 export type VisualEvent =
   | {
@@ -66,6 +81,11 @@ export type VisualEvent =
       op: "voice-agent-ui";
       type: "context";
       entries: string[];
+    }
+  | {
+      op: "voice-agent-ui";
+      type: "settings";
+      tts: VisualTtsSettings;
     };
 
 export interface VisualControlEvent {
@@ -73,6 +93,7 @@ export interface VisualControlEvent {
   type: "control";
   action: VisualControlAction;
   text?: string;
+  tts?: VisualTtsSettings;
 }
 
 export interface VisualBridgeLike {
@@ -194,7 +215,8 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "exit" &&
     record.action !== "clear_commands" &&
     record.action !== "add_context" &&
-    record.action !== "clear_context"
+    record.action !== "clear_context" &&
+    record.action !== "update_tts_settings"
   ) {
     return null;
   }
@@ -203,8 +225,32 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     op: "voice-agent-ui",
     type: "control",
     action: record.action,
-    ...(typeof record.text === "string" ? { text: record.text } : {})
+    ...(typeof record.text === "string" ? { text: record.text } : {}),
+    ...(isRecord(record.tts) ? { tts: parseVisualTtsSettings(record.tts) } : {})
   };
+}
+
+function parseVisualTtsSettings(record: Record<string, unknown>): VisualTtsSettings {
+  return {
+    ...(isVisualLanguage(record.language) ? { language: record.language } : {}),
+    ...(typeof record.voiceName === "string" ? { voiceName: record.voiceName } : {}),
+    ...(isVisualGender(record.gender) ? { gender: record.gender } : {}),
+    ...(typeof record.rate === "number" && Number.isFinite(record.rate) ? { rate: record.rate } : {}),
+    ...(typeof record.pitch === "number" && Number.isFinite(record.pitch) ? { pitch: record.pitch } : {}),
+    ...(typeof record.volume === "number" && Number.isFinite(record.volume) ? { volume: record.volume } : {})
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isVisualLanguage(value: unknown): value is NonNullable<VisualTtsSettings["language"]> {
+  return value === "ko" || value === "en" || value === "auto";
+}
+
+function isVisualGender(value: unknown): value is NonNullable<VisualTtsSettings["gender"]> {
+  return value === "male" || value === "female" || value === "auto";
 }
 
 interface WebSocketClientOptions {

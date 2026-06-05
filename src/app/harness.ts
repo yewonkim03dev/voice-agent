@@ -44,7 +44,13 @@ import {
 import type { VoiceMessage } from "../voice/VoiceMessage.ts";
 import type { SpawnTtsProcess } from "../voice/MacosAppleTtsProvider.ts";
 import { TtsPlaybackState } from "../voice/TtsPlaybackState.ts";
-import type { VisualBridgeLike, VisualControlEvent, VisualEvent, VisualUiState } from "../visual/VisualBridge.ts";
+import type {
+  VisualBridgeLike,
+  VisualControlEvent,
+  VisualEvent,
+  VisualTtsSettings,
+  VisualUiState
+} from "../visual/VisualBridge.ts";
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
 import { createCodexThreadStore } from "./codex-thread-config.ts";
 
@@ -273,7 +279,7 @@ export class TerminalHarness {
       this.restoreVisualStateAfterSpeech();
     });
     this.visualBridge?.onControl((event) => {
-      void this.handleVisualControl(event.action);
+      void this.handleVisualControl(event);
     });
 
     if (this.routingMode === "runtime") {
@@ -305,6 +311,7 @@ export class TerminalHarness {
       type: "state",
       state: "idle"
     });
+    this.sendVisualTtsSettings();
     this.printStartupBanner();
     if (this.runtime) {
       this.writeLine("  Type text to send a transcript, or /status, /permission <command>, /complete, /error <message>, /tts-stop, /quit.");
@@ -906,8 +913,8 @@ export class TerminalHarness {
     );
   }
 
-  private async handleVisualControl(action: VisualControlEvent["action"]): Promise<void> {
-    switch (action) {
+  private async handleVisualControl(event: VisualControlEvent): Promise<void> {
+    switch (event.action) {
       case "tts_stop":
         await this.stopVoiceOutput();
         return;
@@ -920,6 +927,9 @@ export class TerminalHarness {
         return;
       case "add_context":
       case "clear_context":
+        return;
+      case "update_tts_settings":
+        this.updateTtsSettings(event.tts ?? {});
         return;
       case "exit":
         await this.requestExit();
@@ -943,6 +953,33 @@ export class TerminalHarness {
 
   sendVisualEvent(event: VisualEvent): void {
     this.visualBridge?.send(event);
+  }
+
+  private sendVisualTtsSettings(): void {
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      tts: this.currentVisualTtsSettings()
+    });
+  }
+
+  private updateTtsSettings(settings: VisualTtsSettings): void {
+    const sanitized = sanitizeVisualTtsSettings(settings);
+    const applied = this.voiceOutput.updateSettings?.(sanitized) ?? sanitized;
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      tts: visualTtsSettingsFromVoiceOutput(applied)
+    });
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "status",
+      text: "TTS settings updated"
+    });
+  }
+
+  private currentVisualTtsSettings(): VisualTtsSettings {
+    return visualTtsSettingsFromVoiceOutput(this.voiceOutput.getSettings?.() ?? {});
   }
 
   private sendVisualState(state: VisualUiState, text?: string): void {
@@ -1335,6 +1372,32 @@ function parseRequiredNumber(value: string, option: string): number {
   const parsed = parseOptionalNumber(value);
   if (parsed === undefined) throw new Error(`${option} requires a numeric value.`);
   return parsed;
+}
+
+function sanitizeVisualTtsSettings(settings: VisualTtsSettings): VisualTtsSettings {
+  return {
+    ...(settings.language ? { language: settings.language } : {}),
+    ...(settings.voiceName !== undefined ? { voiceName: settings.voiceName.trim() } : {}),
+    ...(settings.gender ? { gender: settings.gender } : {}),
+    ...(settings.rate !== undefined ? { rate: clamp(settings.rate, 0.1, 1) } : {}),
+    ...(settings.pitch !== undefined ? { pitch: clamp(settings.pitch, 0.5, 2) } : {}),
+    ...(settings.volume !== undefined ? { volume: clamp(settings.volume, 0, 1) } : {})
+  };
+}
+
+function visualTtsSettingsFromVoiceOutput(settings: VisualTtsSettings): VisualTtsSettings {
+  return {
+    language: settings.language ?? "auto",
+    ...(settings.voiceName ? { voiceName: settings.voiceName } : {}),
+    gender: settings.gender ?? "auto",
+    rate: settings.rate ?? 0.56,
+    ...(settings.pitch !== undefined ? { pitch: settings.pitch } : { pitch: 1 }),
+    ...(settings.volume !== undefined ? { volume: settings.volume } : { volume: 1 })
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["intent"]): PermissionDecision["scope"] {

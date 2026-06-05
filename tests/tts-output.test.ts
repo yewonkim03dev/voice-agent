@@ -147,6 +147,36 @@ test("TtsVoiceOutput applies voice, rate, gender, pitch, and volume config", asy
   });
 });
 
+test("TtsVoiceOutput updates runtime settings for later speech", async () => {
+  const provider = new FakeTtsProvider();
+  const output = new TtsVoiceOutput({
+    provider,
+    language: "auto",
+    gender: "auto",
+    rate: 0.56
+  });
+
+  output.updateSettings({
+    language: "ko",
+    voiceName: "Yuna",
+    gender: "female",
+    rate: 0.63,
+    pitch: 1.08,
+    volume: 0.82
+  });
+  await output.speak(message("Hello.", "en", "status"));
+
+  assert.deepEqual(provider.requests[0], {
+    text: "Hello.",
+    language: "ko",
+    voiceName: "Yuna",
+    gender: "female",
+    rate: 0.63,
+    pitch: 1.08,
+    volume: 0.82
+  });
+});
+
 test("TtsVoiceOutput queues normal speech without overlap", async () => {
   const provider = new BlockingTtsProvider();
   const output = new TtsVoiceOutput({
