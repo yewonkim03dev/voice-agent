@@ -71,13 +71,19 @@ final class AgentCircleView: NSView {
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 17, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 15, weight: .medium),
             .foregroundColor: NSColor(calibratedRed: 0.86, green: 0.89, blue: 0.94, alpha: 1),
             .paragraphStyle: paragraph
         ]
-        let textRect = NSRect(x: 24, y: 18, width: bounds.width - 48, height: 28)
-        statusText.draw(in: textRect, withAttributes: attrs)
+        let textHeight = min(max(bounds.height * 0.18, 56), 78)
+        let textRect = NSRect(x: 24, y: 16, width: bounds.width - 48, height: textHeight)
+        (statusText as NSString).draw(
+            with: textRect,
+            options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+            attributes: attrs
+        )
     }
 
     private func stateColor() -> NSColor {

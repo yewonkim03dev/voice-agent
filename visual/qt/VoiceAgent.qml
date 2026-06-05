@@ -407,14 +407,19 @@ ApplicationWindow {
         Text {
             id: statusLabel
             anchors.horizontalCenter: parent.horizontalCenter
-            y: Math.max(0, Math.min(waveform.y + waveform.height + 12, commandPanel.y - height - 8))
+            y: Math.max(0, Math.min(waveform.y + waveform.height + 10, commandPanel.y - height - 10))
             width: parent.width
-            height: implicitHeight
+            height: Math.min(implicitHeight + 8, Math.max(32, commandPanel.y - waveform.y - waveform.height - 20))
             horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.WordWrap
+            maximumLineCount: 3
             elide: Text.ElideRight
             text: root.statusText
             color: "#d9e2ef"
-            font.pixelSize: 17
+            font.pixelSize: 16
+            lineHeight: 1.12
+            lineHeightMode: Text.ProportionalHeight
         }
 
         Rectangle {

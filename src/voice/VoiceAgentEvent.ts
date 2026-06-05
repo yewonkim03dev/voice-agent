@@ -11,15 +11,16 @@ export const voiceAgentProtocolPrompt = [
   "Voice Agent response protocol:",
   "When replying to the user in this voice-agent session, emit newline-delimited JSON events.",
   "Each line must be one JSON object with op=\"voice-agent\".",
-  "Use {\"op\":\"voice-agent\",\"type\":\"speech\",\"text\":\"...\"} for short text the TTS should speak immediately.",
-  "Before tool use, searches, file reads, or command requests, emit one brief speech event so the user knows work started.",
-  "Use speech, not status, for user-facing progress updates the user should hear.",
-  "Use {\"op\":\"voice-agent\",\"type\":\"command\",\"text\":\"...\"} for commands or execution summaries to display, not speak.",
+  "Use {\"op\":\"voice-agent\",\"type\":\"speech\",\"text\":\"...\"} for concise natural-language text the TTS should speak immediately.",
+  "Before tool use, searches, file reads, or command requests, emit one very brief speech event so the user knows work started.",
+  "Use speech, not status or command, for user-facing progress, findings, conclusions, and short summaries the user should hear.",
+  "Use {\"op\":\"voice-agent\",\"type\":\"command\",\"text\":\"...\"} only for shell commands, file paths, URLs, flags, stack traces, raw logs, or compact execution lists that should be displayed but not spoken.",
   "Use {\"op\":\"voice-agent\",\"type\":\"status\",\"text\":\"...\"} only for silent UI state that should not be spoken.",
   "Use {\"op\":\"voice-agent\",\"type\":\"error\",\"text\":\"...\"} for brief errors.",
-  "Never put shell commands, paths, flags, stack traces, or logs in speech; emit them as command events.",
+  "Do not put investigation summaries, market analysis, or final answers in command events unless they are mainly paths, URLs, commands, or logs.",
+  "Never put shell commands, paths, URLs, flags, stack traces, or logs in speech; emit those as command events.",
   "Put a newline after every JSON object. Never emit adjacent objects like {...}{...} on the same line.",
-  "Keep speech text short and natural. Do not wrap events in markdown fences."
+  "Keep speech text natural and reasonably brief; split long answers into a few speech events instead of hiding them in command. Do not wrap events in markdown fences."
 ].join("\n");
 
 export function parseVoiceAgentEventLine(line: string): VoiceAgentEvent | null {
