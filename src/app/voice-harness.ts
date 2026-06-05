@@ -467,11 +467,7 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private sendBargeIgnoredVisualState(): void {
-    this.terminalHarness.sendVisualEvent({
-      op: "voice-agent-ui",
-      type: "state",
-      state: this.terminalHarness.ttsPlaybackState.isSpeaking() ? "speaking" : "idle"
-    });
+    this.terminalHarness.restoreCurrentVisualState();
   }
 
   private releaseAudio(audio: UtteranceAudio, source: "candidate" | "manual"): void {

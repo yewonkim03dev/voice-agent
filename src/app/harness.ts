@@ -366,12 +366,21 @@ export class TerminalHarness {
   async stopVoiceOutput(): Promise<void> {
     this.ttsPlaybackState.recordStopped(this.now());
     await this.voiceOutput.stop();
-    this.sendVisualEvent({
-      op: "voice-agent-ui",
-      type: "state",
-      state: "idle",
-      text: "tts stopped"
-    });
+    this.restoreCurrentVisualState();
+  }
+
+  restoreCurrentVisualState(): void {
+    if (this.ttsPlaybackState.isSpeaking()) {
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "speaking",
+        ...(this.lastSpokenText ? { text: this.lastSpokenText } : {})
+      });
+      return;
+    }
+
+    this.sendVisualState(this.currentVisualState());
   }
 
   private bindPassthroughBackend(): void {
@@ -679,17 +688,7 @@ export class TerminalHarness {
   }
 
   private restoreVisualStateAfterSpeech(): void {
-    if (this.ttsPlaybackState.isSpeaking()) {
-      this.sendVisualEvent({
-        op: "voice-agent-ui",
-        type: "state",
-        state: "speaking",
-        ...(this.lastSpokenText ? { text: this.lastSpokenText } : {})
-      });
-      return;
-    }
-
-    this.sendVisualState(this.currentVisualStateAfterSpeech());
+    this.restoreCurrentVisualState();
   }
 
   private scheduleSpeak(text: string, category: VoiceMessage["category"]): void {
@@ -880,7 +879,9 @@ export class TerminalHarness {
   }
 
   private sendVisualState(state: VisualUiState, text?: string): void {
-    if (state !== "speaking" && state !== "shutdown" && this.ttsPlaybackState.isSpeaking()) {
+    const visualState = state === "idle" && this.isAgentRequestActive() ? this.currentVisualState() : state;
+
+    if (visualState !== "speaking" && visualState !== "shutdown" && this.ttsPlaybackState.isSpeaking()) {
       this.sendVisualEvent({
         op: "voice-agent-ui",
         type: "state",
@@ -893,20 +894,24 @@ export class TerminalHarness {
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "state",
-      state,
+      state: visualState,
       ...(text ? { text } : {})
     });
   }
 
-  private currentVisualStateAfterSpeech(): VisualUiState {
+  currentVisualState(): VisualUiState {
     if (this.runtime) {
       const context = this.runtime.getContext();
       if (context.pendingPermission) return "approval_pending";
-      return statusToVisualState(context.codexStatus.task);
+      const statusState = statusToVisualState(context.codexStatus.task);
+      if (statusState !== "idle") return statusState;
+      return runtimeStateToVisualState(context.state);
     }
 
     if (this.pendingPermission) return "approval_pending";
-    return statusToVisualState(this.codexStatus.task);
+    const statusState = statusToVisualState(this.codexStatus.task);
+    if (statusState !== "idle") return statusState;
+    return runtimeStateToVisualState(this.passthroughState);
   }
 
   private printStartupBanner(): void {
@@ -1279,6 +1284,32 @@ function statusToVisualState(task: CodexStatus["task"]): VisualUiState {
     case "waiting_permission":
       return "approval_pending";
     case "idle":
+    default:
+      return "idle";
+  }
+}
+
+function runtimeStateToVisualState(state: AgentState): VisualUiState {
+  switch (state) {
+    case "TRANSCRIBING":
+      return "stt_processing";
+    case "EXECUTING":
+      return "submitting";
+    case "THINKING":
+    case "WAITING_CODEX":
+    case "INTERRUPTING":
+      return "thinking";
+    case "CONFIRMING":
+      return "approval_pending";
+    case "SPEAKING":
+      return "speaking";
+    case "ERROR":
+      return "error";
+    case "SHUTDOWN":
+      return "shutdown";
+    case "BOOTING":
+    case "IDLE":
+    case "LISTENING":
     default:
       return "idle";
   }

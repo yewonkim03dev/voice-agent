@@ -730,6 +730,7 @@ test("always-on voice runner ignores non-wake speech during TTS", async () => {
       }
     ],
     {
+      voiceOutput: new InspectableTestVoiceOutput(),
       visualBridge
     }
   );
@@ -742,7 +743,50 @@ test("always-on voice runner ignores non-wake speech during TTS", async () => {
 
   assert.equal(backend.prompts.length, 0);
   assert.ok(logs.includes("[barge:ignored] reason=no_wake"));
-  assert.equal(lastStateEvent(visualBridge.events)?.state, "idle");
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "speaking");
+
+  await runner.stop();
+});
+
+test("always-on voice runner keeps thinking after recent non-wake speech during active request", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new AutoFinishVoiceOutput();
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 원달러 환율 확인해줘",
+        language: "ko"
+      },
+      {
+        text: "원 달러",
+        language: "ko"
+      }
+    ],
+    {
+      voiceOutput,
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+
+  const eventsAfterSubmit = visualBridge.events.length;
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
+
+  emitAgentSpeech(backend, "원달러 환율 기준으로 원인을 확인해 볼게요.");
+  await flushAsync();
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
+
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+
+  const laterStates = visualBridge.events.slice(eventsAfterSubmit).filter(isStateEvent);
+  assert.ok(logs.includes("[barge:ignored] reason=no_wake"));
+  assert.equal(laterStates.some((event) => event.state === "idle"), false);
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
 
   await runner.stop();
 });
@@ -1300,6 +1344,22 @@ class InspectableTestVoiceOutput implements VoiceOutput {
       this.finishedListeners.forEach((listener) => listener(last.id));
     }
   }
+
+  onFinished(callback: (id: string) => void): void {
+    this.finishedListeners.push(callback);
+  }
+}
+
+class AutoFinishVoiceOutput implements VoiceOutput {
+  readonly messages: VoiceMessage[] = [];
+  private readonly finishedListeners: Array<(id: string) => void> = [];
+
+  async speak(message: VoiceMessage): Promise<void> {
+    this.messages.push(message);
+    this.finishedListeners.forEach((listener) => listener(message.id));
+  }
+
+  async stop(): Promise<void> {}
 
   onFinished(callback: (id: string) => void): void {
     this.finishedListeners.push(callback);
