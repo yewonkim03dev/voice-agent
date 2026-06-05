@@ -1,6 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { defaultWakePhrases, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
+
 export const defaultVoiceConfigPath = ".voice-agent.local.json";
 
 export interface VoiceHarnessConfig {
@@ -8,6 +10,7 @@ export interface VoiceHarnessConfig {
   sttCommand: string;
   sampleRate: number;
   channels: number;
+  wakePhrases: string[];
 }
 
 export interface VoiceHarnessResolution {
@@ -50,6 +53,7 @@ export async function resolveVoiceHarnessConfig(options: {
   const env = options.env ?? process.env;
   const cwd = options.cwd ?? process.cwd();
   const configPath = options.configPath ?? defaultVoiceConfigPath;
+  const envWakePhrases = parseOptionalWakePhrases(env.VOICE_AGENT_WAKE_PHRASES);
   const envConfig = configFromEnv(env);
 
   if (envConfig.config || envConfig.errors.length > 0) {
@@ -57,6 +61,16 @@ export async function resolveVoiceHarnessConfig(options: {
   }
 
   const fileConfig = await readVoiceConfigFile(resolve(cwd, configPath));
+  if (fileConfig.config && envWakePhrases) {
+    return {
+      ...fileConfig,
+      config: {
+        ...fileConfig.config,
+        wakePhrases: envWakePhrases
+      }
+    };
+  }
+
   if (fileConfig.config || fileConfig.errors.length > 0) {
     return fileConfig;
   }
@@ -105,7 +119,8 @@ export async function detectVoiceSetup(
       recorderCommand: recorder,
       sttCommand: stt,
       sampleRate: 16_000,
-      channels: 1
+      channels: 1,
+      wakePhrases: defaultWakePhrases
     },
     errors,
     recorder,
@@ -133,6 +148,7 @@ export async function writeVoiceConfigFile(
 function configFromEnv(env: NodeJS.ProcessEnv): VoiceHarnessResolution {
   const recorderCommand = env.VOICE_AGENT_RECORDER_COMMAND?.trim() ?? "";
   const sttCommand = env.VOICE_AGENT_STT_COMMAND?.trim() ?? "";
+  const wakePhrases = parseWakePhrases(env.VOICE_AGENT_WAKE_PHRASES);
 
   if (!recorderCommand && !sttCommand) {
     return {
@@ -162,7 +178,8 @@ function configFromEnv(env: NodeJS.ProcessEnv): VoiceHarnessResolution {
       recorderCommand,
       sttCommand,
       sampleRate: parsePositiveInteger(env.VOICE_AGENT_SAMPLE_RATE, 16_000),
-      channels: parsePositiveInteger(env.VOICE_AGENT_CHANNELS, 1)
+      channels: parsePositiveInteger(env.VOICE_AGENT_CHANNELS, 1),
+      wakePhrases
     },
     errors,
     source: "env"
@@ -208,7 +225,8 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
         recorderCommand,
         sttCommand,
         sampleRate: parsePositiveInteger(String(parsed.sampleRate ?? ""), 16_000),
-        channels: parsePositiveInteger(String(parsed.channels ?? ""), 1)
+        channels: parsePositiveInteger(String(parsed.channels ?? ""), 1),
+        wakePhrases: parseWakePhrases(parsed.wakePhrases)
       },
       errors,
       source: "file"
@@ -240,6 +258,24 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseWakePhrases(value: unknown): string[] {
+  return parseOptionalWakePhrases(value) ?? defaultWakePhrases;
+}
+
+function parseOptionalWakePhrases(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) {
+    const parsed = normalizedWakePhrases(value.filter((phrase): phrase is string => typeof phrase === "string"));
+    return parsed.length > 0 ? parsed : undefined;
+  }
+
+  if (typeof value === "string") {
+    const parsed = normalizedWakePhrases(value.split(/[,;\n]/u));
+    return parsed.length > 0 ? parsed : undefined;
+  }
+
+  return undefined;
 }
 
 function isNotFound(error: unknown): boolean {

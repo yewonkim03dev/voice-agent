@@ -25,8 +25,9 @@ export async function runVoiceSetup(): Promise<void> {
 
   writeLine(`[voice:setup] recorder: ${detection.recorder}`);
   writeLine(`[voice:setup] stt: ${detection.stt}`);
+  writeLine(`[voice:setup] wake phrases: ${detection.config.wakePhrases.join(", ")}`);
   writeLine(`[voice:setup] wrote ${path}`);
-  writeLine("[voice:setup] Next: npm run harness:voice:codex");
+  writeLine("[voice:setup] Next: npm run harness:voice:codex or npm run harness:wake:codex");
 }
 
 function commandExists(command: string): boolean {

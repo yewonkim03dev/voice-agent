@@ -13,7 +13,12 @@ import type { PermissionDecision } from "../permission/PermissionDecision.ts";
 import type { PermissionRequest } from "../permission/PermissionRequest.ts";
 import { RuntimeController } from "../runtime/RuntimeController.ts";
 import type { AgentState } from "../runtime/AgentState.ts";
-import { normalizeTranscriptText, type Language, type Transcript } from "../speech/Transcript.ts";
+import {
+  detectTranscriptLanguage,
+  normalizeTranscriptText,
+  withTranscriptText,
+  type Transcript
+} from "../speech/Transcript.ts";
 import type { VoiceMessage } from "../voice/VoiceMessage.ts";
 import type { VoiceOutput } from "../voice/VoiceOutput.ts";
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
@@ -297,6 +302,14 @@ export class TerminalHarness {
     }
 
     await this.handlePassthroughTranscript(transcript);
+  }
+
+  hasPendingApproval(): boolean {
+    if (this.runtime) {
+      return Boolean(this.runtime.getContext().pendingPermission);
+    }
+
+    return Boolean(this.pendingPermission);
   }
 
   private bindPassthroughBackend(): void {
@@ -583,7 +596,7 @@ export class TerminalHarness {
       sessionId: this.currentTranscriptSessionId(),
       text,
       normalizedText,
-      language: detectLanguage(normalizedText),
+      language: detectTranscriptLanguage(normalizedText),
       confidence: 0.99,
       startedAt: now,
       endedAt: now
@@ -846,17 +859,6 @@ function createPermissionRequest(command: string, sessionId: string, id: string,
   };
 }
 
-function withTranscriptText(transcript: Transcript, text: string): Transcript {
-  const normalizedText = normalizeTranscriptText(text);
-
-  return {
-    ...transcript,
-    text,
-    normalizedText,
-    language: detectLanguage(normalizedText)
-  };
-}
-
 function recordPermissionRequest(backend: AgentBackend, request: PermissionRequest): boolean {
   const recorder = backend as AgentBackend & {
     recordPermissionRequest?: (permissionRequest: PermissionRequest) => void;
@@ -901,16 +903,6 @@ function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["inten
 
 function agentLabel(target: AgentTarget): string {
   return target === "claude" ? "Claude" : "Codex";
-}
-
-function detectLanguage(text: string): Exclude<Language, "unknown"> | "unknown" {
-  const hasKorean = /[ㄱ-ㅎㅏ-ㅣ가-힣]/u.test(text);
-  const hasLatin = /[a-z]/i.test(text);
-
-  if (hasKorean && hasLatin) return "mixed";
-  if (hasKorean) return "ko";
-  if (hasLatin) return "en";
-  return "unknown";
 }
 
 function formatError(error: unknown): string {

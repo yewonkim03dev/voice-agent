@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import type { AudioFrame, AudioInput } from "../src/audio/AudioFrame.ts";
 import { InMemoryAgentBackend, TerminalHarness } from "../src/app/harness.ts";
 import { detectVoiceSetup, resolveVoiceHarnessConfig } from "../src/app/voice-config.ts";
-import { VoiceHarnessRunner } from "../src/app/voice-harness.ts";
+import { AlwaysOnVoiceHarnessRunner, VoiceHarnessRunner, parseVoiceHarnessCliArgs } from "../src/app/voice-harness.ts";
+import { AlwaysOnWakeGate } from "../src/listening/AlwaysOnWakeGate.ts";
+import { AudioRingBuffer } from "../src/listening/AudioRingBuffer.ts";
+import { EndOfSpeechDetector } from "../src/listening/EndOfSpeechDetector.ts";
 import { ManualRecordingGate } from "../src/listening/ManualRecordingGate.ts";
 import { RecordingController } from "../src/recorder/RecordingController.ts";
 import { UtteranceRecorder } from "../src/recorder/UtteranceRecorder.ts";
@@ -56,6 +62,49 @@ test("RecordingController collects fake audio frames into an utterance", async (
   assert.equal(utterances.length, 1);
   assert.equal(utterances[0].sessionId, "voice_sess_1");
   assert.deepEqual([...new Uint8Array(utterances[0].data)], [1, 2, 3, 4]);
+});
+
+test("AudioRingBuffer keeps only bounded pre-roll audio", () => {
+  const buffer = new AudioRingBuffer({
+    maxDurationMs: 200,
+    maxBytes: 16
+  });
+
+  for (let index = 0; index < 10; index += 1) {
+    buffer.push(fakePcmFrame(0, index * 100, 4));
+  }
+
+  assert.ok(buffer.byteLength <= 16);
+  assert.ok(buffer.durationMs <= 200);
+});
+
+test("AlwaysOnWakeGate opens on speech and closes after silence", () => {
+  const gate = createTestWakeGate();
+  const events: string[] = [];
+  const utterances: UtteranceAudio[] = [];
+  gate.onEvent((event) => events.push(event.type));
+  gate.onUtterance((audio) => utterances.push(audio));
+
+  gate.consume(fakePcmFrame(0, 900));
+  gate.consume(fakePcmFrame(0.2, 1000));
+  gate.consume(fakePcmFrame(0.2, 1080));
+  gate.consume(fakePcmFrame(0, 1220));
+
+  assert.deepEqual(events.filter((event) => event !== "buffer_cleanup"), ["candidate_start", "candidate_end"]);
+  assert.equal(utterances.length, 1);
+  assert.ok(utterances[0].data.byteLength > 0);
+});
+
+test("AlwaysOnWakeGate drops too-short speech candidates before STT", () => {
+  const gate = createTestWakeGate();
+  const utterances: UtteranceAudio[] = [];
+  gate.onUtterance((audio) => utterances.push(audio));
+
+  gate.consume(fakePcmFrame(0.2, 1000));
+  gate.consume(fakePcmFrame(0, 1120));
+
+  assert.equal(utterances.length, 0);
+  assert.equal(gate.isCandidateOpen, false);
 });
 
 test("voice runner routes Korean STT transcript through wake pass-through", async () => {
@@ -137,6 +186,129 @@ test("voice runner does not forward ambiguous approval speech", async () => {
   assert.equal(harness.voiceOutput.messages.at(-1)?.text, "허용인지 거부인지 다시 말해줘.");
 });
 
+test("always-on voice runner discards candidate speech without a wake phrase", async () => {
+  const { backend, runner, audioInput, speechProcessor, logs } = createAlwaysOnRunner([
+    {
+      text: "그냥 배경 발화",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(speechProcessor.audio.length, 1);
+  assert.equal(backend.prompts.length, 0);
+  assert.ok(logs.includes("[wake:discard] no configured wake phrase matched."));
+});
+
+test("always-on voice runner routes a configured custom wake phrase", async () => {
+  const { backend, runner, audioInput, speechProcessor } = createAlwaysOnRunner(
+    [
+      {
+        text: "자비스 테스트 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      wakePhrases: ["자비스"]
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.equal(speechProcessor.audio[0].data.byteLength, 0);
+});
+
+test("always-on voice runner routes default Korean and English wake phrases", async () => {
+  const { backend, runner, audioInput } = createAlwaysOnRunner([
+    {
+      text: "코덱스 테스트 돌려줘",
+      language: "ko"
+    },
+    {
+      text: "codex run npm test",
+      language: "en"
+    }
+  ]);
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 2);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.equal(backend.prompts[1].text, "run npm test");
+});
+
+test("always-on voice runner manual /record fallback routes without a wake phrase", async () => {
+  const { backend, runner, audioInput } = createAlwaysOnRunner([
+    {
+      text: "그냥 간단한 npm test 돌려줘",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  await runner.processLine("/record");
+  audioInput.emitPcm(0.2, 1000);
+  await runner.processLine("/record");
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "그냥 간단한 npm test 돌려줘");
+});
+
+test("always-on voice runner routes approval speech while native approval is pending", async () => {
+  const { backend, runner, audioInput } = createAlwaysOnRunner([
+    {
+      text: "허용",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await Promise.resolve();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.permissions.length, 1);
+  assert.equal(backend.permissions[0].decision, "allow");
+  assert.equal(backend.prompts.length, 0);
+});
+
+test("always-on voice runner does not forward ambiguous approval speech", async () => {
+  const { backend, runner, audioInput, harness } = createAlwaysOnRunner([
+    {
+      text: "음 글쎄",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await Promise.resolve();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.permissions.length, 0);
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(harness.voiceOutput.messages.at(-1)?.text, "허용인지 거부인지 다시 말해줘.");
+});
+
 test("voice harness config reports missing mic and STT capabilities", async () => {
   const resolution = await resolveVoiceHarnessConfig({
     env: {},
@@ -147,6 +319,60 @@ test("voice harness config reports missing mic and STT capabilities", async () =
   assert.equal(resolution.errors.length, 2);
   assert.match(resolution.errors[0], /setup:voice/u);
   assert.match(resolution.errors[1], /setup:voice/u);
+});
+
+test("voice harness config loads user-configured wake phrases from env", async () => {
+  const resolution = await resolveVoiceHarnessConfig({
+    env: {
+      VOICE_AGENT_RECORDER_COMMAND: "recorder",
+      VOICE_AGENT_STT_COMMAND: "stt {audio}",
+      VOICE_AGENT_WAKE_PHRASES: "자비스,컴퓨터"
+    }
+  });
+
+  assert.equal(resolution.config?.recorderCommand, "recorder");
+  assert.deepEqual(resolution.config?.wakePhrases, ["자비스", "컴퓨터"]);
+});
+
+test("voice harness config lets env wake phrases override file wake phrases", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+
+  try {
+    await writeFile(
+      join(cwd, ".voice-agent.local.json"),
+      JSON.stringify({
+        recorderCommand: "file-recorder",
+        sttCommand: "file-stt {audio}",
+        sampleRate: 16_000,
+        channels: 1,
+        wakePhrases: ["코덱스"]
+      }),
+      "utf8"
+    );
+
+    const resolution = await resolveVoiceHarnessConfig({
+      env: {
+        VOICE_AGENT_WAKE_PHRASES: "자비스"
+      },
+      cwd
+    });
+
+    assert.equal(resolution.config?.recorderCommand, "file-recorder");
+    assert.deepEqual(resolution.config?.wakePhrases, ["자비스"]);
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("voice harness CLI parses always-on flags without forwarding them to Codex", () => {
+  assert.deepEqual(parseVoiceHarnessCliArgs(["--codex", "--always-on", "--debug", "-c", "model=\"gpt\""]), {
+    alwaysOn: true,
+    debug: true,
+    harnessArgs: ["--codex", "-c", "model=\"gpt\""]
+  });
 });
 
 test("voice setup detection writes a config when recorder and STT commands exist", async () => {
@@ -198,6 +424,13 @@ async function recordOnce(runner: VoiceHarnessRunner, audioInput: FakeAudioInput
   await runner.processLine("/record");
 }
 
+function emitCandidate(audioInput: FakeAudioInput, startedAt: number): void {
+  audioInput.emitPcm(0, startedAt - 200);
+  audioInput.emitPcm(0.2, startedAt);
+  audioInput.emitPcm(0.2, startedAt + 80);
+  audioInput.emitPcm(0, startedAt + 220);
+}
+
 function createVoiceRunner(transcripts: Array<{ text: string; language: Language }>): {
   backend: InMemoryAgentBackend;
   harness: TerminalHarness;
@@ -247,6 +480,81 @@ function createVoiceRunner(transcripts: Array<{ text: string; language: Language
   };
 }
 
+function createAlwaysOnRunner(
+  transcripts: Array<{ text: string; language: Language }>,
+  options: {
+    wakePhrases?: string[];
+  } = {}
+): {
+  backend: InMemoryAgentBackend;
+  harness: TerminalHarness;
+  runner: AlwaysOnVoiceHarnessRunner;
+  audioInput: FakeAudioInput;
+  speechProcessor: FakeSpeechProcessor;
+  logs: string[];
+} {
+  let id = 0;
+  const logs: string[] = [];
+  const createId = (prefix: string): string => `${prefix}_${++id}`;
+  const backend = new InMemoryAgentBackend({
+    now: () => 1000
+  });
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "codex-test",
+    routingMode: "passthrough",
+    agentTarget: "codex",
+    now: () => 1000,
+    createId
+  });
+  const audioInput = new FakeAudioInput();
+  const speechProcessor = new FakeSpeechProcessor(transcripts);
+  const runner = new AlwaysOnVoiceHarnessRunner({
+    terminalHarness: harness,
+    audioInput,
+    wakeGate: createTestWakeGate(createId),
+    speechProcessor,
+    wakePhrases: options.wakePhrases ?? ["코덱스", "codex"],
+    writeLine: (line) => logs.push(line),
+    now: () => 1000,
+    createId,
+    debug: true
+  });
+
+  return {
+    backend,
+    harness,
+    runner,
+    audioInput,
+    speechProcessor,
+    logs
+  };
+}
+
+function createTestWakeGate(createId: (prefix: string) => string = (prefix) => `${prefix}_1`): AlwaysOnWakeGate {
+  return new AlwaysOnWakeGate({
+    detector: new EndOfSpeechDetector({
+      speechStartRms: 0.05,
+      speechStartPeak: 0.05,
+      silenceRms: 0.01,
+      silencePeak: 0.01,
+      silenceEndMs: 100,
+      minSpeechMs: 50,
+      maxUtteranceMs: 2_000
+    }),
+    ringBuffer: new AudioRingBuffer({
+      maxDurationMs: 300,
+      maxBytes: 256
+    }),
+    recorder: new UtteranceRecorder({
+      now: () => 1000,
+      createId
+    }),
+    now: () => 1000,
+    createId
+  });
+}
+
 class FakeAudioInput implements AudioInput {
   private readonly listeners: Array<(frame: AudioFrame) => void> = [];
   private running = false;
@@ -276,9 +584,17 @@ class FakeAudioInput implements AudioInput {
     };
     this.listeners.forEach((listener) => listener(frame));
   }
+
+  emitPcm(amplitude: number, timestamp: number, samples = 160): void {
+    if (!this.running) return;
+
+    const frame = fakePcmFrame(amplitude, timestamp, samples);
+    this.listeners.forEach((listener) => listener(frame));
+  }
 }
 
 class FakeSpeechProcessor implements SpeechProcessor {
+  readonly audio: UtteranceAudio[] = [];
   private readonly transcripts: Array<{ text: string; language: Language }>;
 
   constructor(transcripts: Array<{ text: string; language: Language }>) {
@@ -286,6 +602,7 @@ class FakeSpeechProcessor implements SpeechProcessor {
   }
 
   async transcribe(audio: UtteranceAudio): Promise<Transcript> {
+    this.audio.push(audio);
     const next = this.transcripts.shift();
     if (!next) throw new Error("No fake transcript queued.");
 
@@ -300,4 +617,21 @@ class FakeSpeechProcessor implements SpeechProcessor {
       endedAt: audio.endedAt
     };
   }
+}
+
+function fakePcmFrame(amplitude: number, timestamp: number, samples = 160): AudioFrame {
+  const data = Buffer.alloc(samples * 2);
+  const sample = Math.round(Math.max(-1, Math.min(1, amplitude)) * 32767);
+
+  for (let offset = 0; offset < data.byteLength; offset += 2) {
+    data.writeInt16LE(sample, offset);
+  }
+
+  return {
+    timestamp,
+    sampleRate: 16_000,
+    channels: 1,
+    format: "pcm_s16le",
+    data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+  };
 }

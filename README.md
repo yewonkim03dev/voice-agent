@@ -66,15 +66,48 @@ This mode uses manual recording first so it can later swap `ManualRecordingGate`
 AudioInput -> ListeningGate -> RecordingController -> UtteranceRecorder -> STT -> Transcript -> Agent pass-through
 ```
 
+Always-on wake listening is exposed as:
+
+```sh
+npm run harness:wake:codex
+```
+
+This starts the same recorder/STT pipeline, but keeps the recorder process running and uses a lightweight VAD gate to cut candidate speech utterances. Each candidate utterance is transcribed once. If the transcript starts with a configured wake phrase, the wake phrase is stripped and the rest is forwarded to Codex. If it does not, the transcript is discarded.
+
+```text
+AudioInput -> VAD candidate detector -> STT -> WakePhraseRouter -> Agent pass-through
+```
+
+`/record` remains available as a manual fallback in always-on mode. Manual fallback routes the transcript directly through the existing harness, which is useful when debugging wake detection.
+
 `npm run setup:voice` detects supported local recorder/STT commands and writes `.voice-agent.local.json`. On macOS with `/usr/bin/swift`, setup uses the built-in microphone through AVFoundation and Apple Speech for STT. The file is ignored by git and is read automatically by `npm run harness:voice:codex`.
 
 Voice setup is provider-based: macOS Swift support is the first provider, and Windows/Linux providers can be added without changing `VoiceHarnessRunner`, STT routing, or agent pass-through.
+
+Wake phrases are loaded from `.voice-agent.local.json` or `VOICE_AGENT_WAKE_PHRASES`. The default set is:
+
+```json
+["코덱스", "클로드", "codex", "claude", "hey codex", "hey claude"]
+```
+
+For example, to use `자비스`:
+
+```json
+{
+  "recorderCommand": "exec swift src/audio/macos-record-pcm.swift",
+  "sttCommand": "swift src/speech/macos-transcribe.swift {audio}",
+  "sampleRate": 16000,
+  "channels": 1,
+  "wakePhrases": ["자비스", "코덱스", "codex"]
+}
+```
 
 If auto-detection cannot find a supported command, configure manually with environment variables or by writing `.voice-agent.local.json`:
 
 ```sh
 export VOICE_AGENT_RECORDER_COMMAND='rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -'
 export VOICE_AGENT_STT_COMMAND='your-local-whisper-command {audio}'
+export VOICE_AGENT_WAKE_PHRASES='자비스,코덱스,codex'
 ```
 
 `VOICE_AGENT_RECORDER_COMMAND` must stream 16kHz mono `pcm_s16le` audio to stdout. `VOICE_AGENT_STT_COMMAND` receives a WAV file path through `{audio}` and should print either plain transcript text or JSON like `{"text":"코덱스 npm test 돌려줘","language":"ko","confidence":0.99}`.
@@ -89,4 +122,4 @@ npm run harness:claude
 
 It probes the local `claude` CLI. If the CLI is broken or no supported structured approval transport is available, it prints the exact missing capability instead of pretending to drive Claude through an unsafe PTY shim.
 
-This branch intentionally does not implement real TTS, visual UI, always-on wake, or a third-party PTY dependency. Voice input uses the manual recording gate first so wake/VAD can replace only the gate later.
+This branch intentionally does not implement real TTS, visual UI, production wake-word ML, or a third-party PTY dependency. Always-on wake mode uses VAD plus one STT pass per candidate utterance, then discards transcripts that do not start with a configured wake phrase.

@@ -185,7 +185,15 @@ npm run harness:voice:codex
 - STT 결과를 `[stt:<language>]`로 출력
 - transcript를 기존 real Codex pass-through 흐름으로 전달
 
-현재 MVP는 push-to-talk/manual record 방식이다. always-on wake word와 VAD endpointing은 다음 단계다.
+manual mode는 push-to-talk 방식이다.
+
+always-on wake mode는 별도 스크립트로 실행한다.
+
+```bash
+npm run harness:wake:codex
+```
+
+always-on mode는 recorder/STT 파이프라인을 그대로 두고, VAD로 후보 발화를 잘라 STT를 한 번 실행한다. transcript가 설정된 wake phrase로 시작하면 wake phrase를 제거하고 나머지를 Codex로 전달한다. 일치하지 않으면 폐기한다. `/record`는 manual fallback으로 유지한다.
 
 ### 3.4 Claude backend
 
@@ -609,11 +617,15 @@ agent 전송:
 - `npm run setup:voice`가 가능한 provider를 탐색한다.
 - `npm run harness:voice:codex`가 시작된다.
 - `/record`로 녹음을 시작하고 다시 `/record`로 종료한다.
+- `npm run harness:wake:codex`가 `/record` 없이 always-on mode로 시작된다.
+- 사용자 설정 wake phrase가 `.voice-agent.local.json` 또는 환경 변수에서 로드된다.
 - 녹음 종료 후 audio byte length, duration, rms, peak가 출력된다.
 - Apple Speech 또는 configured STT가 transcript를 생성한다.
 - `[stt:<language>]` 로그가 출력된다.
 - `코덱스 간단한 npm test 돌려줘`는 `간단한 npm test 돌려줘`로 Codex에 전달된다.
+- `자비스 간단한 npm test 돌려줘`는 `자비스`가 설정된 경우 `간단한 npm test 돌려줘`로 Codex에 전달된다.
 - `codex run npm test`는 `run npm test`로 Codex에 전달된다.
+- 호출어 없는 후보 발화는 STT 후 폐기된다.
 - pending approval 중 `허용`은 native approval allow로 전달된다.
 - pending approval 중 `거부`는 native approval deny로 전달된다.
 - ambiguous approval speech는 Codex로 전달하지 않고 다시 묻는다.
@@ -629,12 +641,12 @@ agent 전송:
 - audio quality diagnostics 유지
 - 테스트 fixture 보강
 
-### Goal 2: Always-on wake MVP
+### Goal 2: Always-on wake hardening
 
-- `ListeningGate` 구현을 wake 기반으로 확장
-- wake phrase 감지 후 발화 구간만 recorder로 전달
-- VAD endpointing 도입
-- manual `/record` fallback 유지
+- VAD threshold를 실제 환경에서 튜닝
+- wake phrase UX와 설정 편의성 개선
+- 긴 idle 시간과 잡음 환경에서 메모리/CPU 사용량 검증
+- production wake-word ML 모델 도입 여부 평가
 
 ### Goal 3: Voice output and visual feedback
 
@@ -659,8 +671,7 @@ agent 전송:
 - 로컬 코딩 의도 분류
 - real Codex PTY 직접 조작을 primary path로 사용
 - fake approval prompt를 만들어 Codex/Claude에 다시 전송
-- 항상 켜진 wake word production 구현
-- VAD 기반 자동 발화 종료
+- production-grade wake word ML model
 - real TTS production 구현
 - 시각 UI production 구현
 - Claude approval protocol 완성
