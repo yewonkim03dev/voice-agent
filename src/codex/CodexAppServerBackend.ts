@@ -174,7 +174,8 @@ export class CodexAppServerBackend implements AgentBackend {
       this.publishStatus({
         process: "running",
         task: "idle",
-        currentWorkingDirectory: cwd
+        currentWorkingDirectory: cwd,
+        ...(this.threadId ? { threadId: this.threadId } : {})
       });
     } catch (error) {
       this.socket?.close();
@@ -393,6 +394,10 @@ export class CodexAppServerBackend implements AgentBackend {
 
     this.writeLine(`[codex-app] ${source} ${this.threadId}`);
     await this.saveStoredThreadId(this.threadId);
+    this.publishStatus({
+      ...this.status,
+      threadId: this.threadId
+    });
   }
 
   private async loadStoredThreadId(): Promise<string | undefined> {

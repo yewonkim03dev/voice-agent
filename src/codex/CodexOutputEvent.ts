@@ -17,6 +17,7 @@ export interface CodexStatus {
   task: "idle" | "thinking" | "editing" | "running_command" | "waiting_permission";
   currentWorkingDirectory?: string;
   currentTool?: string;
+  threadId?: string;
 }
 
 export const initialCodexStatus: CodexStatus = {

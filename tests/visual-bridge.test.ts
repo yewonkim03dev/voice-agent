@@ -311,8 +311,13 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /wake_rejected/u);
   assert.match(qml, /property int commandPanelHeight/u);
   assert.match(qml, /property int visualDiameter/u);
+  assert.match(qml, /property int visualCenterYOffset/u);
   assert.match(qml, /expandedLayout \? 720 : 360/u);
   assert.match(qml, /anchors\.centerIn: parent/u);
+  assert.match(qml, /anchors\.verticalCenterOffset: root\.visualCenterYOffset/u);
+  assert.match(qml, /id: sessionBadge/u);
+  assert.match(qml, /session: /u);
+  assert.match(qml, /Text\.ElideMiddle/u);
   assert.match(qml, /anchors\.bottom: controls\.top/u);
   assert.match(qml, /id: statusBackdrop/u);
   assert.match(qml, /root\.uiState === "speaking"/u);
@@ -388,7 +393,12 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /submitting/u);
   assert.match(swift, /wake_rejected/u);
   assert.match(swift, /final class VisualRootView/u);
-  assert.match(swift, /let center = CGPoint\(x: bounds\.midX, y: bounds\.midY\)/u);
+  assert.match(swift, /sessionLabel = NSTextField\(labelWithString: "session: new"\)/u);
+  assert.match(swift, /lineBreakMode = \.byTruncatingMiddle/u);
+  assert.match(swift, /let visualCenterLift = max\(112, min\(256, bounds\.height \* 0\.24\)\)/u);
+  assert.match(swift, /let center = CGPoint\(x: bounds\.midX, y: centerY\)/u);
+  assert.match(swift, /func updateSessionId\(_ sessionId: String\)/u);
+  assert.match(swift, /rootView\?\.updateSessionId\(codexThreadId\)/u);
   assert.match(swift, /commandPanel\.frame/u);
   assert.match(swift, /circleView\.frame/u);
   assert.match(swift, /let maxCircle: CGFloat = expanded \? 720 : 360/u);

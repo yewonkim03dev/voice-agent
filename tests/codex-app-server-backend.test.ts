@@ -7,6 +7,7 @@ import { CodexAppServerBackend } from "../src/codex/CodexAppServerBackend.ts";
 import type { CodexStatus } from "../src/codex/CodexOutputEvent.ts";
 import type { PermissionDecision } from "../src/permission/PermissionDecision.ts";
 import type { PermissionRequest } from "../src/permission/PermissionRequest.ts";
+import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
 
 test("starts Codex app-server, initializes, and opens a thread", async () => {
   const child = new FakeAppServerProcess();
@@ -40,6 +41,7 @@ test("starts Codex app-server, initializes, and opens a thread", async () => {
   assert.equal(socket.sent[1].method, "thread/start");
   assert.equal(socket.sent[1].params.cwd, "/repo");
   assert.equal(statuses.at(-1)?.process, "running");
+  assert.equal(statuses.at(-1)?.threadId, "thread_1");
 });
 
 test("resumes a stored Codex app-server thread when available", async () => {
@@ -424,6 +426,29 @@ test("terminal harness speaks app-server approvals and routes Korean allow decis
   });
 });
 
+test("terminal harness updates visual settings when Codex returns a thread id", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "real-test",
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  const started = harness.start();
+  child.stderr.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  assert.equal(
+    visualBridge.events.findLast((event) => event.type === "settings")?.codexThreadId,
+    "thread_1"
+  );
+});
+
 test("terminal harness accepts numeric zero app-server approval ids", async () => {
   const { backend, child, socket } = createStartedBackend();
   const harness = new TerminalHarness({
@@ -525,6 +550,16 @@ class FakeAppServerProcess extends EventEmitter {
 
 class FakeWritable {
   end(): void {}
+}
+
+class FakeVisualBridge implements VisualBridgeLike {
+  readonly events: VisualEvent[] = [];
+
+  send(event: VisualEvent): void {
+    this.events.push(event);
+  }
+
+  onControl(_callback: (event: VisualControlEvent) => void): void {}
 }
 
 class FakeWebSocket {

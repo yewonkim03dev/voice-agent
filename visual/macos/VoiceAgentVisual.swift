@@ -484,6 +484,7 @@ final class VisualRootView: NSView {
     private let commandLabel = NSTextField(labelWithString: "Commands")
     private let commandScroll = NSScrollView(frame: .zero)
     private let guideButton = NSButton(title: "?", target: nil, action: nil)
+    private let sessionLabel = NSTextField(labelWithString: "session: new")
     private let controls: NSStackView
 
     init(
@@ -509,6 +510,11 @@ final class VisualRootView: NSView {
 
         circleView.autoresizingMask = []
         addSubview(circleView)
+
+        sessionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
+        sessionLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        sessionLabel.lineBreakMode = .byTruncatingMiddle
+        addSubview(sessionLabel)
 
         guideButton.bezelStyle = .helpButton
         guideButton.toolTip = "Voice Agent guide"
@@ -622,6 +628,12 @@ final class VisualRootView: NSView {
             width: 28,
             height: 28
         )
+        sessionLabel.frame = NSRect(
+            x: inset,
+            y: bounds.height - inset - 28,
+            width: max(80, min(360, guideButton.frame.minX - inset - 12)),
+            height: 28
+        )
         referenceHelpButton.frame = NSRect(
             x: commandPanel.bounds.width - panelInset - 24,
             y: topY - 2,
@@ -673,9 +685,18 @@ final class VisualRootView: NSView {
         )
         commandView.frame = commandScroll.contentView.bounds
 
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let bottomLimit = commandPanel.frame.maxY + 12
         let topLimit = bounds.height - inset
+        let minimumClearance: CGFloat = 110
+        let visualCenterLift = max(112, min(256, bounds.height * 0.24))
+        let targetCenterY = bounds.midY + visualCenterLift
+        let centerY: CGFloat
+        if topLimit - bottomLimit >= minimumClearance * 2 {
+            centerY = min(max(targetCenterY, bottomLimit + minimumClearance), topLimit - minimumClearance)
+        } else {
+            centerY = (topLimit + bottomLimit) / 2
+        }
+        let center = CGPoint(x: bounds.midX, y: centerY)
         let centerClearance = max(110, min(topLimit - center.y, center.y - bottomLimit))
         let maxCircle: CGFloat = expanded ? 720 : 360
         let circleSize = max(
@@ -693,6 +714,11 @@ final class VisualRootView: NSView {
             width: circleSize,
             height: circleSize
         )
+    }
+
+    func updateSessionId(_ sessionId: String) {
+        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        sessionLabel.stringValue = trimmed.isEmpty ? "session: new" : "session: \(trimmed)"
     }
 }
 
@@ -835,6 +861,7 @@ final class HoverHelpButton: NSButton {
 final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
+    private weak var rootView: VisualRootView?
     private let commandView = NSTextView(frame: .zero)
     private let contextField = NSTextField(string: "")
     private let contextSummary = NSTextField(labelWithString: "No references queued")
@@ -892,7 +919,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         contextField.target = self
         contextField.action = #selector(addContext)
 
-        return VisualRootView(
+        let rootView = VisualRootView(
             circleView: circleView,
             commandView: commandView,
             contextField: contextField,
@@ -901,6 +928,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             clearContextButton: button("Clear Ref", action: #selector(clearContext)),
             controls: controls
         )
+        self.rootView = rootView
+        rootView.updateSessionId(codexThreadId)
+        return rootView
     }
 
     private func button(_ title: String, action: Selector) -> NSButton {
@@ -1130,6 +1160,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateCodexThreadId(_ threadId: String) {
         codexThreadId = threadId.trimmingCharacters(in: .whitespacesAndNewlines)
+        rootView?.updateSessionId(codexThreadId)
         syncSettingsControls()
     }
 

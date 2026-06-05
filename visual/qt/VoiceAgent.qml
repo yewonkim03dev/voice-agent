@@ -23,6 +23,7 @@ ApplicationWindow {
     property int controlsHeight: 38
     property int commandPanelHeight: Math.round(Math.max(132, Math.min(expandedLayout ? 220 : 172, height * (expandedLayout ? 0.22 : 0.25))))
     property int visualDiameter: Math.round(Math.max(220, Math.min(width * (expandedLayout ? 0.78 : 0.84), height * (expandedLayout ? 0.60 : 0.48), height - commandPanelHeight - controlsHeight - 92, expandedLayout ? 720 : 360)))
+    property int visualCenterYOffset: -Math.round(Math.max(112, Math.min(256, height * 0.24)))
     property var commands: []
     property var contextEntries: []
     property bool settingsOpen: false
@@ -368,6 +369,27 @@ ApplicationWindow {
         onClicked: guidePopup.open()
     }
 
+    Item {
+        id: sessionBadge
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.margins: 16
+        width: Math.min(root.width - guideButton.width - 56, 360)
+        height: 28
+        z: 12
+
+        Text {
+            anchors.fill: parent
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
+            verticalAlignment: Text.AlignVCenter
+            text: root.codexThreadId.length > 0 ? "session: " + root.codexThreadId : "session: new"
+            color: "#9fb0c7"
+            font.pixelSize: 12
+            elide: Text.ElideMiddle
+        }
+    }
+
     Popup {
         id: guidePopup
         x: Math.max(18, root.width - width - 18)
@@ -426,6 +448,7 @@ ApplicationWindow {
             width: root.visualDiameter
             height: root.visualDiameter
             anchors.centerIn: parent
+            anchors.verticalCenterOffset: root.visualCenterYOffset
             antialiasing: true
             opacity: 0.96
 

@@ -490,6 +490,10 @@ export class TerminalHarness {
     });
     this.backend.onStatus((status) => {
       this.codexStatus = status;
+      if (status.threadId && status.threadId !== this.codexThreadId) {
+        this.codexThreadId = status.threadId;
+        this.sendVisualTtsSettings();
+      }
       this.sendVisualState(status.task === "waiting_permission" ? "approval_pending" : statusToVisualState(status.task));
     });
   }
