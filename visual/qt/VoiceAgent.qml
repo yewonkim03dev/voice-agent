@@ -33,6 +33,8 @@ ApplicationWindow {
     property real ttsPitch: 1.0
     property real ttsVolume: 1.0
     property var wakePhrases: []
+    property string voiceGuideText: "한국어: 호출어를 말한 뒤 자연어로 작업을 요청하세요. Reference는 다음 요청에 참고자료로 붙습니다.\nEnglish: Say a wake phrase, then speak naturally. References are attached to the next request."
+    property string referenceHelpText: "한국어: 참고자료를 적고 Add를 누르면 다음 요청에만 붙습니다.\nEnglish: Add short context here; it is attached to the next request only."
 
     function argumentValue(name, fallback) {
         var args = Qt.application.arguments
@@ -322,6 +324,42 @@ ApplicationWindow {
     NumberAnimation on rms {
         duration: 120
         easing.type: Easing.OutQuad
+    }
+
+    Button {
+        id: guideButton
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 16
+        width: 30
+        height: 30
+        text: "?"
+        z: 12
+        onClicked: guidePopup.open()
+    }
+
+    Popup {
+        id: guidePopup
+        x: Math.max(18, root.width - width - 18)
+        y: guideButton.y + guideButton.height + 8
+        width: Math.min(root.width - 36, 380)
+        padding: 14
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        z: 13
+        background: Rectangle {
+            radius: 8
+            color: "#0d131c"
+            border.color: "#3b4c64"
+            border.width: 1
+        }
+        contentItem: Text {
+            text: root.voiceGuideText
+            wrapMode: Text.WordWrap
+            color: "#d9e2ef"
+            font.pixelSize: 13
+            lineHeight: 1.18
+            lineHeightMode: Text.ProportionalHeight
+        }
     }
 
     Item {
@@ -635,11 +673,27 @@ ApplicationWindow {
                 anchors.margins: 14
                 spacing: 8
 
-                Text {
-                    text: "References"
-                    color: "#91a4bd"
-                    font.pixelSize: 13
-                    font.bold: true
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "References"
+                        color: "#91a4bd"
+                        font.pixelSize: 13
+                        font.bold: true
+                    }
+
+                    Button {
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 22
+                        text: "?"
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: root.referenceHelpText
+                    }
                 }
 
                 RowLayout {
@@ -877,19 +931,8 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 text: "STOP"
                 onClicked: root.sendControl("emergency_stop")
-                background: Rectangle {
-                    radius: 5
-                    color: parent.down ? "#7f0019" : "#b00020"
-                    border.color: "#ff6b7a"
-                    border.width: 1
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: "#ffffff"
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
+                palette.button: "#7a2730"
+                palette.buttonText: "#ffffff"
             }
             Button {
                 Layout.fillWidth: true

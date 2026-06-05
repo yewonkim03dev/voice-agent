@@ -480,8 +480,10 @@ final class VisualRootView: NSView {
     private let clearContextButton: NSButton
     private let commandPanel = NSView(frame: .zero)
     private let contextLabel = NSTextField(labelWithString: "References")
+    private let referenceHelpButton = NSButton(title: "?", target: nil, action: nil)
     private let commandLabel = NSTextField(labelWithString: "Commands")
     private let commandScroll = NSScrollView(frame: .zero)
+    private let guideButton = NSButton(title: "?", target: nil, action: nil)
     private let controls: NSStackView
 
     init(
@@ -508,6 +510,12 @@ final class VisualRootView: NSView {
         circleView.autoresizingMask = []
         addSubview(circleView)
 
+        guideButton.bezelStyle = .helpButton
+        guideButton.toolTip = "Voice Agent guide"
+        guideButton.target = self
+        guideButton.action = #selector(showVoiceGuide)
+        addSubview(guideButton)
+
         commandPanel.wantsLayer = true
         commandPanel.layer?.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.09, blue: 0.13, alpha: 1).cgColor
         commandPanel.layer?.borderColor = NSColor(calibratedRed: 0.14, green: 0.19, blue: 0.26, alpha: 1).cgColor
@@ -518,6 +526,11 @@ final class VisualRootView: NSView {
         contextLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
         contextLabel.font = NSFont.boldSystemFont(ofSize: 13)
         commandPanel.addSubview(contextLabel)
+
+        referenceHelpButton.bezelStyle = .helpButton
+        referenceHelpButton.toolTip =
+            "한국어: 참고자료를 적으면 다음 요청에만 붙습니다.\nEnglish: Add short context for the next request only."
+        commandPanel.addSubview(referenceHelpButton)
 
         contextField.placeholderString = "/add reference text"
         contextField.font = NSFont.systemFont(ofSize: 13)
@@ -557,6 +570,16 @@ final class VisualRootView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    @objc private func showVoiceGuide() {
+        let alert = NSAlert()
+        alert.messageText = "Voice Agent Guide"
+        alert.informativeText =
+            "한국어: 호출어를 말한 뒤 자연어로 작업을 요청하세요. Reference는 다음 요청에 참고자료로 붙습니다.\n\n" +
+            "English: Say a wake phrase, then speak naturally. References are attached to the next request."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     override func layout() {
         super.layout()
 
@@ -582,10 +605,23 @@ final class VisualRootView: NSView {
         let buttonWidth: CGFloat = 76
         let topY = commandPanel.bounds.height - panelInset - labelHeight
 
+        guideButton.frame = NSRect(
+            x: bounds.width - inset - 28,
+            y: bounds.height - inset - 28,
+            width: 28,
+            height: 28
+        )
+        referenceHelpButton.frame = NSRect(
+            x: commandPanel.bounds.width - panelInset - 24,
+            y: topY - 2,
+            width: 24,
+            height: 22
+        )
+
         contextLabel.frame = NSRect(
             x: panelInset,
             y: topY,
-            width: max(0, commandPanel.bounds.width - panelInset * 2),
+            width: max(0, referenceHelpButton.frame.minX - panelInset - 6),
             height: labelHeight
         )
         clearContextButton.frame = NSRect(
@@ -799,16 +835,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     private func emergencyButton() -> NSButton {
         let button = button("STOP", action: #selector(emergencyStop))
-        button.isBordered = false
-        button.wantsLayer = true
-        button.layer?.backgroundColor = NSColor(calibratedRed: 0.69, green: 0, blue: 0.13, alpha: 1).cgColor
-        button.layer?.borderColor = NSColor(calibratedRed: 1, green: 0.42, blue: 0.48, alpha: 1).cgColor
-        button.layer?.borderWidth = 1
-        button.layer?.cornerRadius = 6
         button.attributedTitle = NSAttributedString(
             string: "STOP",
             attributes: [
-                .foregroundColor: NSColor.white,
+                .foregroundColor: NSColor.systemRed,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .bold)
             ]
         )

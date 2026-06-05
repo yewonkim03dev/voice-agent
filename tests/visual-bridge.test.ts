@@ -305,6 +305,13 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /reset_settings/u);
   assert.match(qml, /Restore Defaults/u);
   assert.match(qml, /Wake phrases/u);
+  assert.match(qml, /voiceGuideText/u);
+  assert.match(qml, /referenceHelpText/u);
+  assert.match(qml, /id: guideButton/u);
+  assert.match(qml, /id: guidePopup/u);
+  assert.match(qml, /ToolTip\.text: root\.referenceHelpText/u);
+  assert.match(qml, /palette\.button: "#7a2730"/u);
+  assert.doesNotMatch(qml, /color: parent\.down \? "#7f0019" : "#b00020"/u);
   assert.match(qml, /languageBox/u);
   assert.match(qml, /genderBox/u);
   assert.match(qml, /rateSlider/u);
@@ -361,6 +368,12 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /reset_settings/u);
   assert.match(swift, /Restore Defaults/u);
   assert.match(swift, /settingsWakePhrasesView/u);
+  assert.match(swift, /referenceHelpButton/u);
+  assert.match(swift, /guideButton/u);
+  assert.match(swift, /showVoiceGuide/u);
+  assert.match(swift, /Voice Agent Guide/u);
+  assert.match(swift, /NSColor\.systemRed/u);
+  assert.doesNotMatch(swift, /button\.isBordered = false/u);
   assert.match(swift, /settingsLanguagePopup/u);
   assert.match(swift, /settingsGenderPopup/u);
   assert.match(swift, /settingsRateField/u);
