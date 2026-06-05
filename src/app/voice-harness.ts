@@ -15,6 +15,9 @@ import type { SpeechProcessor } from "../speech/SpeechProcessor.ts";
 import { withTranscriptText, type Transcript } from "../speech/Transcript.ts";
 import { BargeInPolicy } from "../voice/BargeInPolicy.ts";
 import { EchoGuard, type EchoGuardResult } from "../voice/EchoGuard.ts";
+import type { VisualProvider } from "../visual/VisualConfig.ts";
+import { VisualBridge, type VisualBridgeLike } from "../visual/VisualBridge.ts";
+import { launchVisualCompanion } from "../visual/run-visual.ts";
 import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 import { createTerminalHarnessFromArgs, TerminalHarness } from "./harness.ts";
 import { resolveVoiceHarnessConfig, type VoiceHarnessConfig } from "./voice-config.ts";
@@ -154,6 +157,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private manualRecording = false;
   private started = false;
+  private lastVolumeEventAt = 0;
 
   constructor(options: AlwaysOnVoiceHarnessRunnerOptions) {
     this.terminalHarness = options.terminalHarness;
@@ -225,6 +229,8 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private consumeFrame(frame: AudioFrame): void {
+    this.emitFrameVolume(frame);
+
     if (this.manualRecording) {
       this.manualRecorder.consume(frame);
       return;
@@ -300,10 +306,20 @@ export class AlwaysOnVoiceHarnessRunner {
 
     if (!wake) {
       this.writeLine("[wake:discard] no configured wake phrase matched.");
+      this.terminalHarness.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "idle"
+      });
       return;
     }
 
     this.writeLine(`[wake:matched] phrase="${wake.phrase}" command="${wake.commandText}"`);
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "wake",
+      phrase: wake.phrase
+    });
     await this.terminalHarness.processTranscript(withTranscriptText(transcript, wake.commandText));
   }
 
@@ -320,6 +336,11 @@ export class AlwaysOnVoiceHarnessRunner {
     switch (decision.action) {
       case "ignore":
         this.writeLine(`[barge:ignored] reason=${decision.reason}`);
+        this.terminalHarness.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "state",
+          state: "speaking"
+        });
         return;
       case "stop":
         await this.terminalHarness.stopVoiceOutput();
@@ -346,11 +367,21 @@ export class AlwaysOnVoiceHarnessRunner {
   private printWakeEvent(event: AlwaysOnWakeGateEvent): void {
     switch (event.type) {
       case "candidate_start":
+        this.terminalHarness.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "state",
+          state: "listening"
+        });
         this.writeLine(
           `[wake:candidate] start preRollFrames=${event.preRollFrames} preRollBytes=${event.preRollBytes}`
         );
         return;
       case "candidate_end":
+        this.terminalHarness.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "state",
+          state: "stt_processing"
+        });
         this.writeLine(
           `[wake:candidate] end reason=${event.reason} speechDurationMs=${event.speechDurationMs}`
         );
@@ -366,6 +397,11 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private printTranscript(transcript: Transcript): void {
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "status",
+      text: transcript.text
+    });
     this.writeLine(`[stt:${transcript.language}] ${transcript.text}`);
   }
 
@@ -377,6 +413,21 @@ export class AlwaysOnVoiceHarnessRunner {
 
     this.writeLine(`[audio] bytes=${bytes} durationMs=${durationMs} rms=${rms} peak=${peak}`);
   }
+
+  private emitFrameVolume(frame: AudioFrame): void {
+    if (frame.timestamp - this.lastVolumeEventAt < 80) return;
+
+    const metrics = pcm16Metrics(frame);
+    if (!metrics) return;
+
+    this.lastVolumeEventAt = frame.timestamp;
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "volume",
+      rms: metrics.rms,
+      peak: metrics.peak
+    });
+  }
 }
 
 export function createVoiceHarnessRunnerFromConfig(
@@ -386,6 +437,7 @@ export function createVoiceHarnessRunnerFromConfig(
     writeLine?: WriteLine;
     audioInput?: AudioInput;
     speechProcessor?: SpeechProcessor;
+    visualBridge?: VisualBridgeLike;
     now?: () => number;
     createId?: (prefix: string) => string;
   } = {}
@@ -396,7 +448,8 @@ export function createVoiceHarnessRunnerFromConfig(
     writeLine,
     now: options.now,
     createId: options.createId,
-    ttsConfig: config.tts
+    ttsConfig: config.tts,
+    visualBridge: options.visualBridge
   });
   const gate = new ManualRecordingGate({
     now: options.now
@@ -446,6 +499,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     wakeGate?: AlwaysOnWakeGate;
     wakePhrases?: string[];
     debug?: boolean;
+    visualBridge?: VisualBridgeLike;
     now?: () => number;
     createId?: (prefix: string) => string;
   } = {}
@@ -456,7 +510,8 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     writeLine,
     now: options.now,
     createId: options.createId,
-    ttsConfig: config.tts
+    ttsConfig: config.tts,
+    visualBridge: options.visualBridge
   });
   const audioInput =
     options.audioInput ??
@@ -495,6 +550,8 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
 export interface VoiceHarnessCliOptions {
   alwaysOn: boolean;
   debug: boolean;
+  visual: boolean;
+  visualProvider?: VisualProvider;
   harnessArgs: string[];
 }
 
@@ -502,8 +559,12 @@ export function parseVoiceHarnessCliArgs(args: string[]): VoiceHarnessCliOptions
   const harnessArgs: string[] = [];
   let alwaysOn = false;
   let debug = false;
+  let visual = false;
+  let visualProvider: VisualProvider | undefined;
 
-  for (const arg of args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
     if (arg === "--always-on" || arg === "--wake") {
       alwaysOn = true;
       continue;
@@ -514,12 +575,27 @@ export function parseVoiceHarnessCliArgs(args: string[]): VoiceHarnessCliOptions
       continue;
     }
 
+    if (arg === "--visual") {
+      visual = true;
+      continue;
+    }
+
+    if (arg === "--visual-provider") {
+      const value = args[++index] as VisualProvider | undefined;
+      if (value === "auto" || value === "qtqml" || value === "macos-native") {
+        visualProvider = value;
+      }
+      continue;
+    }
+
     harnessArgs.push(arg);
   }
 
   return {
     alwaysOn,
     debug,
+    visual,
+    ...(visualProvider ? { visualProvider } : {}),
     harnessArgs
   };
 }
@@ -538,13 +614,28 @@ export async function runVoiceHarness(): Promise<void> {
 
   const cli = parseVoiceHarnessCliArgs(process.argv.slice(2));
   const args = defaultCodexArgs(cli.harnessArgs);
+  const visualBridge = cli.visual ? new VisualBridge({ writeLine }) : undefined;
+  if (visualBridge) {
+    try {
+      const url = await visualBridge.start();
+      await launchVisualCompanion({
+        url,
+        provider: cli.visualProvider,
+        writeLine
+      });
+    } catch (error) {
+      writeLine(`[visual] unavailable: ${formatError(error)}`);
+    }
+  }
   const runner = cli.alwaysOn
     ? createAlwaysOnVoiceHarnessRunnerFromConfig(resolution.config, args, {
         writeLine,
-        debug: cli.debug
+        debug: cli.debug,
+        visualBridge
       })
     : createVoiceHarnessRunnerFromConfig(resolution.config, args, {
-        writeLine
+        writeLine,
+        visualBridge
       });
 
   await runner.start();
@@ -569,6 +660,7 @@ export async function runVoiceHarness(): Promise<void> {
   } finally {
     closeReadline(readline);
     await runner.stop();
+    await visualBridge?.stop();
   }
 }
 
@@ -606,6 +698,30 @@ function formatError(error: unknown): string {
 
 function formatSimilarity(result: EchoGuardResult): string {
   return result.similarity.toFixed(3);
+}
+
+function pcm16Metrics(frame: AudioFrame): { rms: number; peak: number } | null {
+  if (frame.format !== "pcm_s16le") return null;
+
+  const data = Buffer.from(frame.data);
+  if (data.byteLength < 2) return null;
+
+  let sumSquares = 0;
+  let peak = 0;
+  let samples = 0;
+
+  for (let offset = 0; offset + 1 < data.byteLength; offset += 2) {
+    const value = data.readInt16LE(offset) / 32768;
+    const magnitude = Math.abs(value);
+    sumSquares += value * value;
+    peak = Math.max(peak, magnitude);
+    samples += 1;
+  }
+
+  return {
+    rms: samples === 0 ? 0 : Math.sqrt(sumSquares / samples),
+    peak
+  };
 }
 
 function noop(_line: string): void {}

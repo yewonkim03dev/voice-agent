@@ -37,6 +37,7 @@ import {
 import type { VoiceMessage } from "../voice/VoiceMessage.ts";
 import type { SpawnTtsProcess } from "../voice/MacosAppleTtsProvider.ts";
 import { TtsPlaybackState } from "../voice/TtsPlaybackState.ts";
+import type { VisualBridgeLike, VisualEvent, VisualUiState } from "../visual/VisualBridge.ts";
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
 
 type WriteLine = (line: string) => void;
@@ -185,6 +186,7 @@ export interface TerminalHarnessOptions {
   platform?: NodeJS.Platform;
   cwd?: string;
   spawnTtsProcess?: SpawnTtsProcess;
+  visualBridge?: VisualBridgeLike;
 }
 
 export class TerminalHarness {
@@ -199,6 +201,7 @@ export class TerminalHarness {
   private readonly backendLabel: string;
   private readonly routingMode: "runtime" | "passthrough";
   private readonly agentTarget: AgentTarget;
+  private readonly visualBridge: VisualBridgeLike | undefined;
   private idSequence = 0;
   private started = false;
   private currentSessionId: string | undefined;
@@ -214,6 +217,7 @@ export class TerminalHarness {
     this.now = options.now ?? Date.now;
     this.writeLine = options.writeLine ?? noop;
     this.backendLabel = options.backendLabel ?? "mock";
+    this.visualBridge = options.visualBridge;
     this.routingMode =
       options.routingMode ??
       (options.backend && this.backendLabel !== "mock" ? "passthrough" : "runtime");
@@ -244,6 +248,14 @@ export class TerminalHarness {
     });
     this.voiceOutput.onFinished((id) => {
       this.ttsPlaybackState.recordFinished(id, this.now());
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "idle"
+      });
+    });
+    this.visualBridge?.onControl((event) => {
+      void this.handleVisualControl(event.action);
     });
 
     if (this.routingMode === "runtime") {
@@ -270,6 +282,11 @@ export class TerminalHarness {
     }
 
     this.started = true;
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state: "idle"
+    });
     this.printStartupBanner();
     if (this.runtime) {
       this.writeLine("  Type text to send a transcript, or /status, /permission <command>, /complete, /error <message>, /tts-stop, /quit.");
@@ -292,6 +309,11 @@ export class TerminalHarness {
       this.passthroughState = "SHUTDOWN";
     }
 
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state: "shutdown"
+    });
     this.started = false;
   }
 
@@ -327,6 +349,12 @@ export class TerminalHarness {
   async stopVoiceOutput(): Promise<void> {
     this.ttsPlaybackState.recordStopped(this.now());
     await this.voiceOutput.stop();
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state: "idle",
+      text: "tts stopped"
+    });
   }
 
   private bindPassthroughBackend(): void {
@@ -338,6 +366,7 @@ export class TerminalHarness {
     });
     this.backend.onStatus((status) => {
       this.codexStatus = status;
+      this.sendVisualState(status.task === "waiting_permission" ? "approval_pending" : statusToVisualState(status.task));
     });
   }
 
@@ -389,6 +418,7 @@ export class TerminalHarness {
     };
 
     this.passthroughState = "EXECUTING";
+    this.sendVisualState("thinking");
     await this.backend.sendPrompt(prompt);
     this.codexStatus = {
       ...this.codexStatus,
@@ -437,6 +467,11 @@ export class TerminalHarness {
   private async handlePassthroughPermissionRequest(request: PermissionRequest): Promise<void> {
     await this.flushPassthroughOutputBuffers(request.sessionId);
     this.pendingPermission = request;
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "approval",
+      text: `${request.command ?? request.action} 실행 권한 필요해.`
+    });
     this.codexStatus = {
       ...this.codexStatus,
       task: "waiting_permission",
@@ -468,6 +503,11 @@ export class TerminalHarness {
     if (output.type === "error") {
       await this.flushPassthroughOutputBuffers(output.sessionId);
       this.passthroughState = "ERROR";
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "error",
+        text: text || "오류 났어."
+      });
       await this.speak(text ? `오류 났어. ${text}` : "오류 났어.", "error");
       return;
     }
@@ -526,18 +566,38 @@ export class TerminalHarness {
     switch (event.type) {
       case "speech":
         this.printAgentOutputBlock("speech", event.text);
+        this.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "speech",
+          text: event.text
+        });
         this.passthroughStructuredSpeechSessions.add(sessionId);
         this.scheduleSpeak(event.text, "speech");
         return;
       case "command":
         this.printAgentOutputBlock("command", event.text);
+        this.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "command",
+          text: event.text
+        });
         return;
       case "status":
         this.printAgentOutputBlock("status", event.text);
+        this.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "status",
+          text: event.text
+        });
         if (event.text.length <= 80) this.scheduleSpeak(event.text, "status");
         return;
       case "error":
         this.printAgentOutputBlock("error", event.text);
+        this.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "error",
+          text: event.text
+        });
         this.scheduleSpeak(event.text, "error");
         return;
     }
@@ -578,6 +638,12 @@ export class TerminalHarness {
     };
 
     this.ttsPlaybackState.recordStart(message, this.now());
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state: "speaking",
+      text
+    });
     await this.voiceOutput.speak(message);
   }
 
@@ -730,6 +796,37 @@ export class TerminalHarness {
     this.writeLine(
       `[status] state=${context.state} codex=${context.codexStatus.process}/${context.codexStatus.task}${session}${pending}`
     );
+  }
+
+  private async handleVisualControl(action: "tts_stop" | "exit" | "clear_commands"): Promise<void> {
+    switch (action) {
+      case "tts_stop":
+        await this.stopVoiceOutput();
+        return;
+      case "clear_commands":
+        this.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "status",
+          text: "commands cleared"
+        });
+        return;
+      case "exit":
+        this.writeLine("[visual] exit requested.");
+        return;
+    }
+  }
+
+  sendVisualEvent(event: VisualEvent): void {
+    this.visualBridge?.send(event);
+  }
+
+  private sendVisualState(state: VisualUiState, text?: string): void {
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state,
+      ...(text ? { text } : {})
+    });
   }
 
   private printStartupBanner(): void {
@@ -1079,6 +1176,21 @@ function agentLabel(target: AgentTarget): string {
 
 function voiceMessageLanguage(text: string): VoiceMessage["language"] {
   return detectTranscriptLanguage(normalizeTranscriptText(text)) === "en" ? "en" : "ko";
+}
+
+function statusToVisualState(task: CodexStatus["task"]): VisualUiState {
+  switch (task) {
+    case "thinking":
+      return "thinking";
+    case "editing":
+    case "running_command":
+      return "running";
+    case "waiting_permission":
+      return "approval_pending";
+    case "idle":
+    default:
+      return "idle";
+  }
 }
 
 function formatError(error: unknown): string {

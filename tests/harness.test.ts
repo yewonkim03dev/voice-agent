@@ -4,6 +4,7 @@ import test from "node:test";
 import { InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
 import { parseVoiceAgentEventLine } from "../src/voice/VoiceAgentEvent.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
+import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
 
 test("routes terminal text to the in-memory backend as a Codex prompt", async () => {
   const harness = createHarness();
@@ -62,6 +63,37 @@ test("tts-stop slash command stops current voice output", async () => {
 
   assert.equal(voiceOutput.stopCount, 1);
   assert.ok(lines.includes("[tts] stopped."));
+});
+
+test("visual control tts_stop stops current voice output", async () => {
+  const voiceOutput = new StoppableVoiceOutput();
+  const visualBridge = new FakeVisualBridge();
+  const harness = new TerminalHarness({
+    voiceOutput,
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  visualBridge.emitControl("tts_stop");
+  await flushAsync();
+
+  assert.equal(voiceOutput.stopCount, 1);
+});
+
+test("visual exit control does not stop the harness or send Codex commands", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge);
+
+  await harness.start();
+  visualBridge.emitControl("exit");
+  await flushAsync();
+  await harness.processLine("코덱스 테스트 돌려줘");
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
 });
 
 test("parses real harness mode with extra Codex app-server args", () => {
@@ -231,7 +263,8 @@ test("pass-through mode routes voice-agent speech events to TTS immediately", as
 test("pass-through mode displays command events without speaking them", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
-  const harness = createPassthroughHarness(backend, lines);
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, lines, visualBridge);
 
   await harness.start();
   backend.emitOutput({
@@ -244,12 +277,18 @@ test("pass-through mode displays command events without speaking them", async ()
 
   assert.equal(harness.voiceOutput.messages.length, 0);
   assert.equal(lines.some((line) => line.includes("[agent:command] npm test")), true);
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "command"), {
+    op: "voice-agent-ui",
+    type: "command",
+    text: "npm test"
+  });
 });
 
 test("pass-through mode handles status and error events", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
-  const harness = createPassthroughHarness(backend, lines);
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, lines, visualBridge);
 
   await harness.start();
   backend.emitOutput({
@@ -268,6 +307,8 @@ test("pass-through mode handles status and error events", async () => {
   ]);
   assert.equal(lines.some((line) => line.includes("[agent:status] 테스트 실행 중이야.")), true);
   assert.equal(lines.some((line) => line.includes("[agent:error] 테스트 실행에 실패했어.")), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "status"), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "error"), true);
 });
 
 test("pass-through mode keeps invalid JSON and mixed raw stdout as raw fallback", async () => {
@@ -370,7 +411,11 @@ function createTestId(): (prefix: string) => string {
   return (prefix) => `${prefix}_${++id}`;
 }
 
-function createPassthroughHarness(backend: InMemoryAgentBackend, lines: string[] = []): TerminalHarness {
+function createPassthroughHarness(
+  backend: InMemoryAgentBackend,
+  lines: string[] = [],
+  visualBridge?: VisualBridgeLike
+): TerminalHarness {
   let id = 0;
 
   return new TerminalHarness({
@@ -380,7 +425,8 @@ function createPassthroughHarness(backend: InMemoryAgentBackend, lines: string[]
     agentTarget: "codex",
     now: () => 1000,
     createId: (prefix) => `${prefix}_${++id}`,
-    writeLine: (line) => lines.push(line)
+    writeLine: (line) => lines.push(line),
+    visualBridge
   });
 }
 
@@ -405,5 +451,28 @@ class StoppableVoiceOutput {
 
   onFinished(callback: (id: string) => void): void {
     this.finishedListeners.push(callback);
+  }
+}
+
+class FakeVisualBridge implements VisualBridgeLike {
+  readonly events: VisualEvent[] = [];
+  private readonly controlListeners: Array<(event: VisualControlEvent) => void> = [];
+
+  send(event: VisualEvent): void {
+    this.events.push(event);
+  }
+
+  onControl(callback: (event: VisualControlEvent) => void): void {
+    this.controlListeners.push(callback);
+  }
+
+  emitControl(action: VisualControlEvent["action"]): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action
+      })
+    );
   }
 }

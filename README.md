@@ -149,6 +149,28 @@ npm run tts:test -- --voice Yuna --ko "유나 목소리 테스트야."
 npm run tts:test -- --list-voices
 ```
 
+The native visual companion UI is Qt/QML-based and does not use a browser, Electron, Tauri, or WebView. To open the companion window by itself:
+
+```sh
+npm run visual
+```
+
+Visual provider setup prefers Qt/QML, falls back to the native macOS Swift/AppKit companion when Qt is not installed, and prints Qt install commands:
+
+```sh
+npm run setup:visual
+```
+
+To start the always-on harness with a local visual bridge and companion window:
+
+```sh
+npm run harness:wake:codex -- --visual
+```
+
+By default, `visual.provider` is `auto`: Qt/QML is used first when `qml6`, `qml`, `qmlscene6`, or `qmlscene` is on PATH; on macOS, missing Qt falls back to `swift visual/macos/VoiceAgentVisual.swift`. You can force a provider with `--visual-provider qtqml` or `--visual-provider macos-native`.
+
+The UI receives state, volume, wake, speech, command, status, error, and approval events. NDJSON `command` events are shown in the command panel without being spoken. The bottom `TTS Stop` button sends the same control action as `/tts-stop`. If a requested visual provider is unavailable, the harness prints `[visual] unavailable: ...` and continues normally.
+
 or configured through env:
 
 ```sh

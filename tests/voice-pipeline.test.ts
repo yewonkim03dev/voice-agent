@@ -605,10 +605,21 @@ test("voice harness config loads TTS settings from the local config file", async
   }
 });
 
-test("voice harness CLI parses always-on flags without forwarding them to Codex", () => {
-  assert.deepEqual(parseVoiceHarnessCliArgs(["--codex", "--always-on", "--debug", "-c", "model=\"gpt\""]), {
+test("voice harness CLI parses always-on and visual flags without forwarding them to Codex", () => {
+  assert.deepEqual(parseVoiceHarnessCliArgs(["--codex", "--always-on", "--visual", "--debug", "-c", "model=\"gpt\""]), {
     alwaysOn: true,
     debug: true,
+    visual: true,
+    harnessArgs: ["--codex", "-c", "model=\"gpt\""]
+  });
+});
+
+test("voice harness CLI parses visual provider without forwarding it to Codex", () => {
+  assert.deepEqual(parseVoiceHarnessCliArgs(["--codex", "--visual", "--visual-provider", "macos-native", "-c", "model=\"gpt\""]), {
+    alwaysOn: false,
+    debug: false,
+    visual: true,
+    visualProvider: "macos-native",
     harnessArgs: ["--codex", "-c", "model=\"gpt\""]
   });
 });
