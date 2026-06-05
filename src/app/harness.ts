@@ -602,7 +602,16 @@ export class TerminalHarness {
       for (const line of completeLines) {
         this.handlePassthroughOutputLine(type, sessionId, line);
       }
-      this.passthroughOutputBuffers.set(type, remainder);
+      if (this.tryHandleStructuredPassthroughOutput(type, sessionId, remainder) || !remainder) {
+        this.passthroughOutputBuffers.delete(type);
+      } else {
+        this.passthroughOutputBuffers.set(type, remainder);
+      }
+      return;
+    }
+
+    if (this.tryHandleStructuredPassthroughOutput(type, sessionId, remainder)) {
+      this.passthroughOutputBuffers.delete(type);
       return;
     }
 
@@ -613,6 +622,28 @@ export class TerminalHarness {
     }
 
     this.passthroughOutputBuffers.set(type, remainder);
+  }
+
+  private tryHandleStructuredPassthroughOutput(
+    type: CodexOutputEvent["type"],
+    sessionId: string,
+    text: string
+  ): boolean {
+    const parsed = parseVoiceAgentEventSequence(text) ?? parseVoiceAgentEventLine(text);
+
+    if (Array.isArray(parsed)) {
+      for (const event of parsed) {
+        this.handleVoiceAgentEvent(sessionId, event);
+      }
+      return true;
+    }
+
+    if (parsed) {
+      this.handleVoiceAgentEvent(sessionId, parsed);
+      return true;
+    }
+
+    return false;
   }
 
   private async flushPassthroughOutputBuffers(sessionId = this.currentBackendSessionId()): Promise<void> {

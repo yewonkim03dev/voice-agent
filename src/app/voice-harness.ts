@@ -331,13 +331,16 @@ export class AlwaysOnVoiceHarnessRunner {
     try {
       this.printAudioDiagnostics(audio);
       const transcript = await this.speechProcessor.transcribe(audio);
-      this.printTranscript(transcript);
 
       if (source === "manual") {
+        this.printTranscript(transcript);
         await this.terminalHarness.processTranscript(this.textContext.apply(transcript));
         return;
       }
 
+      if (this.shouldShowCandidateTranscript(transcript)) {
+        this.printTranscript(transcript);
+      }
       await this.routeCandidateTranscript(transcript);
     } catch (error) {
       this.writeLine(`[voice:error] ${formatError(error)}`);
@@ -579,6 +582,13 @@ export class AlwaysOnVoiceHarnessRunner {
 
   private shouldShowCandidateVisualState(): boolean {
     return Boolean(this.wakeFollowUp && this.wakeFollowUp.expiresAt >= this.now()) && !this.terminalHarness.isAgentRequestActive();
+  }
+
+  private shouldShowCandidateTranscript(transcript: Transcript): boolean {
+    if (this.terminalHarness.hasPendingApproval()) return true;
+    if (detectConfiguredWakePhrase(transcript.text, this.wakePhrases)) return true;
+    if (this.wakeFollowUp && this.wakeFollowUp.expiresAt >= this.now()) return true;
+    return !this.terminalHarness.isAgentRequestActive();
   }
 
   private printTranscript(transcript: Transcript): void {

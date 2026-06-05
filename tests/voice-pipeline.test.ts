@@ -906,16 +906,28 @@ test("always-on voice runner keeps thinking after recent non-wake speech during 
   assert.equal(backend.prompts.length, 1);
   assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
 
+  const eventsBeforeAgentSpeech = visualBridge.events.length;
   emitAgentSpeech(backend, "원달러 환율 기준으로 원인을 확인해 볼게요.");
   await flushAsync();
+  assert.equal(
+    visualBridge.events
+      .slice(eventsBeforeAgentSpeech)
+      .some((event) => event.type === "state" && event.state === "speaking" && event.text === "원달러 환율 기준으로 원인을 확인해 볼게요."),
+    true
+  );
   assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
 
   emitCandidate(audioInput, 2000);
   await runner.drain();
 
   const laterStates = visualBridge.events.slice(eventsAfterSubmit).filter(isStateEvent);
+  const laterStatusTexts = visualBridge.events
+    .slice(eventsAfterSubmit)
+    .filter((event): event is Extract<VisualEvent, { type: "status" }> => event.type === "status")
+    .map((event) => event.text);
   assert.ok(logs.includes("[barge:ignored] reason=no_wake"));
   assert.equal(laterStates.some((event) => event.state === "idle"), false);
+  assert.equal(laterStatusTexts.includes("원 달러"), false);
   assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
 
   await runner.stop();

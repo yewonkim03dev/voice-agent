@@ -624,6 +624,24 @@ test("pass-through mode routes voice-agent speech events to TTS immediately", as
   assert.equal(lines.some((line) => line.includes("[agent:speech] 확인했어. 테스트부터 돌려볼게.")), true);
 });
 
+test("pass-through mode routes complete voice-agent speech without waiting for newline", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","text":"바로 말할게."}',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(harness.voiceOutput.messages.at(-1)?.text, "바로 말할게.");
+  assert.equal(lines.some((line) => line.includes("[agent:speech] 바로 말할게.")), true);
+});
+
 test("pass-through visual stays speaking until TTS finishes", async () => {
   const backend = new InMemoryAgentBackend();
   const voiceOutput = new HoldableVoiceOutput();
