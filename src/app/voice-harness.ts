@@ -438,6 +438,7 @@ export function createVoiceHarnessRunnerFromConfig(
     audioInput?: AudioInput;
     speechProcessor?: SpeechProcessor;
     visualBridge?: VisualBridgeLike;
+    onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
   } = {}
@@ -449,7 +450,8 @@ export function createVoiceHarnessRunnerFromConfig(
     now: options.now,
     createId: options.createId,
     ttsConfig: config.tts,
-    visualBridge: options.visualBridge
+    visualBridge: options.visualBridge,
+    onExitRequest: options.onExitRequest
   });
   const gate = new ManualRecordingGate({
     now: options.now
@@ -500,6 +502,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     wakePhrases?: string[];
     debug?: boolean;
     visualBridge?: VisualBridgeLike;
+    onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
   } = {}
@@ -511,7 +514,8 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     now: options.now,
     createId: options.createId,
     ttsConfig: config.tts,
-    visualBridge: options.visualBridge
+    visualBridge: options.visualBridge,
+    onExitRequest: options.onExitRequest
   });
   const audioInput =
     options.audioInput ??
@@ -615,6 +619,13 @@ export async function runVoiceHarness(): Promise<void> {
   const cli = parseVoiceHarnessCliArgs(process.argv.slice(2));
   const args = defaultCodexArgs(cli.harnessArgs);
   const visualBridge = cli.visual ? new VisualBridge({ writeLine }) : undefined;
+  let shutdownRequested = false;
+  let readline: ReturnType<typeof createInterface> | undefined;
+  const requestShutdown = (): void => {
+    shutdownRequested = true;
+    if (readline) closeReadline(readline);
+  };
+
   if (visualBridge) {
     try {
       const url = await visualBridge.start();
@@ -631,19 +642,22 @@ export async function runVoiceHarness(): Promise<void> {
     ? createAlwaysOnVoiceHarnessRunnerFromConfig(resolution.config, args, {
         writeLine,
         debug: cli.debug,
-        visualBridge
+        visualBridge,
+        onExitRequest: requestShutdown
       })
     : createVoiceHarnessRunnerFromConfig(resolution.config, args, {
         writeLine,
-        visualBridge
+        visualBridge,
+        onExitRequest: requestShutdown
       });
 
   await runner.start();
-  const readline = createInterface({
+  readline = createInterface({
     input: stdin,
     output: stdout,
     prompt: "> "
   });
+  if (shutdownRequested) closeReadline(readline);
   promptIfOpen(readline);
 
   try {

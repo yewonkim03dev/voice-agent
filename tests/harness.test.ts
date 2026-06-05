@@ -82,18 +82,22 @@ test("visual control tts_stop stops current voice output", async () => {
   assert.equal(voiceOutput.stopCount, 1);
 });
 
-test("visual exit control does not stop the harness or send Codex commands", async () => {
+test("visual exit control requests full harness shutdown", async () => {
   const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
   const visualBridge = new FakeVisualBridge();
-  const harness = createPassthroughHarness(backend, [], visualBridge);
+  let exitRequests = 0;
+  const harness = createPassthroughHarness(backend, lines, visualBridge, () => {
+    exitRequests += 1;
+  });
 
   await harness.start();
   visualBridge.emitControl("exit");
   await flushAsync();
-  await harness.processLine("코덱스 테스트 돌려줘");
 
-  assert.equal(backend.prompts.length, 1);
-  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.equal(exitRequests, 1);
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(lines.includes("[visual] exit requested. Shutting down harness."), true);
 });
 
 test("parses real harness mode with extra Codex app-server args", () => {
@@ -414,7 +418,8 @@ function createTestId(): (prefix: string) => string {
 function createPassthroughHarness(
   backend: InMemoryAgentBackend,
   lines: string[] = [],
-  visualBridge?: VisualBridgeLike
+  visualBridge?: VisualBridgeLike,
+  onExitRequest?: () => void | Promise<void>
 ): TerminalHarness {
   let id = 0;
 
@@ -426,7 +431,8 @@ function createPassthroughHarness(
     now: () => 1000,
     createId: (prefix) => `${prefix}_${++id}`,
     writeLine: (line) => lines.push(line),
-    visualBridge
+    visualBridge,
+    onExitRequest
   });
 }
 

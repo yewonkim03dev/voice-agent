@@ -424,7 +424,7 @@ control event:
 - UI는 Codex/Claude에 직접 coding command를 보내지 않는다.
 - `command` event는 bounded command panel에 표시하고 TTS로 읽지 않는다.
 - `tts_stop`은 `/tts-stop`과 같은 효과만 낸다.
-- `exit`은 UI/visual bridge만 닫는 의도이며 Codex/Claude session을 죽이지 않는다.
+- `exit`은 full harness shutdown 요청이다. Terminal readline, visual bridge, audio input, TTS, Codex/Claude backend를 함께 정리한다.
 - Qt/QML runtime이 없으면 `[visual] unavailable: ...`를 출력하고 terminal harness는 계속 동작한다.
 
 ---

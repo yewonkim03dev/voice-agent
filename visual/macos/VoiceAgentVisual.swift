@@ -250,7 +250,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func exitVisual() {
         sendControl("exit")
-        NSApp.terminate(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            NSApp.terminate(nil)
+        }
     }
 
     private func sendControl(_ action: String) {

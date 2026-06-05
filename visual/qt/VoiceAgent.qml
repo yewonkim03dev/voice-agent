@@ -38,7 +38,7 @@ ApplicationWindow {
         }
 
         if (action === "clear_commands") commands = []
-        if (action === "exit") Qt.quit()
+        if (action === "exit") exitTimer.restart()
     }
 
     function pushCommand(text) {
@@ -113,6 +113,12 @@ ApplicationWindow {
         id: glowReset
         interval: 650
         onTriggered: root.glow = 0
+    }
+
+    Timer {
+        id: exitTimer
+        interval: 180
+        onTriggered: Qt.quit()
     }
 
     NumberAnimation on rms {

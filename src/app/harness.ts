@@ -187,6 +187,7 @@ export interface TerminalHarnessOptions {
   cwd?: string;
   spawnTtsProcess?: SpawnTtsProcess;
   visualBridge?: VisualBridgeLike;
+  onExitRequest?: () => void | Promise<void>;
 }
 
 export class TerminalHarness {
@@ -202,8 +203,10 @@ export class TerminalHarness {
   private readonly routingMode: "runtime" | "passthrough";
   private readonly agentTarget: AgentTarget;
   private readonly visualBridge: VisualBridgeLike | undefined;
+  private readonly onExitRequest: (() => void | Promise<void>) | undefined;
   private idSequence = 0;
   private started = false;
+  private exitRequested = false;
   private currentSessionId: string | undefined;
   private passthroughState: AgentState = "BOOTING";
   private codexStatus: CodexStatus = initialCodexStatus;
@@ -218,6 +221,7 @@ export class TerminalHarness {
     this.writeLine = options.writeLine ?? noop;
     this.backendLabel = options.backendLabel ?? "mock";
     this.visualBridge = options.visualBridge;
+    this.onExitRequest = options.onExitRequest;
     this.routingMode =
       options.routingMode ??
       (options.backend && this.backendLabel !== "mock" ? "passthrough" : "runtime");
@@ -811,9 +815,23 @@ export class TerminalHarness {
         });
         return;
       case "exit":
-        this.writeLine("[visual] exit requested.");
+        await this.requestExit();
         return;
     }
+  }
+
+  private async requestExit(): Promise<void> {
+    if (this.exitRequested) return;
+
+    this.exitRequested = true;
+    this.writeLine("[visual] exit requested. Shutting down harness.");
+
+    if (this.onExitRequest) {
+      await this.onExitRequest();
+      return;
+    }
+
+    await this.stop();
   }
 
   sendVisualEvent(event: VisualEvent): void {
