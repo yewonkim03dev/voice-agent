@@ -39,6 +39,7 @@ import type { SpawnTtsProcess } from "../voice/MacosAppleTtsProvider.ts";
 import { TtsPlaybackState } from "../voice/TtsPlaybackState.ts";
 import type { VisualBridgeLike, VisualEvent, VisualUiState } from "../visual/VisualBridge.ts";
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
+import { createCodexThreadStore } from "./codex-thread-config.ts";
 
 type WriteLine = (line: string) => void;
 
@@ -901,6 +902,7 @@ export interface HarnessCliOptions {
   backendMode: "mock" | "codex" | "claude";
   codexCommand: string;
   codexArgs: string[];
+  codexThreadId?: string;
   claudeCommand: string;
   cwd: string;
   tts?: TtsCliOptions;
@@ -926,7 +928,12 @@ export function createTerminalHarnessFromArgs(
         cwd: cli.cwd,
         voiceAgentProtocol: true,
         now: options.now,
-        writeLine: options.writeLine
+        writeLine: options.writeLine,
+        threadId: cli.codexThreadId,
+        threadStore: createCodexThreadStore({
+          cwd: cli.cwd,
+          env: options.env
+        })
       })
     });
   }
@@ -964,6 +971,7 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
   const extraCodexArgs = separator === -1 ? [] : args.slice(separator + 1);
   let backendMode: HarnessCliOptions["backendMode"] = "mock";
   let codexCommand = "codex";
+  let codexThreadId: string | undefined;
   let claudeCommand = "claude";
   let cwd = defaultCwd;
   let tts: TtsCliOptions | undefined;
@@ -984,6 +992,9 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
         break;
       case "--codex-command":
         codexCommand = requiredValue(harnessArgs, ++index, "--codex-command");
+        break;
+      case "--codex-thread-id":
+        codexThreadId = requiredValue(harnessArgs, ++index, "--codex-thread-id");
         break;
       case "--claude-command":
         claudeCommand = requiredValue(harnessArgs, ++index, "--claude-command");
@@ -1061,6 +1072,7 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
     backendMode,
     codexCommand,
     codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", ...extraCodexArgs],
+    ...(codexThreadId ? { codexThreadId } : {}),
     claudeCommand,
     cwd,
     ...(tts ? { tts } : {})

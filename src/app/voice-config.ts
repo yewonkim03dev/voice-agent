@@ -141,7 +141,15 @@ export async function writeVoiceConfigFile(
   const cwd = options.cwd ?? process.cwd();
   const configPath = options.configPath ?? defaultVoiceConfigPath;
   const fullPath = resolve(cwd, configPath);
-  const body = `${JSON.stringify(config, null, 2)}\n`;
+  const existing = await readJsonObject(fullPath);
+  const body = `${JSON.stringify(
+    {
+      ...existing,
+      ...config
+    },
+    null,
+    2
+  )}\n`;
 
   await writeFile(fullPath, body, "utf8");
   return fullPath;
@@ -207,7 +215,13 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
   }
 
   try {
-    const parsed = JSON.parse(raw) as Partial<VoiceHarnessConfig>;
+    const parsed = JSON.parse(raw) as Partial<VoiceHarnessConfig> & Record<string, unknown>;
+    if (!hasVoiceConfigFields(parsed)) {
+      return {
+        errors: []
+      };
+    }
+
     const recorderCommand = typeof parsed.recorderCommand === "string" ? parsed.recorderCommand.trim() : "";
     const sttCommand = typeof parsed.sttCommand === "string" ? parsed.sttCommand.trim() : "";
     const errors: string[] = [];
@@ -254,6 +268,26 @@ function missingRecorderMessage(): string {
 
 function missingSttMessage(): string {
   return "Missing STT capability: run npm run setup:voice or set VOICE_AGENT_STT_COMMAND to a local STT/Whisper command template containing {audio}.";
+}
+
+async function readJsonObject(path: string): Promise<Record<string, unknown>> {
+  try {
+    const raw = await readFile(path, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch (error) {
+    if (isNotFound(error)) return {};
+    throw error;
+  }
+}
+
+function hasVoiceConfigFields(parsed: Record<string, unknown>): boolean {
+  return "recorderCommand" in parsed ||
+    "sttCommand" in parsed ||
+    "sampleRate" in parsed ||
+    "channels" in parsed ||
+    "wakePhrases" in parsed ||
+    "tts" in parsed;
 }
 
 function parsePositiveInteger(value: string | undefined, fallback: number): number {

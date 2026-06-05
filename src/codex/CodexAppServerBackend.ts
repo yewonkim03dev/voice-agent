@@ -68,6 +68,11 @@ interface PendingCodexApproval {
   raw: Record<string, unknown>;
 }
 
+export interface CodexThreadStore {
+  load(): Promise<string | undefined>;
+  save(threadId: string): Promise<void>;
+}
+
 export interface CodexAppServerBackendOptions {
   command?: string;
   args?: string[];
@@ -80,6 +85,8 @@ export interface CodexAppServerBackendOptions {
   spawnProcess?: SpawnCodexAppServerProcess;
   createWebSocket?: CreateWebSocket;
   startupTimeoutMs?: number;
+  threadId?: string;
+  threadStore?: CodexThreadStore;
 }
 
 export class CodexAppServerBackend implements AgentBackend {
@@ -94,6 +101,8 @@ export class CodexAppServerBackend implements AgentBackend {
   private readonly spawnProcess: SpawnCodexAppServerProcess;
   private readonly createWebSocket: CreateWebSocket;
   private readonly startupTimeoutMs: number;
+  private readonly configuredThreadId: string | undefined;
+  private readonly threadStore: CodexThreadStore | undefined;
   private readonly outputListeners: Array<(event: CodexOutputEvent) => void> = [];
   private readonly permissionListeners: Array<(request: PermissionRequest) => void> = [];
   private readonly statusListeners: Array<(status: CodexStatus) => void> = [];
@@ -128,6 +137,8 @@ export class CodexAppServerBackend implements AgentBackend {
     this.spawnProcess = options.spawnProcess ?? spawn;
     this.createWebSocket = options.createWebSocket ?? createDefaultWebSocket;
     this.startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
+    this.configuredThreadId = parseOptionalString(options.threadId);
+    this.threadStore = options.threadStore;
   }
 
   async start(config?: CodexProcessConfig): Promise<void> {
@@ -158,7 +169,7 @@ export class CodexAppServerBackend implements AgentBackend {
       const endpoint = await this.waitForEndpoint(child);
       await this.connect(endpoint);
       await this.initialize();
-      await this.startThread(cwd);
+      await this.openThread(cwd);
 
       this.publishStatus({
         process: "running",
@@ -331,6 +342,34 @@ export class CodexAppServerBackend implements AgentBackend {
     });
   }
 
+  private async openThread(cwd: string): Promise<void> {
+    const threadId = this.configuredThreadId ?? await this.loadStoredThreadId();
+
+    if (threadId) {
+      try {
+        await this.resumeThread(cwd, threadId);
+        return;
+      } catch (error) {
+        this.writeLine(`[codex-app] thread/resume failed for ${threadId}: ${formatError(error)}. Starting a new thread.`);
+      }
+    }
+
+    await this.startThread(cwd);
+  }
+
+  private async resumeThread(cwd: string, threadId: string): Promise<void> {
+    const result = await this.sendRequest("thread/resume", {
+      threadId,
+      cwd,
+      approvalPolicy: "untrusted",
+      approvalsReviewer: "user",
+      sandbox: "workspace-write",
+      persistExtendedHistory: true
+    });
+    const thread = asRecord(result).thread;
+    await this.setThreadId(typeof asRecord(thread).id === "string" ? asRecord(thread).id : undefined, "thread/resume");
+  }
+
   private async startThread(cwd: string): Promise<void> {
     const result = await this.sendRequest("thread/start", {
       cwd,
@@ -342,10 +381,38 @@ export class CodexAppServerBackend implements AgentBackend {
       sessionStartSource: "startup"
     });
     const thread = asRecord(result).thread;
-    this.threadId = typeof asRecord(thread).id === "string" ? asRecord(thread).id : undefined;
+    await this.setThreadId(typeof asRecord(thread).id === "string" ? asRecord(thread).id : undefined, "thread/start");
+  }
+
+  private async setThreadId(threadId: string | undefined, source: "thread/start" | "thread/resume"): Promise<void> {
+    this.threadId = threadId;
 
     if (!this.threadId) {
       throw new Error("Codex app-server did not return a thread id.");
+    }
+
+    this.writeLine(`[codex-app] ${source} ${this.threadId}`);
+    await this.saveStoredThreadId(this.threadId);
+  }
+
+  private async loadStoredThreadId(): Promise<string | undefined> {
+    if (!this.threadStore) return undefined;
+
+    try {
+      return parseOptionalString(await this.threadStore.load());
+    } catch (error) {
+      this.writeLine(`[codex-app] could not read stored thread id: ${formatError(error)}`);
+      return undefined;
+    }
+  }
+
+  private async saveStoredThreadId(threadId: string): Promise<void> {
+    if (!this.threadStore) return;
+
+    try {
+      await this.threadStore.save(threadId);
+    } catch (error) {
+      this.writeLine(`[codex-app] could not save thread id: ${formatError(error)}`);
     }
   }
 
@@ -597,6 +664,10 @@ function optionalUnknownArray(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined;
 }
 
+function parseOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function supportsDecision(availableDecisions: unknown[] | undefined, name: string): boolean {
   if (!availableDecisions || availableDecisions.length === 0) return true;
 
@@ -626,6 +697,10 @@ function createDefaultWebSocket(url: string): WebSocketLike {
   }
 
   return new WebSocket(url) as WebSocketLike;
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function noop(_line: string): void {}

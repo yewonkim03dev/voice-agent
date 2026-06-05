@@ -42,6 +42,69 @@ test("starts Codex app-server, initializes, and opens a thread", async () => {
   assert.equal(statuses.at(-1)?.process, "running");
 });
 
+test("resumes a stored Codex app-server thread when available", async () => {
+  const child = new FakeAppServerProcess();
+  const socket = new FakeWebSocket();
+  const saved: string[] = [];
+  const backend = new CodexAppServerBackend({
+    cwd: "/repo",
+    threadStore: {
+      async load() {
+        return "thread_saved";
+      },
+      async save(threadId) {
+        saved.push(threadId);
+      }
+    },
+    spawnProcess: () => child,
+    createWebSocket: () => socket
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  assert.equal(socket.sent[1].method, "thread/resume");
+  assert.equal(socket.sent[1].params.threadId, "thread_saved");
+  assert.equal(socket.sent[1].params.cwd, "/repo");
+  assert.deepEqual(saved, ["thread_saved"]);
+});
+
+test("starts a new Codex app-server thread when stored resume fails", async () => {
+  const child = new FakeAppServerProcess();
+  const socket = new FakeWebSocket();
+  socket.resumeError = "thread not found";
+  const saved: string[] = [];
+  const lines: string[] = [];
+  const backend = new CodexAppServerBackend({
+    cwd: "/repo",
+    threadStore: {
+      async load() {
+        return "missing_thread";
+      },
+      async save(threadId) {
+        saved.push(threadId);
+      }
+    },
+    writeLine: (line) => lines.push(line),
+    spawnProcess: () => child,
+    createWebSocket: () => socket
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  assert.equal(socket.sent[1].method, "thread/resume");
+  assert.equal(socket.sent[2].method, "thread/start");
+  assert.deepEqual(saved, ["thread_1"]);
+  assert.equal(lines.some((line) => line.includes("thread/resume failed for missing_thread")), true);
+});
+
 test("sends prompts as turn/start requests", async () => {
   const { backend, child, socket } = createStartedBackend();
 
@@ -371,6 +434,7 @@ class FakeWebSocket {
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror: ((event: { message?: string; type?: string }) => void) | null = null;
   onclose: (() => void) | null = null;
+  resumeError: string | undefined;
   readonly sent: Array<{ id: string | number; method?: string; params?: Record<string, unknown>; result?: unknown }> = [];
   flushed: Promise<void> = Promise.resolve();
 
@@ -403,6 +467,26 @@ class FakeWebSocket {
           }
         }
       });
+    }
+
+    if (message.method === "thread/resume") {
+      if (this.resumeError) {
+        this.receive({
+          id: message.id,
+          error: {
+            message: this.resumeError
+          }
+        });
+      } else {
+        this.receive({
+          id: message.id,
+          result: {
+            thread: {
+              id: String(message.params?.threadId ?? "thread_1")
+            }
+          }
+        });
+      }
     }
 
     if (message.method === "turn/start") {

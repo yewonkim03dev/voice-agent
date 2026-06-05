@@ -114,6 +114,17 @@ test("keeps --real as a Codex harness alias", () => {
   assert.equal(parseHarnessCliArgs(["--real"], "/repo").backendMode, "codex");
 });
 
+test("parses a fixed Codex thread id without forwarding it to app-server", () => {
+  assert.deepEqual(parseHarnessCliArgs(["--codex", "--codex-thread-id", "thread_saved", "-c", "model=\"gpt\""], "/repo"), {
+    backendMode: "codex",
+    codexCommand: "codex",
+    codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", "-c", "model=\"gpt\""],
+    codexThreadId: "thread_saved",
+    claudeCommand: "claude",
+    cwd: "/repo"
+  });
+});
+
 test("parses Claude harness mode", () => {
   assert.deepEqual(parseHarnessCliArgs(["--claude", "--claude-command", "claude-dev"], "/repo"), {
     backendMode: "claude",

@@ -27,6 +27,8 @@ npm run harness:codex
 
 Codex mode starts `codex app-server --listen ws://127.0.0.1:0`, opens a local websocket JSON-RPC connection, and sends normal text directly with `turn/start`. It does not run local intent classification or text-based permission parsing in front of Codex. This avoids fake approval prompts such as `approve_action`.
 
+On first start, Codex mode stores the returned app-server `threadId` under `codex.threadId` in `.voice-agent.local.json`. Later runs try `thread/resume` with that id before creating a new thread, so repeated `npm run harness:wake:codex -- --visual --tts` sessions continue in the same Codex app chat when the stored thread is still available. To force a specific thread, use `--codex-thread-id <id>` or `VOICE_AGENT_CODEX_THREAD_ID`.
+
 Real Codex mode also prepends a voice-agent response protocol prompt. The agent is asked to stream newline-delimited JSON events so short spoken responses can be sent to TTS before the full turn is complete:
 
 ```jsonl

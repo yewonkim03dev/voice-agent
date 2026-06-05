@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import type { AudioFrame, AudioInput } from "../src/audio/AudioFrame.ts";
 import { InMemoryAgentBackend, TerminalHarness } from "../src/app/harness.ts";
-import { detectVoiceSetup, resolveVoiceHarnessConfig } from "../src/app/voice-config.ts";
+import { readCodexThreadId, writeCodexThreadId } from "../src/app/codex-thread-config.ts";
+import { detectVoiceSetup, resolveVoiceHarnessConfig, writeVoiceConfigFile } from "../src/app/voice-config.ts";
 import { AlwaysOnVoiceHarnessRunner, VoiceHarnessRunner, parseVoiceHarnessCliArgs } from "../src/app/voice-harness.ts";
 import { AlwaysOnWakeGate } from "../src/listening/AlwaysOnWakeGate.ts";
 import { AudioRingBuffer } from "../src/listening/AudioRingBuffer.ts";
@@ -688,6 +689,103 @@ test("voice harness config loads TTS settings from the local config file", async
     assert.equal(resolution.config?.tts?.voice, "Yuna");
     assert.equal(resolution.config?.tts?.gender, "female");
     assert.equal(resolution.config?.tts?.rate, "fast");
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("voice setup config writes without removing stored Codex thread id", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+  const configPath = join(cwd, ".voice-agent.local.json");
+
+  try {
+    await writeFile(configPath, JSON.stringify({
+      codex: {
+        threadId: "thread_saved"
+      },
+      visual: {
+        provider: "auto"
+      }
+    }), "utf8");
+
+    await writeVoiceConfigFile({
+      recorderCommand: "recorder",
+      sttCommand: "stt {audio}",
+      sampleRate: 16_000,
+      channels: 1,
+      wakePhrases: ["코덱스"]
+    }, {
+      cwd,
+      configPath: ".voice-agent.local.json"
+    });
+
+    const parsed = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    assert.deepEqual(parsed.codex, {
+      threadId: "thread_saved"
+    });
+    assert.deepEqual(parsed.visual, {
+      provider: "auto"
+    });
+    assert.equal(parsed.recorderCommand, "recorder");
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("codex thread config writes without removing existing voice setup", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+  const configPath = join(cwd, ".voice-agent.local.json");
+
+  try {
+    await writeFile(configPath, JSON.stringify({
+      recorderCommand: "recorder",
+      sttCommand: "stt {audio}",
+      sampleRate: 16_000,
+      channels: 1,
+      wakePhrases: ["코덱스"]
+    }), "utf8");
+
+    await writeCodexThreadId(configPath, "thread_saved");
+
+    const resolution = await resolveVoiceHarnessConfig({
+      env: {},
+      cwd
+    });
+    assert.equal(await readCodexThreadId(configPath), "thread_saved");
+    assert.equal(resolution.config?.recorderCommand, "recorder");
+    assert.equal(resolution.config?.sttCommand, "stt {audio}");
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("voice harness config ignores codex-only local config files", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+
+  try {
+    await writeFile(join(cwd, ".voice-agent.local.json"), JSON.stringify({
+      codex: {
+        threadId: "thread_saved"
+      }
+    }), "utf8");
+
+    const resolution = await resolveVoiceHarnessConfig({
+      env: {},
+      cwd
+    });
+
+    assert.equal(resolution.config, undefined);
+    assert.equal(resolution.errors.length, 2);
+    assert.match(resolution.errors[0], /setup:voice/u);
   } finally {
     await rm(cwd, {
       force: true,
