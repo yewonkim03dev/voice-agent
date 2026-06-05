@@ -336,11 +336,7 @@ export class AlwaysOnVoiceHarnessRunner {
     switch (decision.action) {
       case "ignore":
         this.writeLine(`[barge:ignored] reason=${decision.reason}`);
-        this.terminalHarness.sendVisualEvent({
-          op: "voice-agent-ui",
-          type: "state",
-          state: "speaking"
-        });
+        this.sendBargeIgnoredVisualState();
         return;
       case "stop":
         await this.terminalHarness.stopVoiceOutput();
@@ -352,6 +348,14 @@ export class AlwaysOnVoiceHarnessRunner {
         await this.terminalHarness.processTranscript(withTranscriptText(transcript, decision.commandText));
         return;
     }
+  }
+
+  private sendBargeIgnoredVisualState(): void {
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state: this.terminalHarness.ttsPlaybackState.isSpeaking() ? "speaking" : "idle"
+    });
   }
 
   private releaseAudio(audio: UtteranceAudio, source: "candidate" | "manual"): void {

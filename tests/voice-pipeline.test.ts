@@ -509,22 +509,30 @@ test("always-on voice runner stops TTS and routes wake plus new command", async 
 });
 
 test("always-on voice runner ignores non-wake speech during TTS", async () => {
-  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "그냥 배경 소리",
+        language: "ko"
+      }
+    ],
     {
-      text: "그냥 배경 소리",
-      language: "ko"
+      visualBridge
     }
-  ]);
+  );
 
   await runner.start();
   emitAgentSpeech(backend, "응답을 읽고 있어.");
   await flushAsync();
   emitCandidate(audioInput, 1000);
   await runner.drain();
-  await runner.stop();
 
   assert.equal(backend.prompts.length, 0);
   assert.ok(logs.includes("[barge:ignored] reason=no_wake"));
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "idle");
+
+  await runner.stop();
 });
 
 test("always-on voice runner keeps pending approval speech working during TTS", async () => {
@@ -1006,6 +1014,10 @@ function isStateEvent(event: VisualEvent): event is Extract<VisualEvent, { type:
 
 function isSpeakingStateEvent(event: VisualEvent): boolean {
   return event.type === "state" && event.state === "speaking";
+}
+
+function lastStateEvent(events: VisualEvent[]): Extract<VisualEvent, { type: "state" }> | undefined {
+  return events.findLast(isStateEvent);
 }
 
 function fakePcmFrame(amplitude: number, timestamp: number, samples = 160): AudioFrame {
