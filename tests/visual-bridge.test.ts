@@ -100,6 +100,14 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9}}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "update_visual_settings",
+    visual: {
+      thinkingVolume: 0.8
+    }
+  });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
   assert.equal(parseVisualControlEvent("not-json"), null);
 });
@@ -112,6 +120,7 @@ test("visual bridge replays latest settings to late visual clients", async () =>
   assert.match(source, /readyClient\.send\(this\.latestSettings\)/u);
   assert.match(source, /event\.wakePhrases !== undefined/u);
   assert.match(source, /event\.tts !== undefined/u);
+  assert.match(source, /event\.visual !== undefined/u);
 });
 
 test("visual bridge accepts websocket clients, sends events, and receives controls", async (context) => {
@@ -239,7 +248,10 @@ test("visual config writes provider without removing existing voice setup", asyn
     recorderCommand: "recorder",
     sttCommand: "stt {audio}",
     sampleRate: 16000,
-    channels: 1
+    channels: 1,
+    visual: {
+      thinkingVolume: 0.44
+    }
   }), "utf8");
 
   await writeVisualConfigFile({
@@ -252,6 +264,7 @@ test("visual config writes provider without removing existing voice setup", asyn
   assert.equal(first.recorderCommand, "recorder");
   assert.equal(first.sttCommand, "stt {audio}");
   assert.deepEqual(first.visual, {
+    thinkingVolume: 0.44,
     provider: "auto"
   });
 
@@ -312,6 +325,7 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Settings/u);
   assert.match(qml, /update_tts_settings/u);
   assert.match(qml, /update_wake_phrases/u);
+  assert.match(qml, /update_visual_settings/u);
   assert.match(qml, /reset_settings/u);
   assert.match(qml, /Restore Defaults/u);
   assert.match(qml, /Wake phrases/u);
@@ -324,6 +338,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Thinking sound/u);
   assert.match(qml, /thinkingVolumeSlider/u);
   assert.match(qml, /volume: root\.thinkingVolume/u);
+  assert.match(qml, /function applyRuntimeVisualSettings/u);
+  assert.match(qml, /thinkingVolume: root\.thinkingVolume/u);
   assert.match(qml, /Wake phrases replace list/u);
   assert.match(qml, /palette\.button: "#7a2730"/u);
   assert.doesNotMatch(qml, /color: parent\.down \? "#7f0019" : "#b00020"/u);
@@ -381,12 +397,15 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /Settings/u);
   assert.match(swift, /update_tts_settings/u);
   assert.match(swift, /update_wake_phrases/u);
+  assert.match(swift, /update_visual_settings/u);
   assert.match(swift, /reset_settings/u);
   assert.match(swift, /Restore Defaults/u);
   assert.match(swift, /settingsWakePhrasesView/u);
   assert.match(swift, /settingsThinkingVolumeField/u);
   assert.match(swift, /Thinking Fx/u);
   assert.match(swift, /thinkingPulseSound\.volume/u);
+  assert.match(swift, /updateVisualSettings/u);
+  assert.match(swift, /"thinkingVolume": thinkingVolume/u);
   assert.match(swift, /final class HoverHelpButton/u);
   assert.match(swift, /NSPopover/u);
   assert.match(swift, /referenceHelpButton/u);

@@ -48,11 +48,17 @@ import type {
   VisualBridgeLike,
   VisualControlEvent,
   VisualEvent,
+  VisualRuntimeSettings,
   VisualTtsSettings,
   VisualUiState
 } from "../visual/VisualBridge.ts";
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
 import { createCodexThreadStore } from "./codex-thread-config.ts";
+import {
+  defaultVisualThinkingVolume,
+  type VoiceSettingsPersistence,
+  type VoiceVisualFileConfig
+} from "./voice-config.ts";
 
 type WriteLine = (line: string) => void;
 interface SpeakVisualOptions {
@@ -209,6 +215,8 @@ export interface TerminalHarnessOptions {
   cwd?: string;
   spawnTtsProcess?: SpawnTtsProcess;
   visualBridge?: VisualBridgeLike;
+  visualConfig?: VoiceVisualFileConfig;
+  settingsPersistence?: VoiceSettingsPersistence;
   onExitRequest?: () => void | Promise<void>;
 }
 
@@ -225,7 +233,9 @@ export class TerminalHarness {
   private readonly routingMode: "runtime" | "passthrough";
   private readonly agentTarget: AgentTarget;
   private readonly visualBridge: VisualBridgeLike | undefined;
+  private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
   private readonly onExitRequest: (() => void | Promise<void>) | undefined;
+  private visualSettings: VisualRuntimeSettings;
   private idSequence = 0;
   private started = false;
   private exitRequested = false;
@@ -245,7 +255,9 @@ export class TerminalHarness {
     this.writeLine = options.writeLine ?? noop;
     this.backendLabel = options.backendLabel ?? "mock";
     this.visualBridge = options.visualBridge;
+    this.settingsPersistence = options.settingsPersistence;
     this.onExitRequest = options.onExitRequest;
+    this.visualSettings = visualRuntimeSettingsFromFile(options.visualConfig);
     this.routingMode =
       options.routingMode ??
       (options.backend && this.backendLabel !== "mock" ? "passthrough" : "runtime");
@@ -933,10 +945,13 @@ export class TerminalHarness {
       case "update_wake_phrases":
         return;
       case "reset_settings":
-        this.resetTtsSettings();
+        await this.resetVisualSettings();
         return;
       case "update_tts_settings":
-        this.updateTtsSettings(event.tts ?? {});
+        await this.updateTtsSettings(event.tts ?? {});
+        return;
+      case "update_visual_settings":
+        await this.updateVisualSettings(event.visual ?? {});
         return;
       case "exit":
         await this.requestExit();
@@ -1009,17 +1024,21 @@ export class TerminalHarness {
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "settings",
-      tts: this.currentVisualTtsSettings()
+      tts: this.currentVisualTtsSettings(),
+      visual: this.currentVisualRuntimeSettings()
     });
   }
 
-  private updateTtsSettings(settings: VisualTtsSettings): void {
+  private async updateTtsSettings(settings: VisualTtsSettings): Promise<void> {
     const sanitized = sanitizeVisualTtsSettings(settings);
     const applied = this.voiceOutput.updateSettings?.(sanitized) ?? sanitized;
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "settings",
       tts: visualTtsSettingsFromVoiceOutput(applied)
+    });
+    await this.persistSettings({
+      tts: ttsFileConfigFromVisualSettings(visualTtsSettingsFromVoiceOutput(applied))
     });
     this.sendVisualEvent({
       op: "voice-agent-ui",
@@ -1028,12 +1047,15 @@ export class TerminalHarness {
     });
   }
 
-  private resetTtsSettings(): void {
+  private async resetVisualSettings(): Promise<void> {
     const applied = this.voiceOutput.updateSettings?.(defaultVisualTtsSettings()) ?? defaultVisualTtsSettings();
+    this.visualSettings = defaultVisualRuntimeSettings();
+    await this.persistResetSettings();
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "settings",
-      tts: visualTtsSettingsFromVoiceOutput(applied)
+      tts: visualTtsSettingsFromVoiceOutput(applied),
+      visual: this.currentVisualRuntimeSettings()
     });
     this.sendVisualEvent({
       op: "voice-agent-ui",
@@ -1042,8 +1064,45 @@ export class TerminalHarness {
     });
   }
 
+  private async updateVisualSettings(settings: VisualRuntimeSettings): Promise<void> {
+    this.visualSettings = sanitizeVisualRuntimeSettings(settings, this.visualSettings);
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      visual: this.currentVisualRuntimeSettings()
+    });
+    await this.persistSettings({
+      visual: this.currentVisualRuntimeSettings()
+    });
+  }
+
   private currentVisualTtsSettings(): VisualTtsSettings {
     return visualTtsSettingsFromVoiceOutput(this.voiceOutput.getSettings?.() ?? {});
+  }
+
+  private currentVisualRuntimeSettings(): VisualRuntimeSettings {
+    return {
+      thinkingVolume: this.visualSettings.thinkingVolume ?? defaultVisualThinkingVolume
+    };
+  }
+
+  private async persistSettings(overrides: {
+    tts?: ReturnType<typeof ttsFileConfigFromVisualSettings>;
+    visual?: VoiceVisualFileConfig;
+  }): Promise<void> {
+    try {
+      await this.settingsPersistence?.update(overrides);
+    } catch (error) {
+      this.writeLine(`[settings:error] ${formatError(error)}`);
+    }
+  }
+
+  private async persistResetSettings(): Promise<void> {
+    try {
+      await this.settingsPersistence?.resetAll();
+    } catch (error) {
+      this.writeLine(`[settings:error] ${formatError(error)}`);
+    }
   }
 
   private sendVisualState(state: VisualUiState, text?: string): void {
@@ -1460,6 +1519,12 @@ function defaultVisualTtsSettings(): VisualTtsSettings {
   };
 }
 
+function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
+  return {
+    thinkingVolume: defaultVisualThinkingVolume
+  };
+}
+
 function visualTtsSettingsFromVoiceOutput(settings: VisualTtsSettings): VisualTtsSettings {
   return {
     language: settings.language ?? "auto",
@@ -1469,6 +1534,42 @@ function visualTtsSettingsFromVoiceOutput(settings: VisualTtsSettings): VisualTt
     ...(settings.pitch !== undefined ? { pitch: settings.pitch } : { pitch: 1 }),
     ...(settings.volume !== undefined ? { volume: settings.volume } : { volume: 1 })
   };
+}
+
+function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefined): VisualRuntimeSettings {
+  return sanitizeVisualRuntimeSettings({
+    thinkingVolume: parsePersistedNumber(settings?.thinkingVolume)
+  }, defaultVisualRuntimeSettings());
+}
+
+function sanitizeVisualRuntimeSettings(
+  settings: VisualRuntimeSettings,
+  fallback: VisualRuntimeSettings = defaultVisualRuntimeSettings()
+): VisualRuntimeSettings {
+  return {
+    thinkingVolume: settings.thinkingVolume === undefined
+      ? fallback.thinkingVolume ?? defaultVisualThinkingVolume
+      : clamp(settings.thinkingVolume, 0, 0.8)
+  };
+}
+
+function ttsFileConfigFromVisualSettings(settings: VisualTtsSettings): VoiceTtsFileConfig {
+  return {
+    enabled: true,
+    language: settings.language ?? "auto",
+    voiceName: settings.voiceName ?? "",
+    gender: settings.gender ?? "auto",
+    rate: settings.rate ?? 0.56,
+    pitch: settings.pitch ?? 1,
+    volume: settings.volume ?? 1
+  };
+}
+
+function parsePersistedNumber(value: string | number | undefined): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function clamp(value: number, min: number, max: number): number {

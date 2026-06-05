@@ -26,6 +26,7 @@ export type VisualControlAction =
   | "emergency_stop"
   | "reset_settings"
   | "update_wake_phrases"
+  | "update_visual_settings"
   | "update_tts_settings";
 
 export interface VisualTtsSettings {
@@ -35,6 +36,10 @@ export interface VisualTtsSettings {
   rate?: number;
   pitch?: number;
   volume?: number;
+}
+
+export interface VisualRuntimeSettings {
+  thinkingVolume?: number;
 }
 
 export type VisualEvent =
@@ -89,6 +94,7 @@ export type VisualEvent =
       op: "voice-agent-ui";
       type: "settings";
       tts?: VisualTtsSettings;
+      visual?: VisualRuntimeSettings;
       wakePhrases?: string[];
     };
 
@@ -98,6 +104,7 @@ export interface VisualControlEvent {
   action: VisualControlAction;
   text?: string;
   tts?: VisualTtsSettings;
+  visual?: VisualRuntimeSettings;
   wakePhrases?: string[];
 }
 
@@ -212,8 +219,10 @@ export class VisualBridge implements VisualBridgeLike {
       op: "voice-agent-ui",
       type: "settings",
       ...(this.latestSettings?.tts !== undefined ? { tts: { ...this.latestSettings.tts } } : {}),
+      ...(this.latestSettings?.visual !== undefined ? { visual: { ...this.latestSettings.visual } } : {}),
       ...(this.latestSettings?.wakePhrases !== undefined ? { wakePhrases: [...this.latestSettings.wakePhrases] } : {}),
       ...(event.tts !== undefined ? { tts: { ...event.tts } } : {}),
+      ...(event.visual !== undefined ? { visual: { ...event.visual } } : {}),
       ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {})
     };
   }
@@ -242,7 +251,8 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "emergency_stop" &&
     record.action !== "reset_settings" &&
     record.action !== "update_wake_phrases" &&
-    record.action !== "update_tts_settings"
+    record.action !== "update_tts_settings" &&
+    record.action !== "update_visual_settings"
   ) {
     return null;
   }
@@ -253,6 +263,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     action: record.action,
     ...(typeof record.text === "string" ? { text: record.text } : {}),
     ...(isRecord(record.tts) ? { tts: parseVisualTtsSettings(record.tts) } : {}),
+    ...(isRecord(record.visual) ? { visual: parseVisualRuntimeSettings(record.visual) } : {}),
     ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {})
   };
 }
@@ -275,6 +286,14 @@ function parseVisualTtsSettings(record: Record<string, unknown>): VisualTtsSetti
   };
 }
 
+function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRuntimeSettings {
+  return {
+    ...(typeof record.thinkingVolume === "number" && Number.isFinite(record.thinkingVolume)
+      ? { thinkingVolume: clamp(record.thinkingVolume, 0, 0.8) }
+      : {})
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -285,6 +304,10 @@ function isVisualLanguage(value: unknown): value is NonNullable<VisualTtsSetting
 
 function isVisualGender(value: unknown): value is NonNullable<VisualTtsSettings["gender"]> {
   return value === "male" || value === "female" || value === "auto";
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 interface WebSocketClientOptions {

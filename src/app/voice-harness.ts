@@ -20,7 +20,12 @@ import { VisualBridge, type VisualBridgeLike } from "../visual/VisualBridge.ts";
 import { launchVisualCompanion } from "../visual/run-visual.ts";
 import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 import { createTerminalHarnessFromArgs, TerminalHarness } from "./harness.ts";
-import { resolveVoiceHarnessConfig, type VoiceHarnessConfig } from "./voice-config.ts";
+import {
+  VoiceLocalSettingsStore,
+  resolveVoiceHarnessConfig,
+  type VoiceHarnessConfig,
+  type VoiceSettingsPersistence
+} from "./voice-config.ts";
 
 type WriteLine = (line: string) => void;
 const wakeFollowUpWindowMs = 10_000;
@@ -42,6 +47,7 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   speechProcessor: SpeechProcessor;
   wakePhrases: string[];
   visualBridge?: VisualBridgeLike;
+  settingsPersistence?: VoiceSettingsPersistence;
   writeLine?: WriteLine;
   debug?: boolean;
   echoGuard?: EchoGuard;
@@ -58,6 +64,7 @@ export class VoiceHarnessRunner {
   private readonly speechProcessor: SpeechProcessor;
   private readonly writeLine: WriteLine;
   private readonly debug: boolean;
+  private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
   private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private started = false;
@@ -69,6 +76,7 @@ export class VoiceHarnessRunner {
     this.speechProcessor = options.speechProcessor;
     this.writeLine = options.writeLine ?? noop;
     this.debug = options.debug ?? false;
+    this.settingsPersistence = options.settingsPersistence;
     this.textContext = new SupplementalTextBuffer(this.writeLine, (entries) =>
       sendVisualContextEvent(options.visualBridge, entries)
     );
@@ -447,15 +455,20 @@ export class AlwaysOnVoiceHarnessRunner {
     this.wakeFollowUp = undefined;
   }
 
-  updateWakePhrases(wakePhrases: readonly string[]): void {
+  updateWakePhrases(wakePhrases: readonly string[], options: { persist?: boolean } = {}): void {
     this.wakePhrases = normalizedWakePhrases(wakePhrases);
     this.clearWakeFollowUp();
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ") || "(none)"}`);
     this.sendVisualWakeSettings();
+    if (options.persist !== false) {
+      void this.persistWakePhrases();
+    }
   }
 
   resetWakePhrases(): void {
-    this.updateWakePhrases(this.defaultWakePhrases);
+    this.updateWakePhrases(this.defaultWakePhrases, {
+      persist: false
+    });
   }
 
   private sendVisualWakeSettings(): void {
@@ -464,6 +477,16 @@ export class AlwaysOnVoiceHarnessRunner {
       type: "settings",
       wakePhrases: [...this.wakePhrases]
     });
+  }
+
+  private async persistWakePhrases(): Promise<void> {
+    try {
+      await this.settingsPersistence?.update({
+        wakePhrases: [...this.wakePhrases]
+      });
+    } catch (error) {
+      this.writeLine(`[settings:error] ${formatError(error)}`);
+    }
   }
 
   private async routeSpeakingTranscript(transcript: Transcript): Promise<void> {
@@ -602,6 +625,7 @@ export function createVoiceHarnessRunnerFromConfig(
     audioInput?: AudioInput;
     speechProcessor?: SpeechProcessor;
     visualBridge?: VisualBridgeLike;
+    settingsPersistence?: VoiceSettingsPersistence;
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
@@ -615,7 +639,9 @@ export function createVoiceHarnessRunnerFromConfig(
     now: options.now,
     createId: options.createId,
     ttsConfig: config.tts,
+    visualConfig: config.visual,
     visualBridge: options.visualBridge,
+    settingsPersistence: options.settingsPersistence,
     onExitRequest: options.onExitRequest
   });
   const gate = new ManualRecordingGate({
@@ -670,6 +696,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     wakePhrases?: string[];
     debug?: boolean;
     visualBridge?: VisualBridgeLike;
+    settingsPersistence?: VoiceSettingsPersistence;
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
@@ -682,7 +709,9 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     now: options.now,
     createId: options.createId,
     ttsConfig: config.tts,
+    visualConfig: config.visual,
     visualBridge: options.visualBridge,
+    settingsPersistence: options.settingsPersistence,
     onExitRequest: options.onExitRequest
   });
   const audioInput =
@@ -714,6 +743,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     speechProcessor,
     wakePhrases: options.wakePhrases ?? config.wakePhrases,
     visualBridge: options.visualBridge,
+    settingsPersistence: options.settingsPersistence,
     writeLine,
     debug: options.debug,
     now: options.now,
@@ -834,6 +864,7 @@ export async function runVoiceHarness(): Promise<void> {
 
   const args = defaultCodexArgs(cli.harnessArgs);
   const visualBridge = cli.visual ? new VisualBridge({ writeLine }) : undefined;
+  const settingsPersistence = new VoiceLocalSettingsStore();
   let shutdownRequested = false;
   let readline: ReturnType<typeof createInterface> | undefined;
   const requestShutdown = (): void => {
@@ -858,12 +889,14 @@ export async function runVoiceHarness(): Promise<void> {
         writeLine,
         debug: cli.debug,
         visualBridge,
+        settingsPersistence,
         onExitRequest: requestShutdown
       })
     : createVoiceHarnessRunnerFromConfig(resolution.config, args, {
         writeLine,
         debug: cli.debug,
         visualBridge,
+        settingsPersistence,
         onExitRequest: requestShutdown
       });
 

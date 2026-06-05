@@ -82,6 +82,14 @@ ApplicationWindow {
                 action: "update_wake_phrases",
                 wakePhrases: root.parseWakePhrases(wakeField.text)
             }))
+            socket.sendTextMessage(JSON.stringify({
+                op: "voice-agent-ui",
+                type: "control",
+                action: "update_visual_settings",
+                visual: {
+                    thinkingVolume: root.thinkingVolume
+                }
+            }))
         }
         settingsOpen = false
     }
@@ -127,7 +135,13 @@ ApplicationWindow {
 
     function applyVisualSettings(event) {
         if (event.tts) root.applyTtsSettings(event.tts)
+        if (event.visual) root.applyRuntimeVisualSettings(event.visual)
         if (event.wakePhrases) root.applyWakePhrases(event.wakePhrases)
+    }
+
+    function applyRuntimeVisualSettings(settings) {
+        root.thinkingVolume = settings.thinkingVolume === undefined ? 0.32 : Math.max(0, Math.min(0.8, settings.thinkingVolume))
+        if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
     }
 
     function parseWakePhrases(text) {

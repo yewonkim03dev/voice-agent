@@ -1001,6 +1001,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             if let tts = event["tts"] as? [String: Any] {
                 updateTtsSettings(tts)
             }
+            if let visual = event["visual"] as? [String: Any] {
+                updateVisualSettings(visual)
+            }
             if let phrases = event["wakePhrases"] as? [String] {
                 updateWakePhrases(phrases)
             }
@@ -1105,6 +1108,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         syncSettingsControls()
     }
 
+    private func updateVisualSettings(_ settings: [String: Any]) {
+        if let value = settings["thinkingVolume"] as? Double {
+            thinkingVolume = min(0.8, max(0, value))
+        }
+        thinkingPulseSound.volume = Float(thinkingVolume)
+        syncSettingsControls()
+    }
+
     private func updateWakePhrases(_ phrases: [String]) {
         wakePhrases = normalizedPhrases(phrases)
         syncSettingsControls()
@@ -1193,6 +1204,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
                 "rate": ttsRate,
                 "pitch": ttsPitch,
                 "volume": ttsVolume
+            ]
+        ])
+        sendPayload([
+            "op": "voice-agent-ui",
+            "type": "control",
+            "action": "update_visual_settings",
+            "visual": [
+                "thinkingVolume": thinkingVolume
             ]
         ])
     }

@@ -7,7 +7,12 @@ import test from "node:test";
 import type { AudioFrame, AudioInput } from "../src/audio/AudioFrame.ts";
 import { InMemoryAgentBackend, TerminalHarness } from "../src/app/harness.ts";
 import { readCodexThreadId, writeCodexThreadId } from "../src/app/codex-thread-config.ts";
-import { detectVoiceSetup, resolveVoiceHarnessConfig, writeVoiceConfigFile } from "../src/app/voice-config.ts";
+import {
+  VoiceLocalSettingsStore,
+  detectVoiceSetup,
+  resolveVoiceHarnessConfig,
+  writeVoiceConfigFile
+} from "../src/app/voice-config.ts";
 import {
   AlwaysOnVoiceHarnessRunner,
   VoiceHarnessRunner,
@@ -348,7 +353,9 @@ test("always-on voice runner restores default wake phrases from visual settings"
   assert.equal(backend.prompts.length, 1);
   assert.equal(backend.prompts[0].text, "다시 돌려줘");
   assert.deepEqual(
-    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "settings" }> => event.type === "settings").at(-1)?.wakePhrases,
+    visualBridge.events
+      .filter((event): event is Extract<VisualEvent, { type: "settings" }> => event.type === "settings" && event.wakePhrases !== undefined)
+      .at(-1)?.wakePhrases,
     ["코덱스"]
   );
 });
@@ -1046,6 +1053,91 @@ test("voice harness config loads TTS settings from the local config file", async
     assert.equal(resolution.config?.tts?.voice, "Yuna");
     assert.equal(resolution.config?.tts?.gender, "female");
     assert.equal(resolution.config?.tts?.rate, "fast");
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("voice local settings store persists overrides and reset restores factory defaults", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+  const configPath = ".voice-agent.local.json";
+
+  try {
+    await writeFile(
+      join(cwd, configPath),
+      JSON.stringify({
+        recorderCommand: "file-recorder",
+        sttCommand: "file-stt {audio}",
+        sampleRate: 16_000,
+        channels: 1,
+        codexThreadId: "thread_123",
+        visual: {
+          provider: "qtqml"
+        }
+      }),
+      "utf8"
+    );
+
+    const store = new VoiceLocalSettingsStore({
+      cwd,
+      configPath
+    });
+    await store.update({
+      wakePhrases: ["자비스", "hey jarvis"],
+      tts: {
+        enabled: true,
+        language: "ko",
+        voiceName: "Yuna",
+        gender: "female",
+        rate: 0.62,
+        pitch: 1.1,
+        volume: 0.8
+      },
+      visual: {
+        thinkingVolume: 0.47
+      }
+    });
+
+    const updated = JSON.parse(await readFile(join(cwd, configPath), "utf8")) as Record<string, unknown>;
+    assert.equal(updated.recorderCommand, "file-recorder");
+    assert.equal(updated.sttCommand, "file-stt {audio}");
+    assert.equal(updated.codexThreadId, "thread_123");
+    assert.deepEqual(updated.wakePhrases, ["hey jarvis", "자비스"]);
+    assert.deepEqual(updated.tts, {
+      enabled: true,
+      language: "ko",
+      voiceName: "Yuna",
+      gender: "female",
+      rate: 0.62,
+      pitch: 1.1,
+      volume: 0.8
+    });
+    assert.deepEqual(updated.visual, {
+      provider: "qtqml",
+      thinkingVolume: 0.47
+    });
+
+    await store.resetAll();
+    const reset = JSON.parse(await readFile(join(cwd, configPath), "utf8")) as Record<string, unknown>;
+    assert.equal(reset.recorderCommand, "file-recorder");
+    assert.equal(reset.sttCommand, "file-stt {audio}");
+    assert.equal(reset.codexThreadId, "thread_123");
+    assert.equal("wakePhrases" in reset, false);
+    assert.equal("tts" in reset, false);
+    assert.deepEqual(reset.visual, {
+      provider: "qtqml"
+    });
+
+    const resolution = await resolveVoiceHarnessConfig({
+      env: {},
+      cwd,
+      configPath
+    });
+    assert.deepEqual(resolution.config?.wakePhrases, defaultWakePhrases);
+    assert.equal(resolution.config?.tts, undefined);
   } finally {
     await rm(cwd, {
       force: true,

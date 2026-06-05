@@ -118,7 +118,10 @@ export async function writeVisualConfigFile(
   const body = `${JSON.stringify(
     {
       ...existing,
-      visual: config
+      visual: {
+        ...readNestedObject(existing.visual),
+        ...config
+      }
     },
     null,
     2
@@ -222,6 +225,10 @@ async function readJsonObject(path: string): Promise<Record<string, unknown>> {
     if (isNotFound(error)) return {};
     throw error;
   }
+}
+
+function readNestedObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
 }
 
 function parseOptionalProvider(value: unknown): VisualProvider | null {

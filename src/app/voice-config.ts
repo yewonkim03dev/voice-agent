@@ -5,6 +5,7 @@ import type { VoiceTtsFileConfig } from "../voice/TtsConfig.ts";
 import { defaultWakePhrases, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 
 export const defaultVoiceConfigPath = ".voice-agent.local.json";
+export const defaultVisualThinkingVolume = 0.32;
 
 export interface VoiceHarnessConfig {
   recorderCommand: string;
@@ -13,6 +14,22 @@ export interface VoiceHarnessConfig {
   channels: number;
   wakePhrases: string[];
   tts?: VoiceTtsFileConfig;
+  visual?: VoiceVisualFileConfig;
+}
+
+export type VoiceVisualFileConfig = Partial<{
+  thinkingVolume: string | number;
+}>;
+
+export interface VoiceLocalSettingsOverride {
+  wakePhrases?: string[];
+  tts?: VoiceTtsFileConfig;
+  visual?: VoiceVisualFileConfig;
+}
+
+export interface VoiceSettingsPersistence {
+  update(overrides: VoiceLocalSettingsOverride): Promise<void>;
+  resetAll(): Promise<void>;
 }
 
 export interface VoiceHarnessResolution {
@@ -155,6 +172,98 @@ export async function writeVoiceConfigFile(
   return fullPath;
 }
 
+export class VoiceLocalSettingsStore implements VoiceSettingsPersistence {
+  private readonly cwd: string;
+  private readonly configPath: string;
+  private queue: Promise<void> = Promise.resolve();
+
+  constructor(options: {
+    cwd?: string;
+    configPath?: string;
+  } = {}) {
+    this.cwd = options.cwd ?? process.cwd();
+    this.configPath = options.configPath ?? defaultVoiceConfigPath;
+  }
+
+  update(overrides: VoiceLocalSettingsOverride): Promise<void> {
+    this.queue = this.queue
+      .catch(() => {})
+      .then(() => updateVoiceLocalSettings(overrides, {
+        cwd: this.cwd,
+        configPath: this.configPath
+      }));
+    return this.queue;
+  }
+
+  resetAll(): Promise<void> {
+    this.queue = this.queue
+      .catch(() => {})
+      .then(() => resetVoiceLocalSettings({
+        cwd: this.cwd,
+        configPath: this.configPath
+      }));
+    return this.queue;
+  }
+}
+
+export async function updateVoiceLocalSettings(
+  overrides: VoiceLocalSettingsOverride,
+  options: {
+    cwd?: string;
+    configPath?: string;
+  } = {}
+): Promise<void> {
+  const cwd = options.cwd ?? process.cwd();
+  const configPath = options.configPath ?? defaultVoiceConfigPath;
+  const fullPath = resolve(cwd, configPath);
+  const existing = await readJsonObject(fullPath);
+  const next: Record<string, unknown> = { ...existing };
+
+  if (overrides.wakePhrases !== undefined) {
+    next.wakePhrases = normalizedWakePhrases(overrides.wakePhrases);
+  }
+
+  if (overrides.tts !== undefined) {
+    next.tts = {
+      ...readNestedObject(existing.tts),
+      ...overrides.tts
+    };
+  }
+
+  if (overrides.visual !== undefined) {
+    next.visual = {
+      ...readNestedObject(existing.visual),
+      ...overrides.visual
+    };
+  }
+
+  await writeJsonObject(fullPath, next);
+}
+
+export async function resetVoiceLocalSettings(options: {
+  cwd?: string;
+  configPath?: string;
+} = {}): Promise<void> {
+  const cwd = options.cwd ?? process.cwd();
+  const configPath = options.configPath ?? defaultVoiceConfigPath;
+  const fullPath = resolve(cwd, configPath);
+  const existing = await readJsonObject(fullPath);
+  const next: Record<string, unknown> = { ...existing };
+  const visual = readNestedObject(existing.visual);
+
+  delete next.wakePhrases;
+  delete next.tts;
+  delete visual.thinkingVolume;
+
+  if (Object.keys(visual).length > 0) {
+    next.visual = visual;
+  } else {
+    delete next.visual;
+  }
+
+  await writeJsonObject(fullPath, next);
+}
+
 function configFromEnv(env: NodeJS.ProcessEnv): VoiceHarnessResolution {
   const recorderCommand = env.VOICE_AGENT_RECORDER_COMMAND?.trim() ?? "";
   const sttCommand = env.VOICE_AGENT_STT_COMMAND?.trim() ?? "";
@@ -243,7 +352,8 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
         sampleRate: parsePositiveInteger(String(parsed.sampleRate ?? ""), 16_000),
         channels: parsePositiveInteger(String(parsed.channels ?? ""), 1),
         wakePhrases: parseWakePhrases(parsed.wakePhrases),
-        tts: parseTtsFileConfig(parsed)
+        tts: parseTtsFileConfig(parsed),
+        visual: parseVisualFileConfig(parsed)
       },
       errors,
       source: "file"
@@ -281,6 +391,14 @@ async function readJsonObject(path: string): Promise<Record<string, unknown>> {
   }
 }
 
+async function writeJsonObject(path: string, value: Record<string, unknown>): Promise<void> {
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function readNestedObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+}
+
 function hasVoiceConfigFields(parsed: Record<string, unknown>): boolean {
   return "recorderCommand" in parsed ||
     "sttCommand" in parsed ||
@@ -310,6 +428,25 @@ function parseTtsFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<string,
   return undefined;
 }
 
+function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<string, unknown>): VoiceVisualFileConfig | undefined {
+  const visual = parsed.visual;
+  if (!visual || typeof visual !== "object" || Array.isArray(visual)) return undefined;
+  const record = visual as Record<string, unknown>;
+
+  return {
+    ...(parseVisualThinkingVolume(record.thinkingVolume) !== undefined
+      ? { thinkingVolume: parseVisualThinkingVolume(record.thinkingVolume) }
+      : {})
+  };
+}
+
+function parseVisualThinkingVolume(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return clamp(value, 0, 0.8);
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? clamp(parsed, 0, 0.8) : undefined;
+}
+
 function parseOptionalWakePhrases(value: unknown): string[] | undefined {
   if (Array.isArray(value)) {
     const parsed = normalizedWakePhrases(value.filter((phrase): phrase is string => typeof phrase === "string"));
@@ -330,6 +467,10 @@ function isNotFound(error: unknown): boolean {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 async function detectCandidates(

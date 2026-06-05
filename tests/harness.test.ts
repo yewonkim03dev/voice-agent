@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
+import type { VoiceLocalSettingsOverride, VoiceSettingsPersistence } from "../src/app/voice-config.ts";
 import {
   parseVoiceAgentEventLine,
   parseVoiceAgentEventSequence,
@@ -160,6 +161,54 @@ test("visual control update_tts_settings updates TTS runtime settings", async ()
   });
 });
 
+test("visual settings apply persists TTS and visual overrides", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const settingsPersistence = new FakeSettingsPersistence();
+  const voiceOutput = new TtsVoiceOutput({
+    provider: new BlockingTtsProvider()
+  });
+  const harness = new TerminalHarness({
+    voiceOutput,
+    visualBridge,
+    settingsPersistence,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  visualBridge.emitControl("update_tts_settings", {
+    language: "ko",
+    gender: "female",
+    voiceName: "Yuna",
+    rate: 0.62,
+    pitch: 1.1,
+    volume: 0.8
+  });
+  visualBridge.emitVisualControl({
+    thinkingVolume: 0.48
+  });
+  await flushAsync();
+
+  assert.deepEqual(settingsPersistence.updates, [
+    {
+      tts: {
+        enabled: true,
+        language: "ko",
+        voiceName: "Yuna",
+        gender: "female",
+        rate: 0.62,
+        pitch: 1.1,
+        volume: 0.8
+      }
+    },
+    {
+      visual: {
+        thinkingVolume: 0.48
+      }
+    }
+  ]);
+});
+
 test("visual reset_settings restores default TTS runtime settings", async () => {
   const visualBridge = new FakeVisualBridge();
   const voiceOutput = new TtsVoiceOutput({
@@ -174,6 +223,9 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
   const harness = new TerminalHarness({
     voiceOutput,
     visualBridge,
+    visualConfig: {
+      thinkingVolume: 0.5
+    },
     now: () => 1000,
     createId: createTestId()
   });
@@ -198,6 +250,43 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
       rate: 0.56,
       pitch: 1,
       volume: 1
+    },
+    visual: {
+      thinkingVolume: 0.32
+    }
+  });
+});
+
+test("visual reset_settings clears persisted overrides", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const settingsPersistence = new FakeSettingsPersistence();
+  const harness = new TerminalHarness({
+    visualBridge,
+    settingsPersistence,
+    visualConfig: {
+      thinkingVolume: 0.5
+    },
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  visualBridge.emitControl("reset_settings");
+  await flushAsync();
+
+  assert.equal(settingsPersistence.resetCount, 1);
+  assert.deepEqual(visualBridge.events.findLast((event) => event.type === "settings"), {
+    op: "voice-agent-ui",
+    type: "settings",
+    tts: {
+      language: "auto",
+      gender: "auto",
+      rate: 0.56,
+      pitch: 1,
+      volume: 1
+    },
+    visual: {
+      thinkingVolume: 0.32
     }
   });
 });
@@ -926,6 +1015,30 @@ class FakeVisualBridge implements VisualBridgeLike {
         ...(tts ? { tts } : {})
       })
     );
+  }
+
+  emitVisualControl(visual: NonNullable<VisualControlEvent["visual"]>): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action: "update_visual_settings",
+        visual
+      })
+    );
+  }
+}
+
+class FakeSettingsPersistence implements VoiceSettingsPersistence {
+  readonly updates: VoiceLocalSettingsOverride[] = [];
+  resetCount = 0;
+
+  async update(overrides: VoiceLocalSettingsOverride): Promise<void> {
+    this.updates.push(overrides);
+  }
+
+  async resetAll(): Promise<void> {
+    this.resetCount += 1;
   }
 }
 
