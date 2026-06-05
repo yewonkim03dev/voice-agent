@@ -804,6 +804,24 @@ ApplicationWindow {
 
             Button {
                 Layout.fillWidth: true
+                text: "STOP"
+                onClicked: root.sendControl("emergency_stop")
+                background: Rectangle {
+                    radius: 5
+                    color: parent.down ? "#7f0019" : "#b00020"
+                    border.color: "#ff6b7a"
+                    border.width: 1
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: "#ffffff"
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            Button {
+                Layout.fillWidth: true
                 text: "Settings"
                 onClicked: root.settingsOpen = !root.settingsOpen
             }

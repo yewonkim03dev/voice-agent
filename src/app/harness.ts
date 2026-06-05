@@ -918,6 +918,9 @@ export class TerminalHarness {
       case "tts_stop":
         await this.stopVoiceOutput();
         return;
+      case "emergency_stop":
+        await this.requestEmergencyStop();
+        return;
       case "clear_commands":
         this.sendVisualEvent({
           op: "voice-agent-ui",
@@ -935,6 +938,49 @@ export class TerminalHarness {
         await this.requestExit();
         return;
     }
+  }
+
+  private async requestEmergencyStop(): Promise<void> {
+    this.voiceGeneration += 1;
+    this.voiceQueue = Promise.resolve();
+    this.ttsPlaybackState.recordStopped(this.now());
+    await this.voiceOutput.stop();
+
+    this.writeLine(`[visual] emergency stop requested for ${this.agentTarget}.`);
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "status",
+      text: "emergency stop requested"
+    });
+
+    try {
+      if (this.runtime) {
+        await this.runtime.interruptActiveTurn("Emergency stop requested from visual");
+      } else {
+        this.passthroughState = "INTERRUPTING";
+        await this.backend.interrupt("Emergency stop requested from visual");
+        this.pendingPermission = undefined;
+        this.codexStatus = {
+          ...this.codexStatus,
+          task: "idle"
+        };
+        this.passthroughState = "IDLE";
+      }
+    } catch (error) {
+      if (!this.runtime) {
+        this.passthroughState = "ERROR";
+      }
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "error",
+        text: `emergency stop failed: ${formatError(error)}`
+      });
+      await this.speak(`정지 실패. ${formatError(error)}`, "error");
+      return;
+    }
+
+    this.sendVisualState("idle");
+    await this.speak("정지했어.", "status");
   }
 
   private async requestExit(): Promise<void> {

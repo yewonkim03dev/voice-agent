@@ -23,6 +23,7 @@ export type VisualControlAction =
   | "clear_commands"
   | "add_context"
   | "clear_context"
+  | "emergency_stop"
   | "update_tts_settings";
 
 export interface VisualTtsSettings {
@@ -216,6 +217,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "clear_commands" &&
     record.action !== "add_context" &&
     record.action !== "clear_context" &&
+    record.action !== "emergency_stop" &&
     record.action !== "update_tts_settings"
   ) {
     return null;

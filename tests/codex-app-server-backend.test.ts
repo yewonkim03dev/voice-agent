@@ -132,6 +132,30 @@ test("sends prompts as turn/start requests", async () => {
   ]);
 });
 
+test("interrupts active Codex app-server turns with turn/interrupt", async () => {
+  const { backend, child, socket } = createStartedBackend();
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  await backend.sendPrompt({
+    sessionId: "sess_1",
+    text: "긴 작업 해줘",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+  await backend.interrupt("Emergency stop requested from visual");
+
+  const interrupt = socket.sent.find((message) => message.method === "turn/interrupt");
+  assert.deepEqual(interrupt?.params, {
+    threadId: "thread_1",
+    turnId: "turn_1"
+  });
+});
+
 test("can prepend the voice-agent protocol prompt to real turn/start requests", async () => {
   const { backend, child, socket } = createStartedBackend({
     voiceAgentProtocol: true,
@@ -505,6 +529,13 @@ class FakeWebSocket {
             id: "turn_1"
           }
         }
+      });
+    }
+
+    if (message.method === "turn/interrupt") {
+      this.receive({
+        id: message.id,
+        result: {}
       });
     }
 

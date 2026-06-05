@@ -69,6 +69,11 @@ test("visual bridge parses allowed control events only", () => {
     action: "add_context",
     text: "README 참고"
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"emergency_stop"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "emergency_stop"
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_tts_settings","tts":{"language":"ko","gender":"female","rate":0.61,"pitch":1.1,"volume":0.8,"voiceName":"Yuna"}}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -279,6 +284,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Text\.ElideNone/u);
   assert.doesNotMatch(qml, /Layout\.fillHeight: true\s*\n\s*radius: 8/u);
   assert.match(qml, /TTS Stop/u);
+  assert.match(qml, /STOP/u);
+  assert.match(qml, /emergency_stop/u);
   assert.match(qml, /Settings/u);
   assert.match(qml, /update_tts_settings/u);
   assert.match(qml, /languageBox/u);
@@ -329,6 +336,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /\.now\(\) \+ 3\.6/u);
   assert.doesNotMatch(swift, /greaterThanOrEqualToConstant:\s*180/u);
   assert.match(swift, /TTS Stop/u);
+  assert.match(swift, /STOP/u);
+  assert.match(swift, /emergency_stop/u);
   assert.match(swift, /Settings/u);
   assert.match(swift, /update_tts_settings/u);
   assert.match(swift, /settingsLanguagePopup/u);

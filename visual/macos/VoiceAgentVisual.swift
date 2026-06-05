@@ -769,6 +769,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildContentView() -> NSView {
         let controls = NSStackView()
+        controls.addArrangedSubview(emergencyButton())
         controls.addArrangedSubview(button("Settings", action: #selector(showSettings)))
         controls.addArrangedSubview(button("TTS Stop", action: #selector(stopTts)))
         controls.addArrangedSubview(button("Clear Cmds", action: #selector(clearCommands)))
@@ -791,6 +792,24 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private func button(_ title: String, action: Selector) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
         button.bezelStyle = .rounded
+        return button
+    }
+
+    private func emergencyButton() -> NSButton {
+        let button = button("STOP", action: #selector(emergencyStop))
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.backgroundColor = NSColor(calibratedRed: 0.69, green: 0, blue: 0.13, alpha: 1).cgColor
+        button.layer?.borderColor = NSColor(calibratedRed: 1, green: 0.42, blue: 0.48, alpha: 1).cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.cornerRadius = 6
+        button.attributedTitle = NSAttributedString(
+            string: "STOP",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .bold)
+            ]
+        )
         return button
     }
 
@@ -890,6 +909,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func stopTts() {
         sendControl("tts_stop")
+    }
+
+    @objc private func emergencyStop() {
+        sendControl("emergency_stop")
     }
 
     @objc private func clearCommands() {

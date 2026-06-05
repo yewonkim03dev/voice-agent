@@ -86,6 +86,17 @@ export class RuntimeController {
     this.context.state = "SHUTDOWN";
   }
 
+  async interruptActiveTurn(reason: string): Promise<void> {
+    this.context.state = "INTERRUPTING";
+    await this.backend.interrupt(reason);
+    this.context.pendingPermission = undefined;
+    this.context.codexStatus = {
+      ...this.context.codexStatus,
+      task: "idle"
+    };
+    this.context.state = "IDLE";
+  }
+
   handleActivation(activation: ActivationEvent): void {
     if (this.context.state === "SHUTDOWN") return;
 
@@ -266,11 +277,8 @@ export class RuntimeController {
         await this.speak(this.context.lastSpokenText ?? "아직 말한 내용이 없어.", "status");
         return;
       case "stop":
-        this.context.state = "INTERRUPTING";
-        await this.backend.interrupt("User requested stop by voice");
+        await this.interruptActiveTurn("User requested stop by voice");
         await this.speak("멈출게.", "status");
-        this.context.pendingPermission = undefined;
-        this.context.state = "IDLE";
         return;
       case "shutdown":
         await this.speak("종료할게.", "status");

@@ -89,6 +89,32 @@ test("visual control tts_stop stops current voice output", async () => {
   assert.equal(voiceOutput.stopCount, 1);
 });
 
+test("visual emergency_stop interrupts pass-through backend and speaks stopped", async () => {
+  const backend = new InMemoryAgentBackend();
+  const voiceOutput = new StoppableVoiceOutput();
+  const visualBridge = new FakeVisualBridge();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "codex-test",
+    routingMode: "passthrough",
+    agentTarget: "codex",
+    voiceOutput,
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  await harness.processLine("코덱스 긴 작업 처리해줘");
+  visualBridge.emitControl("emergency_stop");
+  await flushAsync();
+
+  assert.deepEqual(backend.interrupts, ["Emergency stop requested from visual"]);
+  assert.equal(voiceOutput.stopCount, 1);
+  assert.equal(voiceOutput.messages.at(-1)?.text, "정지했어.");
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "idle");
+});
+
 test("visual control update_tts_settings updates TTS runtime settings", async () => {
   const visualBridge = new FakeVisualBridge();
   const voiceOutput = new TtsVoiceOutput({
