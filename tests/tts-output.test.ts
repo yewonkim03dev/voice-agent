@@ -380,7 +380,7 @@ test("permission prompts are spoken through TTS", async () => {
   backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
   await flushQueuedSpeech();
 
-  assert.equal(provider.requests.at(-1)?.text, "npm test 실행 권한 필요해. 허용할까?");
+  assert.equal(provider.requests.at(-1)?.text, "명령 실행 권한 필요해. 허용할까?");
 });
 
 test("TTS is not interrupted when always-on wake candidate starts", async () => {

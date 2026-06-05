@@ -170,6 +170,29 @@ test("pass-through approval speech only acts while a native approval is pending"
   assert.equal(backend.permissions[0].scope, "once");
 });
 
+test("pass-through permission prompt keeps raw commands out of TTS", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge);
+
+  await harness.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("/bin/zsh -lc 'npm test'", "sess_1", "approval_1"));
+  await flushAsync();
+
+  assert.equal(harness.voiceOutput.messages.at(-1)?.text, "명령 실행 권한 필요해. 허용할까?");
+  assert.equal(harness.voiceOutput.messages.at(-1)?.text.includes("/bin/zsh"), false);
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "command"), {
+    op: "voice-agent-ui",
+    type: "command",
+    text: "/bin/zsh -lc 'npm test'"
+  });
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "approval"), {
+    op: "voice-agent-ui",
+    type: "approval",
+    text: "명령 실행 권한 필요해."
+  });
+});
+
 test("pass-through approval speech can deny a native approval", async () => {
   const backend = new InMemoryAgentBackend();
   const harness = createPassthroughHarness(backend);

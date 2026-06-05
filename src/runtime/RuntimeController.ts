@@ -160,7 +160,7 @@ export class RuntimeController {
     const message =
       classified.riskLevel === "critical"
         ? "위험한 명령이라 음성으로는 허용할 수 없어."
-        : `${classified.command ?? classified.action} 실행 권한 필요해. 허용할까?`;
+        : `${classified.command ? "명령" : "작업"} 실행 권한 필요해. 허용할까?`;
 
     await this.speak(message, classified.riskLevel === "critical" ? "warning" : "permission");
     this.context.state = "CONFIRMING";

@@ -15,6 +15,7 @@ export const voiceAgentProtocolPrompt = [
   "Use {\"op\":\"voice-agent\",\"type\":\"command\",\"text\":\"...\"} for commands or execution summaries to display, not speak.",
   "Use {\"op\":\"voice-agent\",\"type\":\"status\",\"text\":\"...\"} for short progress/status updates.",
   "Use {\"op\":\"voice-agent\",\"type\":\"error\",\"text\":\"...\"} for brief errors.",
+  "Never put shell commands, paths, flags, stack traces, or logs in speech; emit them as command events.",
   "Keep speech text short and natural. Do not wrap events in markdown fences."
 ].join("\n");
 

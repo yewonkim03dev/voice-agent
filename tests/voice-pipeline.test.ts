@@ -713,7 +713,7 @@ test("always-on voice runner keeps pending approval speech working during TTS", 
   ]);
 
   await runner.start();
-  emitAgentSpeech(backend, "npm test 실행 권한 필요해. 허용할까?");
+  emitAgentSpeech(backend, "명령 실행 권한 필요해. 허용할까?");
   backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
   await flushAsync();
   emitCandidate(audioInput, 1000);

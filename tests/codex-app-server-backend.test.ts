@@ -324,7 +324,7 @@ test("terminal harness speaks app-server approvals and routes Korean allow decis
   });
   await Promise.resolve();
 
-  assert.equal(harness.voiceOutput.messages.at(-1)?.text, "npm test 실행 권한 필요해. 허용할까?");
+  assert.equal(harness.voiceOutput.messages.at(-1)?.text, "명령 실행 권한 필요해. 허용할까?");
 
   await harness.processLine("허용");
 

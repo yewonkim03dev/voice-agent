@@ -472,10 +472,18 @@ export class TerminalHarness {
   private async handlePassthroughPermissionRequest(request: PermissionRequest): Promise<void> {
     await this.flushPassthroughOutputBuffers(request.sessionId);
     this.pendingPermission = request;
+    const permissionTarget = request.command ? "명령" : "작업";
+    if (request.command) {
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "command",
+        text: request.command
+      });
+    }
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "approval",
-      text: `${request.command ?? request.action} 실행 권한 필요해.`
+      text: `${permissionTarget} 실행 권한 필요해.`
     });
     this.codexStatus = {
       ...this.codexStatus,
@@ -483,7 +491,7 @@ export class TerminalHarness {
       currentTool: request.tool
     };
     this.passthroughState = "CONFIRMING";
-    await this.speak(`${request.command ?? request.action} 실행 권한 필요해. 허용할까?`, "permission");
+    await this.speak(`${permissionTarget} 실행 권한 필요해. 허용할까?`, "permission");
     this.passthroughState = "CONFIRMING";
   }
 
