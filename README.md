@@ -36,6 +36,8 @@ Real Codex mode also prepends a voice-agent response protocol prompt. The agent 
 
 `speech` events are spoken immediately, `command` events are displayed but not spoken, and invalid or non-JSON output is kept as raw `[agent:stdout]` fallback. If a turn already emitted structured speech, the harness does not add the generic `끝났어.` completion TTS on top.
 
+Always-on wake mode keeps listening while TTS is speaking, but raw VAD activity no longer stops TTS. Candidate speech is transcribed first; if it looks like recent TTS text, it is discarded as echo. During TTS, wake-only speech is ignored, `코덱스 멈춰` stops speech, and `코덱스 <new command>` stops speech before routing the new command.
+
 Wake text is supported in the terminal as a development stand-in for a real wake detector:
 
 ```text

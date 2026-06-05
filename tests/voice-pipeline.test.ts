@@ -17,6 +17,9 @@ import { UtteranceRecorder } from "../src/recorder/UtteranceRecorder.ts";
 import type { UtteranceAudio } from "../src/recorder/UtteranceAudio.ts";
 import type { SpeechProcessor } from "../src/speech/SpeechProcessor.ts";
 import { normalizeTranscriptText, type Language, type Transcript } from "../src/speech/Transcript.ts";
+import { EchoGuard } from "../src/voice/EchoGuard.ts";
+import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
+import type { VoiceOutput } from "../src/voice/VoiceOutput.ts";
 
 test("ManualRecordingGate opens and closes through toggle", async () => {
   const gate = new ManualRecordingGate({
@@ -309,6 +312,201 @@ test("always-on voice runner does not forward ambiguous approval speech", async 
   assert.equal(harness.voiceOutput.messages.at(-1)?.text, "허용인지 거부인지 다시 말해줘.");
 });
 
+test("always-on voice runner discards STT that matches recent TTS", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "네 전사된 메시지는 잘 들어왔어요",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitAgentSpeech(backend, "네, 전사된 메시지는 잘 들어왔어요.");
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(logs.some((line) => line.startsWith("[echo:discarded] similarity=")), true);
+});
+
+test("always-on voice runner does not self-wake when TTS says a wake phrase", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "코덱스 테스트가 끝났어",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitAgentSpeech(backend, "코덱스 테스트가 끝났어.");
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(logs.some((line) => line.startsWith("[echo:discarded] similarity=")), true);
+});
+
+test("always-on voice runner does not self-wake when TTS says an English wake phrase", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "Claude tests are complete",
+        language: "en"
+      }
+    ],
+    {
+      wakePhrases: ["claude"]
+    }
+  );
+
+  await runner.start();
+  emitAgentSpeech(backend, "Claude tests are complete.");
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(logs.some((line) => line.startsWith("[echo:discarded] similarity=")), true);
+});
+
+test("always-on voice runner ignores wake-only speech during TTS", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "코덱스",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitAgentSpeech(backend, "지금 설명하고 있어.");
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.ok(logs.includes("[barge:ignored] reason=wake_only"));
+});
+
+test("always-on voice runner stops TTS on wake plus stop intent", async () => {
+  const voiceOutput = new InspectableTestVoiceOutput();
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 멈춰",
+        language: "ko"
+      }
+    ],
+    {
+      voiceOutput
+    }
+  );
+
+  await runner.start();
+  emitAgentSpeech(backend, "계속 설명하고 있어.");
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(voiceOutput.stopCount, 1);
+  assert.equal(backend.prompts.length, 0);
+  assert.ok(logs.includes('[barge:stop] phrase="코덱스"'));
+});
+
+test("always-on voice runner stops TTS and routes wake plus new command", async () => {
+  const voiceOutput = new InspectableTestVoiceOutput();
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 npm test 다시 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      voiceOutput
+    }
+  );
+
+  await runner.start();
+  emitAgentSpeech(backend, "긴 설명을 하는 중이야.");
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(voiceOutput.stopCount, 1);
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "npm test 다시 돌려줘");
+  assert.ok(logs.includes('[barge:command] phrase="코덱스" command="npm test 다시 돌려줘"'));
+});
+
+test("always-on voice runner ignores non-wake speech during TTS", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "그냥 배경 소리",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitAgentSpeech(backend, "응답을 읽고 있어.");
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.ok(logs.includes("[barge:ignored] reason=no_wake"));
+});
+
+test("always-on voice runner keeps pending approval speech working during TTS", async () => {
+  const { backend, runner, audioInput } = createAlwaysOnRunner([
+    {
+      text: "허용",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitAgentSpeech(backend, "npm test 실행 권한 필요해. 허용할까?");
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.permissions.length, 1);
+  assert.equal(backend.permissions[0].decision, "allow");
+});
+
+test("EchoGuard similarity checks stay bounded for long text", () => {
+  const state = createAlwaysOnRunner([]).harness.ttsPlaybackState;
+  state.recordStart({
+    id: "voice_1",
+    text: "테스트 출력 ".repeat(200),
+    language: "ko",
+    priority: "normal",
+    interruptible: true,
+    category: "speech"
+  }, 1000);
+
+  const guard = new EchoGuard({
+    maxEditDistanceLength: 32
+  });
+  const startedAt = performance.now();
+  const result = guard.evaluate("전혀 다른 사용자 명령", state, 1000);
+  const elapsedMs = performance.now() - startedAt;
+
+  assert.equal(result.echo, false);
+  assert.ok(elapsedMs < 20);
+});
+
 test("voice harness config reports missing mic and STT capabilities", async () => {
   const resolution = await resolveVoiceHarnessConfig({
     env: {},
@@ -524,6 +722,7 @@ function createAlwaysOnRunner(
   transcripts: Array<{ text: string; language: Language }>,
   options: {
     wakePhrases?: string[];
+    voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] };
   } = {}
 ): {
   backend: InMemoryAgentBackend;
@@ -544,6 +743,7 @@ function createAlwaysOnRunner(
     backendLabel: "codex-test",
     routingMode: "passthrough",
     agentTarget: "codex",
+    voiceOutput: options.voiceOutput,
     now: () => 1000,
     createId
   });
@@ -569,6 +769,27 @@ function createAlwaysOnRunner(
     speechProcessor,
     logs
   };
+}
+
+function emitAgentSpeech(backend: InMemoryAgentBackend, text: string): void {
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: `${JSON.stringify({
+      op: "voice-agent",
+      type: "speech",
+      text
+    })}\n`,
+    timestamp: 1000
+  });
+}
+
+async function flushAsync(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 function createTestWakeGate(createId: (prefix: string) => string = (prefix) => `${prefix}_1`): AlwaysOnWakeGate {
@@ -656,6 +877,28 @@ class FakeSpeechProcessor implements SpeechProcessor {
       startedAt: audio.startedAt,
       endedAt: audio.endedAt
     };
+  }
+}
+
+class InspectableTestVoiceOutput implements VoiceOutput {
+  readonly messages: VoiceMessage[] = [];
+  private readonly finishedListeners: Array<(id: string) => void> = [];
+  stopCount = 0;
+
+  async speak(message: VoiceMessage): Promise<void> {
+    this.messages.push(message);
+  }
+
+  async stop(): Promise<void> {
+    this.stopCount += 1;
+    const last = this.messages.at(-1);
+    if (last) {
+      this.finishedListeners.forEach((listener) => listener(last.id));
+    }
+  }
+
+  onFinished(callback: (id: string) => void): void {
+    this.finishedListeners.push(callback);
   }
 }
 

@@ -383,7 +383,7 @@ test("permission prompts are spoken through TTS", async () => {
   assert.equal(provider.requests.at(-1)?.text, "npm test 실행 권한 필요해. 허용할까?");
 });
 
-test("TTS is interrupted when always-on wake candidate starts", async () => {
+test("TTS is not interrupted when always-on wake candidate starts", async () => {
   const voiceOutput = new FakeInspectableVoiceOutput();
   const harness = new TerminalHarness({
     backend: new InMemoryAgentBackend(),
@@ -408,7 +408,7 @@ test("TTS is interrupted when always-on wake candidate starts", async () => {
   await runner.start();
   audioInput.emitPcm(0.2, 1000);
 
-  assert.equal(voiceOutput.stopCount, 1);
+  assert.equal(voiceOutput.stopCount, 0);
 });
 
 function message(

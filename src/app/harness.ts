@@ -36,6 +36,7 @@ import {
 } from "../voice/TtsConfig.ts";
 import type { VoiceMessage } from "../voice/VoiceMessage.ts";
 import type { SpawnTtsProcess } from "../voice/MacosAppleTtsProvider.ts";
+import { TtsPlaybackState } from "../voice/TtsPlaybackState.ts";
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
 
 type WriteLine = (line: string) => void;
@@ -190,6 +191,7 @@ export class TerminalHarness {
   readonly backend: AgentBackend;
   readonly voiceOutput: InspectableVoiceOutput;
   readonly runtime: RuntimeController | undefined;
+  readonly ttsPlaybackState: TtsPlaybackState;
 
   private readonly now: () => number;
   private readonly writeLine: WriteLine;
@@ -237,6 +239,12 @@ export class TerminalHarness {
         cwd: options.cwd,
         spawnTtsProcess: options.spawnTtsProcess
       });
+    this.ttsPlaybackState = new TtsPlaybackState({
+      now: this.now
+    });
+    this.voiceOutput.onFinished((id) => {
+      this.ttsPlaybackState.recordFinished(id, this.now());
+    });
 
     if (this.routingMode === "runtime") {
       this.runtime = new RuntimeController({
@@ -314,6 +322,11 @@ export class TerminalHarness {
     }
 
     return Boolean(this.pendingPermission);
+  }
+
+  async stopVoiceOutput(): Promise<void> {
+    this.ttsPlaybackState.recordStopped(this.now());
+    await this.voiceOutput.stop();
   }
 
   private bindPassthroughBackend(): void {
@@ -555,14 +568,17 @@ export class TerminalHarness {
 
   private async speak(text: string, category: VoiceMessage["category"]): Promise<void> {
     this.lastSpokenText = text;
-    await this.voiceOutput.speak({
+    const message: VoiceMessage = {
       id: this.createId("voice"),
       text,
       language: voiceMessageLanguage(text),
       priority: category === "permission" || category === "warning" ? "urgent" : "normal",
       interruptible: category !== "permission",
       category
-    });
+    };
+
+    this.ttsPlaybackState.recordStart(message, this.now());
+    await this.voiceOutput.speak(message);
   }
 
   private scheduleSpeak(text: string, category: VoiceMessage["category"]): void {

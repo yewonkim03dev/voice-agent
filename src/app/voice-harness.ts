@@ -13,6 +13,8 @@ import type { UtteranceAudio } from "../recorder/UtteranceAudio.ts";
 import { CommandSpeechProcessor } from "../speech/CommandSpeechProcessor.ts";
 import type { SpeechProcessor } from "../speech/SpeechProcessor.ts";
 import { withTranscriptText, type Transcript } from "../speech/Transcript.ts";
+import { BargeInPolicy } from "../voice/BargeInPolicy.ts";
+import { EchoGuard, type EchoGuardResult } from "../voice/EchoGuard.ts";
 import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 import { createTerminalHarnessFromArgs, TerminalHarness } from "./harness.ts";
 import { resolveVoiceHarnessConfig, type VoiceHarnessConfig } from "./voice-config.ts";
@@ -35,6 +37,8 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   wakePhrases: string[];
   writeLine?: WriteLine;
   debug?: boolean;
+  echoGuard?: EchoGuard;
+  bargeInPolicy?: BargeInPolicy;
   now?: () => number;
   createId?: (prefix: string) => string;
 }
@@ -88,7 +92,7 @@ export class VoiceHarnessRunner {
     if (text === "/record") {
       this.gate.toggle();
       if (this.gate.isOpen) {
-        await this.terminalHarness.voiceOutput.stop();
+        await this.terminalHarness.stopVoiceOutput();
       }
       await this.recordingController.drain();
       this.writeLine(this.gate.isOpen ? "[voice] recording started. Type /record to stop." : "[voice] recording stopped.");
@@ -142,6 +146,8 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly wakePhrases: string[];
   private readonly writeLine: WriteLine;
   private readonly debug: boolean;
+  private readonly echoGuard: EchoGuard;
+  private readonly bargeInPolicy: BargeInPolicy;
   private readonly now: () => number;
   private readonly createId: (prefix: string) => string;
   private readonly manualRecorder: UtteranceRecorder;
@@ -157,6 +163,8 @@ export class AlwaysOnVoiceHarnessRunner {
     this.wakePhrases = normalizedWakePhrases(options.wakePhrases);
     this.writeLine = options.writeLine ?? noop;
     this.debug = options.debug ?? false;
+    this.echoGuard = options.echoGuard ?? new EchoGuard();
+    this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy();
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? ((prefix) => `${prefix}_${this.now()}`);
     this.manualRecorder = new UtteranceRecorder({
@@ -233,7 +241,7 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     this.wakeGate.reset();
-    void this.terminalHarness.voiceOutput.stop();
+    void this.terminalHarness.stopVoiceOutput();
     this.manualRecorder.begin(this.createId("voice_sess"), {
       mode: "manual",
       timestamp: this.now()
@@ -283,6 +291,11 @@ export class AlwaysOnVoiceHarnessRunner {
       return;
     }
 
+    if (this.terminalHarness.ttsPlaybackState.isSpeakingOrRecent(this.now())) {
+      await this.routeSpeakingTranscript(transcript);
+      return;
+    }
+
     const wake = detectConfiguredWakePhrase(transcript.text, this.wakePhrases);
 
     if (!wake) {
@@ -292,6 +305,32 @@ export class AlwaysOnVoiceHarnessRunner {
 
     this.writeLine(`[wake:matched] phrase="${wake.phrase}" command="${wake.commandText}"`);
     await this.terminalHarness.processTranscript(withTranscriptText(transcript, wake.commandText));
+  }
+
+  private async routeSpeakingTranscript(transcript: Transcript): Promise<void> {
+    const echo = this.echoGuard.evaluate(transcript.text, this.terminalHarness.ttsPlaybackState, this.now());
+
+    if (echo.echo) {
+      this.writeLine(`[echo:discarded] similarity=${formatSimilarity(echo)} strategy=${echo.strategy}`);
+      return;
+    }
+
+    const decision = this.bargeInPolicy.decide(transcript.text, this.wakePhrases);
+
+    switch (decision.action) {
+      case "ignore":
+        this.writeLine(`[barge:ignored] reason=${decision.reason}`);
+        return;
+      case "stop":
+        await this.terminalHarness.stopVoiceOutput();
+        this.writeLine(`[barge:stop] phrase="${decision.wake.phrase}"`);
+        return;
+      case "command":
+        await this.terminalHarness.stopVoiceOutput();
+        this.writeLine(`[barge:command] phrase="${decision.wake.phrase}" command="${decision.commandText}"`);
+        await this.terminalHarness.processTranscript(withTranscriptText(transcript, decision.commandText));
+        return;
+    }
   }
 
   private releaseAudio(audio: UtteranceAudio, source: "candidate" | "manual"): void {
@@ -307,7 +346,6 @@ export class AlwaysOnVoiceHarnessRunner {
   private printWakeEvent(event: AlwaysOnWakeGateEvent): void {
     switch (event.type) {
       case "candidate_start":
-        void this.terminalHarness.voiceOutput.stop();
         this.writeLine(
           `[wake:candidate] start preRollFrames=${event.preRollFrames} preRollBytes=${event.preRollBytes}`
         );
@@ -564,6 +602,10 @@ function isReadlineClosedError(error: unknown): boolean {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatSimilarity(result: EchoGuardResult): string {
+  return result.similarity.toFixed(3);
 }
 
 function noop(_line: string): void {}
