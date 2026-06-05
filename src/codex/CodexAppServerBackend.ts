@@ -5,6 +5,7 @@ import type { PermissionRequest } from "../permission/PermissionRequest.ts";
 import type { AgentBackend, CodexProcessConfig } from "./CodexBridge.ts";
 import type { CodexOutputEvent, CodexStatus } from "./CodexOutputEvent.ts";
 import type { CodexPrompt } from "./CodexPrompt.ts";
+import { voiceAgentProtocolPrompt } from "../voice/VoiceAgentEvent.ts";
 
 type RequestId = string | number;
 type WriteLine = (line: string) => void;
@@ -72,6 +73,8 @@ export interface CodexAppServerBackendOptions {
   args?: string[];
   cwd?: string;
   env?: Record<string, string | undefined>;
+  voiceAgentProtocol?: boolean;
+  voiceAgentProtocolPrompt?: string;
   now?: () => number;
   writeLine?: WriteLine;
   spawnProcess?: SpawnCodexAppServerProcess;
@@ -84,6 +87,8 @@ export class CodexAppServerBackend implements AgentBackend {
   private readonly args: string[];
   private readonly cwd: string;
   private readonly env: Record<string, string | undefined>;
+  private readonly voiceAgentProtocol: boolean;
+  private readonly protocolPrompt: string;
   private readonly now: () => number;
   private readonly writeLine: WriteLine;
   private readonly spawnProcess: SpawnCodexAppServerProcess;
@@ -116,6 +121,8 @@ export class CodexAppServerBackend implements AgentBackend {
       ...process.env,
       ...options.env
     };
+    this.voiceAgentProtocol = options.voiceAgentProtocol ?? false;
+    this.protocolPrompt = options.voiceAgentProtocolPrompt ?? voiceAgentProtocolPrompt;
     this.now = options.now ?? Date.now;
     this.writeLine = options.writeLine ?? noop;
     this.spawnProcess = options.spawnProcess ?? spawn;
@@ -199,13 +206,7 @@ export class CodexAppServerBackend implements AgentBackend {
 
     const result = await this.sendRequest("turn/start", {
       threadId: this.threadId,
-      input: [
-        {
-          type: "text",
-          text: prompt.text,
-          text_elements: []
-        }
-      ],
+      input: this.createTurnInput(prompt.text),
       cwd: this.cwd,
       approvalPolicy: "untrusted",
       approvalsReviewer: "user"
@@ -361,6 +362,27 @@ export class CodexAppServerBackend implements AgentBackend {
       this.pendingResponses.set(id, { resolve, reject });
       socket.send(JSON.stringify(message));
     });
+  }
+
+  private createTurnInput(text: string): Array<{ type: "text"; text: string; text_elements: unknown[] }> {
+    const input = [
+      {
+        type: "text" as const,
+        text,
+        text_elements: []
+      }
+    ];
+
+    if (!this.voiceAgentProtocol) return input;
+
+    return [
+      {
+        type: "text" as const,
+        text: this.protocolPrompt,
+        text_elements: []
+      },
+      ...input
+    ];
   }
 
   private sendResponse(id: RequestId, result: Record<string, unknown>): void {

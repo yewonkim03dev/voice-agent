@@ -333,6 +333,27 @@ provider 선택 규칙:
 
 TTS는 `ack`, permission prompt, retry, completion, error/warning 같은 짧은 voice message만 말한다. raw stdout token stream, 긴 로그, test output, STT diagnostics는 읽지 않는다.
 
+### 4.8 Voice-Agent Response Protocol
+
+real Codex/Claude session에서는 voice-agent protocol prompt를 붙여 agent가 NDJSON event를 스트리밍하도록 유도한다.
+
+```jsonl
+{"op":"voice-agent","type":"speech","text":"확인했어. 테스트부터 돌려볼게."}
+{"op":"voice-agent","type":"command","text":"npm test"}
+{"op":"voice-agent","type":"status","text":"테스트 실행 중이야."}
+{"op":"voice-agent","type":"error","text":"테스트 실행에 실패했어."}
+```
+
+처리 규칙:
+
+- `speech`: 라인이 완성되는 즉시 TTS queue로 보낸다.
+- `command`: terminal/UI log에 표시하고 기본적으로 말하지 않는다.
+- `status`: 짧은 상태는 표시하고 말할 수 있다.
+- `error`: 표시하고 짧게 말한다.
+- invalid JSON, `op !== "voice-agent"`, 미지원 event는 raw stdout fallback으로 표시한다.
+- structured speech가 이미 나온 turn에는 generic completion인 `끝났어.`를 중복으로 말하지 않는다.
+- permission approval flow는 native Codex/Claude approval request 기준을 유지한다.
+
 ---
 
 ## 5. BoundaryRouter

@@ -69,6 +69,40 @@ test("sends prompts as turn/start requests", async () => {
   ]);
 });
 
+test("can prepend the voice-agent protocol prompt to real turn/start requests", async () => {
+  const { backend, child, socket } = createStartedBackend({
+    voiceAgentProtocol: true,
+    voiceAgentProtocolPrompt: "Respond as voice-agent NDJSON."
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  await backend.sendPrompt({
+    sessionId: "sess_1",
+    text: "테스트 돌려줘",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+
+  const turnStart = socket.sent.find((message) => message.method === "turn/start");
+  assert.deepEqual(turnStart?.params.input, [
+    {
+      type: "text",
+      text: "Respond as voice-agent NDJSON.",
+      text_elements: []
+    },
+    {
+      type: "text",
+      text: "테스트 돌려줘",
+      text_elements: []
+    }
+  ]);
+});
+
 test("routes app-server approval requests to RuntimeController and sends decisions back", async () => {
   const { backend, child, socket } = createStartedBackend();
   const permissions: PermissionRequest[] = [];
@@ -274,7 +308,10 @@ test("terminal harness accepts numeric zero app-server approval ids", async () =
   });
 });
 
-function createStartedBackend(): {
+function createStartedBackend(options: {
+  voiceAgentProtocol?: boolean;
+  voiceAgentProtocolPrompt?: string;
+} = {}): {
   backend: CodexAppServerBackend;
   child: FakeAppServerProcess;
   socket: FakeWebSocket;
@@ -285,6 +322,8 @@ function createStartedBackend(): {
   return {
     backend: new CodexAppServerBackend({
       cwd: "/repo",
+      voiceAgentProtocol: options.voiceAgentProtocol,
+      voiceAgentProtocolPrompt: options.voiceAgentProtocolPrompt,
       spawnProcess: () => child,
       createWebSocket: () => socket
     }),

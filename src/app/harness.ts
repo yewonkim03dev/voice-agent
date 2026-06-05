@@ -22,6 +22,10 @@ import {
 import { ConsoleVoiceOutput, type InspectableVoiceOutput } from "../voice/ConsoleVoiceOutput.ts";
 import { createVoiceOutput } from "../voice/createVoiceOutput.ts";
 import {
+  parseVoiceAgentEventLine,
+  type VoiceAgentEvent
+} from "../voice/VoiceAgentEvent.ts";
+import {
   parseOptionalNumber,
   parseTtsGender,
   parseTtsLanguage,
@@ -201,6 +205,8 @@ export class TerminalHarness {
   private pendingPermission: PermissionRequest | undefined;
   private lastSpokenText: string | undefined;
   private readonly passthroughOutputBuffers = new Map<string, string>();
+  private readonly passthroughStructuredSpeechSessions = new Set<string>();
+  private readonly scheduledVoiceTasks = new Set<Promise<void>>();
 
   constructor(options: TerminalHarnessOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -273,7 +279,7 @@ export class TerminalHarness {
     if (this.runtime) {
       await this.runtime.stop();
     } else {
-      this.flushPassthroughOutputBuffers();
+      await this.flushPassthroughOutputBuffers();
       await this.backend.stop();
       this.passthroughState = "SHUTDOWN";
     }
@@ -416,7 +422,7 @@ export class TerminalHarness {
   }
 
   private async handlePassthroughPermissionRequest(request: PermissionRequest): Promise<void> {
-    this.flushPassthroughOutputBuffers();
+    await this.flushPassthroughOutputBuffers(request.sessionId);
     this.pendingPermission = request;
     this.codexStatus = {
       ...this.codexStatus,
@@ -432,30 +438,33 @@ export class TerminalHarness {
     const text = output.text ?? output.raw ?? "";
 
     if (output.type === "task_complete") {
-      this.flushPassthroughOutputBuffers();
+      await this.flushPassthroughOutputBuffers(output.sessionId);
       this.pendingPermission = undefined;
       this.codexStatus = {
         ...this.codexStatus,
         task: "idle"
       };
       this.passthroughState = "IDLE";
-      await this.speak("끝났어.", "completion");
+      if (!this.passthroughStructuredSpeechSessions.has(output.sessionId)) {
+        await this.speak("끝났어.", "completion");
+      }
+      this.passthroughStructuredSpeechSessions.delete(output.sessionId);
       return;
     }
 
     if (output.type === "error") {
-      this.flushPassthroughOutputBuffers();
+      await this.flushPassthroughOutputBuffers(output.sessionId);
       this.passthroughState = "ERROR";
       await this.speak(text ? `오류 났어. ${text}` : "오류 났어.", "error");
       return;
     }
 
     if (text) {
-      this.bufferPassthroughOutput(output.type, text);
+      await this.bufferPassthroughOutput(output.type, output.sessionId, text);
     }
   }
 
-  private bufferPassthroughOutput(type: CodexOutputEvent["type"], text: string): void {
+  private async bufferPassthroughOutput(type: CodexOutputEvent["type"], sessionId: string, text: string): Promise<void> {
     const buffered = `${this.passthroughOutputBuffers.get(type) ?? ""}${text}`;
     const normalized = buffered.replace(/\r/g, "\n");
     const parts = normalized.split("\n");
@@ -463,13 +472,15 @@ export class TerminalHarness {
     const remainder = parts.at(-1) ?? "";
 
     if (completeLines.length > 0) {
-      this.printAgentOutputBlock(type, completeLines.join("\n"));
+      for (const line of completeLines) {
+        this.handlePassthroughOutputLine(type, sessionId, line);
+      }
       this.passthroughOutputBuffers.set(type, remainder);
       return;
     }
 
     if (remainder.length >= 2_000) {
-      this.printAgentOutputBlock(type, remainder);
+      this.handlePassthroughOutputLine(type, sessionId, remainder);
       this.passthroughOutputBuffers.delete(type);
       return;
     }
@@ -477,12 +488,46 @@ export class TerminalHarness {
     this.passthroughOutputBuffers.set(type, remainder);
   }
 
-  private flushPassthroughOutputBuffers(): void {
+  private async flushPassthroughOutputBuffers(sessionId = this.currentBackendSessionId()): Promise<void> {
     for (const [type, text] of this.passthroughOutputBuffers) {
-      this.printAgentOutputBlock(type, text);
+      for (const line of text.replace(/\r/g, "\n").split("\n")) {
+        this.handlePassthroughOutputLine(type as CodexOutputEvent["type"], sessionId, line);
+      }
     }
 
     this.passthroughOutputBuffers.clear();
+  }
+
+  private handlePassthroughOutputLine(type: CodexOutputEvent["type"], sessionId: string, line: string): void {
+    const parsed = parseVoiceAgentEventLine(line);
+
+    if (parsed) {
+      this.handleVoiceAgentEvent(sessionId, parsed);
+      return;
+    }
+
+    this.printAgentOutputBlock(type, line);
+  }
+
+  private handleVoiceAgentEvent(sessionId: string, event: VoiceAgentEvent): void {
+    switch (event.type) {
+      case "speech":
+        this.printAgentOutputBlock("speech", event.text);
+        this.passthroughStructuredSpeechSessions.add(sessionId);
+        this.scheduleSpeak(event.text, "speech");
+        return;
+      case "command":
+        this.printAgentOutputBlock("command", event.text);
+        return;
+      case "status":
+        this.printAgentOutputBlock("status", event.text);
+        if (event.text.length <= 80) this.scheduleSpeak(event.text, "status");
+        return;
+      case "error":
+        this.printAgentOutputBlock("error", event.text);
+        this.scheduleSpeak(event.text, "error");
+        return;
+    }
   }
 
   private printAgentOutputBlock(type: string, text: string): void {
@@ -513,10 +558,18 @@ export class TerminalHarness {
     await this.voiceOutput.speak({
       id: this.createId("voice"),
       text,
-      language: "ko",
+      language: voiceMessageLanguage(text),
       priority: category === "permission" || category === "warning" ? "urgent" : "normal",
       interruptible: category !== "permission",
       category
+    });
+  }
+
+  private scheduleSpeak(text: string, category: VoiceMessage["category"]): void {
+    const task = this.speak(text, category);
+    this.scheduledVoiceTasks.add(task);
+    task.finally(() => {
+      this.scheduledVoiceTasks.delete(task);
     });
   }
 
@@ -736,6 +789,7 @@ export function createTerminalHarnessFromArgs(
         command: cli.codexCommand,
         args: cli.codexArgs,
         cwd: cli.cwd,
+        voiceAgentProtocol: true,
         now: options.now,
         writeLine: options.writeLine
       })
@@ -1001,6 +1055,10 @@ function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["inten
 
 function agentLabel(target: AgentTarget): string {
   return target === "claude" ? "Claude" : "Codex";
+}
+
+function voiceMessageLanguage(text: string): VoiceMessage["language"] {
+  return detectTranscriptLanguage(normalizeTranscriptText(text)) === "en" ? "en" : "ko";
 }
 
 function formatError(error: unknown): string {

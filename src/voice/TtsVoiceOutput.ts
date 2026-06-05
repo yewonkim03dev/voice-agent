@@ -29,7 +29,8 @@ export class TtsVoiceOutput implements InspectableVoiceOutput {
   private readonly volume: number | undefined;
   private readonly maxChunkLength: number;
   private readonly finishedListeners: Array<(id: string) => void> = [];
-  private sequence = 0;
+  private queue: Promise<void> = Promise.resolve();
+  private generation = 0;
 
   constructor(options: TtsVoiceOutputOptions) {
     this.provider = options.provider;
@@ -46,12 +47,39 @@ export class TtsVoiceOutput implements InspectableVoiceOutput {
   async speak(message: VoiceMessage): Promise<void> {
     this.messages.push(message);
     this.writeLine(`[voice:${message.category}] ${message.text}`);
-    const sequence = ++this.sequence;
 
-    try {
+    if (message.priority === "urgent") {
+      this.generation += 1;
+      this.queue = Promise.resolve();
       await this.provider.stop();
+    }
+
+    const generation = this.generation;
+    const task = this.queue
+      .catch(() => {})
+      .then(async () => {
+        if (generation !== this.generation) return;
+        await this.speakQueued(message, generation);
+      });
+
+    this.queue = task.catch(() => {});
+    await task;
+  }
+
+  async stop(): Promise<void> {
+    this.generation += 1;
+    this.queue = Promise.resolve();
+    await this.provider.stop();
+  }
+
+  onFinished(callback: (id: string) => void): void {
+    this.finishedListeners.push(callback);
+  }
+
+  private async speakQueued(message: VoiceMessage, generation: number): Promise<void> {
+    try {
       for (const chunk of chunkSpeechText(message.text, this.maxChunkLength)) {
-        if (sequence !== this.sequence) break;
+        if (generation !== this.generation) break;
         await this.provider.speak({
           text: chunk,
           language: this.resolveLanguage(message),
@@ -67,15 +95,6 @@ export class TtsVoiceOutput implements InspectableVoiceOutput {
     } finally {
       this.finishedListeners.forEach((listener) => listener(message.id));
     }
-  }
-
-  async stop(): Promise<void> {
-    this.sequence += 1;
-    await this.provider.stop();
-  }
-
-  onFinished(callback: (id: string) => void): void {
-    this.finishedListeners.push(callback);
   }
 
   private resolveLanguage(message: VoiceMessage): VoiceMessage["language"] {

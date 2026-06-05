@@ -147,6 +147,41 @@ test("TtsVoiceOutput applies voice, rate, gender, pitch, and volume config", asy
   });
 });
 
+test("TtsVoiceOutput queues normal speech without overlap", async () => {
+  const provider = new BlockingTtsProvider();
+  const output = new TtsVoiceOutput({
+    provider
+  });
+
+  const first = output.speak(message("첫 번째 문장.", "ko", "speech"));
+  const second = output.speak(message("두 번째 문장.", "ko", "speech"));
+  await flushQueuedSpeech();
+
+  assert.equal(provider.requests.length, 1);
+  assert.equal(provider.requests[0].text, "첫 번째 문장.");
+
+  provider.finishNext();
+  await flushQueuedSpeech();
+  assert.equal(provider.requests.length, 2);
+  assert.equal(provider.requests[1].text, "두 번째 문장.");
+
+  provider.finishNext();
+  await Promise.all([first, second]);
+});
+
+test("TtsVoiceOutput chunks long structured speech", async () => {
+  const provider = new FakeTtsProvider();
+  const output = new TtsVoiceOutput({
+    provider,
+    maxChunkLength: 18
+  });
+
+  await output.speak(message("첫 번째 문장을 말하고. 두 번째 문장을 이어서 말해.", "ko", "speech"));
+
+  assert.equal(provider.requests.length > 1, true);
+  assert.equal(provider.requests.every((request) => request.text.length <= 18), true);
+});
+
 test("MacosAppleTtsProvider passes helper args without shelling user text", async () => {
   const spawns: Array<{ command: string; args: string[] }> = [];
   const provider = new MacosAppleTtsProvider({
@@ -320,7 +355,7 @@ test("long agent stdout is not spoken raw while completion is spoken", async () 
     text: "Task complete",
     timestamp: 1000
   });
-  await Promise.resolve();
+  await flushQueuedSpeech();
 
   assert.equal(provider.requests.some((request) => request.text.includes(longOutput.slice(0, 40))), false);
   assert.equal(provider.requests.at(-1)?.text, "끝났어.");
@@ -343,7 +378,7 @@ test("permission prompts are spoken through TTS", async () => {
 
   await harness.start();
   backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
-  await Promise.resolve();
+  await flushQueuedSpeech();
 
   assert.equal(provider.requests.at(-1)?.text, "npm test 실행 권한 필요해. 허용할까?");
 });
@@ -407,6 +442,27 @@ class FakeTtsProvider implements TtsProvider {
 
   async stop(): Promise<void> {
     this.stopCount += 1;
+  }
+}
+
+class BlockingTtsProvider implements TtsProvider {
+  readonly name = "macos-apple" as const;
+  readonly requests: TtsSpeakRequest[] = [];
+  private readonly resolvers: Array<() => void> = [];
+
+  async speak(request: TtsSpeakRequest): Promise<void> {
+    this.requests.push(request);
+    await new Promise<void>((resolve) => {
+      this.resolvers.push(resolve);
+    });
+  }
+
+  async stop(): Promise<void> {
+    this.finishNext();
+  }
+
+  finishNext(): void {
+    this.resolvers.shift()?.();
   }
 }
 
@@ -509,5 +565,13 @@ function createTestWakeGate(): AlwaysOnWakeGate {
     }),
     now: () => 1000,
     createId: createTestId()
+  });
+}
+
+async function flushQueuedSpeech(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
   });
 }

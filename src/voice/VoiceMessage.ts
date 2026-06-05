@@ -4,5 +4,5 @@ export interface VoiceMessage {
   language: "ko" | "en";
   priority: "low" | "normal" | "urgent";
   interruptible: boolean;
-  category: "ack" | "permission" | "status" | "completion" | "error" | "warning";
+  category: "ack" | "permission" | "status" | "speech" | "completion" | "error" | "warning";
 }

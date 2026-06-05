@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
+import { parseVoiceAgentEventLine } from "../src/voice/VoiceAgentEvent.ts";
 
 test("routes terminal text to the in-memory backend as a Codex prompt", async () => {
   const harness = createHarness();
@@ -174,6 +175,157 @@ test("pass-through mode buffers token-sized agent output until completion", asyn
   assert.equal(lines.some((line) => line.includes("[agent:stdout] 실행했습니다.")), true);
 });
 
+test("parses voice-agent NDJSON speech events", () => {
+  assert.deepEqual(parseVoiceAgentEventLine(
+    '{"op":"voice-agent","type":"speech","text":"확인했어."}'
+  ), {
+    op: "voice-agent",
+    type: "speech",
+    text: "확인했어.",
+    raw: {
+      op: "voice-agent",
+      type: "speech",
+      text: "확인했어."
+    }
+  });
+  assert.equal(parseVoiceAgentEventLine("plain text"), null);
+  assert.equal(parseVoiceAgentEventLine('{"op":"other","type":"speech","text":"no"}'), null);
+});
+
+test("pass-through mode routes voice-agent speech events to TTS immediately", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","text":"확인했어. 테스트부터 돌려볼게."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(harness.voiceOutput.messages.at(-1)?.text, "확인했어. 테스트부터 돌려볼게.");
+  assert.equal(lines.some((line) => line.includes("[agent:speech] 확인했어. 테스트부터 돌려볼게.")), true);
+});
+
+test("pass-through mode displays command events without speaking them", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"command","text":"npm test"}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(harness.voiceOutput.messages.length, 0);
+  assert.equal(lines.some((line) => line.includes("[agent:command] npm test")), true);
+});
+
+test("pass-through mode handles status and error events", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      '{"op":"voice-agent","type":"status","text":"테스트 실행 중이야."}\n' +
+      '{"op":"voice-agent","type":"error","text":"테스트 실행에 실패했어."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), [
+    "테스트 실행 중이야.",
+    "테스트 실행에 실패했어."
+  ]);
+  assert.equal(lines.some((line) => line.includes("[agent:status] 테스트 실행 중이야.")), true);
+  assert.equal(lines.some((line) => line.includes("[agent:error] 테스트 실행에 실패했어.")), true);
+});
+
+test("pass-through mode keeps invalid JSON and mixed raw stdout as raw fallback", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      "raw before\n" +
+      '{"op":"voice-agent","type":"speech","text":"중간 보고야."}\n' +
+      "{not-json}\n" +
+      "raw after",
+    timestamp: 1000
+  });
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "task_complete",
+    text: "Task complete",
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(lines.some((line) => line.includes("[agent:stdout] raw before")), true);
+  assert.equal(lines.some((line) => line.includes("[agent:speech] 중간 보고야.")), true);
+  assert.equal(lines.some((line) => line.includes("[agent:stdout] {not-json}")), true);
+  assert.equal(lines.some((line) => line.includes("[agent:stdout] raw after")), true);
+  assert.equal(harness.voiceOutput.messages.some((message) => message.text === "중간 보고야."), true);
+});
+
+test("pass-through mode skips generic completion after structured speech", async () => {
+  const backend = new InMemoryAgentBackend();
+  const harness = createPassthroughHarness(backend);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","text":"끝났어. 전부 통과했어."}\n',
+    timestamp: 1000
+  });
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "task_complete",
+    text: "Task complete",
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), [
+    "끝났어. 전부 통과했어."
+  ]);
+});
+
+test("pass-through permission prompts still work after voice-agent events", async () => {
+  const backend = new InMemoryAgentBackend();
+  const harness = createPassthroughHarness(backend);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","text":"권한을 확인할게."}\n',
+    timestamp: 1000
+  });
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+  await harness.processLine("허용");
+
+  assert.equal(backend.permissions.length, 1);
+  assert.equal(backend.permissions[0].decision, "allow");
+});
+
 test("pass-through mode maps interrupt phrases during active work", async () => {
   const backend = new InMemoryAgentBackend();
   const harness = createPassthroughHarness(backend);
@@ -207,4 +359,9 @@ function createPassthroughHarness(backend: InMemoryAgentBackend, lines: string[]
     createId: (prefix) => `${prefix}_${++id}`,
     writeLine: (line) => lines.push(line)
   });
+}
+
+async function flushAsync(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }

@@ -26,6 +26,16 @@ npm run harness:codex
 
 Codex mode starts `codex app-server --listen ws://127.0.0.1:0`, opens a local websocket JSON-RPC connection, and sends normal text directly with `turn/start`. It does not run local intent classification or text-based permission parsing in front of Codex. This avoids fake approval prompts such as `approve_action`.
 
+Real Codex mode also prepends a voice-agent response protocol prompt. The agent is asked to stream newline-delimited JSON events so short spoken responses can be sent to TTS before the full turn is complete:
+
+```jsonl
+{"op":"voice-agent","type":"speech","text":"확인했어. 테스트부터 돌려볼게."}
+{"op":"voice-agent","type":"command","text":"npm test"}
+{"op":"voice-agent","type":"speech","text":"테스트가 끝났어. 전부 통과했어."}
+```
+
+`speech` events are spoken immediately, `command` events are displayed but not spoken, and invalid or non-JSON output is kept as raw `[agent:stdout]` fallback. If a turn already emitted structured speech, the harness does not add the generic `끝났어.` completion TTS on top.
+
 Wake text is supported in the terminal as a development stand-in for a real wake detector:
 
 ```text
