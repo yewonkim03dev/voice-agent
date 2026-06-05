@@ -23,6 +23,7 @@ import { ConsoleVoiceOutput, type InspectableVoiceOutput } from "../voice/Consol
 import { createVoiceOutput } from "../voice/createVoiceOutput.ts";
 import {
   parseVoiceAgentEventLine,
+  parseVoiceAgentEventSequence,
   type VoiceAgentEvent
 } from "../voice/VoiceAgentEvent.ts";
 import {
@@ -565,7 +566,14 @@ export class TerminalHarness {
   }
 
   private handlePassthroughOutputLine(type: CodexOutputEvent["type"], sessionId: string, line: string): void {
-    const parsed = parseVoiceAgentEventLine(line);
+    const parsed = parseVoiceAgentEventSequence(line) ?? parseVoiceAgentEventLine(line);
+
+    if (Array.isArray(parsed)) {
+      for (const event of parsed) {
+        this.handleVoiceAgentEvent(sessionId, event);
+      }
+      return;
+    }
 
     if (parsed) {
       this.handleVoiceAgentEvent(sessionId, parsed);
@@ -602,7 +610,6 @@ export class TerminalHarness {
           type: "status",
           text: event.text
         });
-        if (event.text.length <= 80) this.scheduleSpeak(event.text, "status");
         return;
       case "error":
         this.printAgentOutputBlock("error", event.text);

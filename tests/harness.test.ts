@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
-import { parseVoiceAgentEventLine } from "../src/voice/VoiceAgentEvent.ts";
+import { parseVoiceAgentEventLine, parseVoiceAgentEventSequence } from "../src/voice/VoiceAgentEvent.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
 import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
 
@@ -280,6 +280,25 @@ test("parses voice-agent NDJSON speech events", () => {
   assert.equal(parseVoiceAgentEventLine('{"op":"other","type":"speech","text":"no"}'), null);
 });
 
+test("parses adjacent voice-agent events defensively", () => {
+  assert.deepEqual(parseVoiceAgentEventSequence(
+    '{"op":"voice-agent","type":"status","text":"확인 중이야."}{"op":"voice-agent","type":"speech","text":"확인했어."}'
+  )?.map((event) => ({
+    type: event.type,
+    text: event.text
+  })), [
+    {
+      type: "status",
+      text: "확인 중이야."
+    },
+    {
+      type: "speech",
+      text: "확인했어."
+    }
+  ]);
+  assert.equal(parseVoiceAgentEventSequence('raw {"op":"voice-agent","type":"speech","text":"no"}'), null);
+});
+
 test("pass-through mode routes voice-agent speech events to TTS immediately", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
@@ -339,14 +358,36 @@ test("pass-through mode handles status and error events", async () => {
   });
   await flushAsync();
 
-  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), [
-    "테스트 실행 중이야.",
-    "테스트 실행에 실패했어."
-  ]);
+  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), ["테스트 실행에 실패했어."]);
   assert.equal(lines.some((line) => line.includes("[agent:status] 테스트 실행 중이야.")), true);
   assert.equal(lines.some((line) => line.includes("[agent:error] 테스트 실행에 실패했어.")), true);
   assert.equal(visualBridge.events.some((event) => event.type === "status"), true);
   assert.equal(visualBridge.events.some((event) => event.type === "error"), true);
+});
+
+test("pass-through mode recovers adjacent structured events", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, lines, visualBridge);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      '{"op":"voice-agent","type":"status","text":"작업 폴더를 확인해 볼게요."}' +
+      '{"op":"voice-agent","type":"speech","text":"작업 폴더 확인했습니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(lines.some((line) => line.includes("[agent:stdout]")), false);
+  assert.equal(lines.some((line) => line.includes("[agent:status] 작업 폴더를 확인해 볼게요.")), true);
+  assert.equal(lines.some((line) => line.includes("[agent:speech] 작업 폴더 확인했습니다.")), true);
+  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), ["작업 폴더 확인했습니다."]);
+  assert.equal(visualBridge.events.some((event) => event.type === "status"), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "speech"), true);
 });
 
 test("pass-through mode keeps invalid JSON and mixed raw stdout as raw fallback", async () => {
