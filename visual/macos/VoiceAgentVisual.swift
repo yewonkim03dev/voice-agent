@@ -23,7 +23,7 @@ final class AgentCircleView: NSView {
         super.init(frame: frameRect)
         Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.phase += 0.04
+            self.phase += 0.04 + self.statePhaseBoost()
             self.glow = max(0, self.glow - 0.025)
             self.needsDisplay = true
         }
@@ -38,13 +38,25 @@ final class AgentCircleView: NSView {
         dirtyRect.fill()
 
         let center = CGPoint(x: bounds.midX, y: bounds.midY + 10)
-        let activity = max(rms, peak * 0.45, glow * 0.85)
+        let activity = max(rms, peak * 0.45, glow * 0.85, stateActivityFloor())
         let baseRadius = min(bounds.width, bounds.height) * 0.31 + activity * 16
-        let amplitude = 7 + rms * 42 + peak * 18 + glow * 24
+        var amplitude = 7 + rms * 42 + peak * 18 + glow * 24
+        if state == "speaking" {
+            amplitude += 12 + max(0, sin(phase * 2.2)) * 12
+        }
+        if state == "stt_processing" {
+            amplitude = 6 + sin(phase * 2.0) * 2
+        }
         drawHalo(center: center, radius: baseRadius + 48, activity: activity)
         drawWaveRing(center: center, baseRadius: baseRadius + 2, amplitude: amplitude, phaseOffset: 0, alpha: 0.92, lineWidth: 3.6)
         drawWaveRing(center: center, baseRadius: baseRadius - 10, amplitude: amplitude * 0.42, phaseOffset: 1.7, alpha: 0.48, lineWidth: 1.6)
-        drawOuterTicks(center: center, baseRadius: baseRadius + 16, amplitude: amplitude)
+        if state == "speaking" {
+            drawSpeakingWaves(center: center, baseRadius: baseRadius + 20)
+        } else if state == "stt_processing" {
+            drawProcessingIndicator(center: center, baseRadius: baseRadius + 25)
+        } else {
+            drawOuterTicks(center: center, baseRadius: baseRadius + 16, amplitude: amplitude)
+        }
         drawInnerGuide(center: center, radius: baseRadius - 26)
 
         let paragraph = NSMutableParagraphStyle()
@@ -62,6 +74,7 @@ final class AgentCircleView: NSView {
         switch state {
         case "approval_pending": return .systemYellow
         case "error": return .systemPink
+        case "stt_processing": return .systemBlue
         case "speaking": return .systemCyan
         case "wake_matched": return .systemOrange
         case "listening": return .systemGreen
@@ -74,11 +87,31 @@ final class AgentCircleView: NSView {
         switch state {
         case "approval_pending": return 0.128
         case "error": return 0.958
+        case "stt_processing": return 0.550
         case "speaking": return 0.528
         case "wake_matched": return 0.067
         case "listening": return 0.411
         case "thinking", "running": return 0.728
         default: return 0.583
+        }
+    }
+
+    private func stateActivityFloor() -> CGFloat {
+        switch state {
+        case "speaking": return 0.42 + sin(phase * 2.2) * 0.08
+        case "stt_processing": return 0.50
+        case "thinking", "running": return 0.28
+        case "approval_pending": return 0.34
+        case "wake_matched": return 0.72
+        default: return 0
+        }
+    }
+
+    private func statePhaseBoost() -> CGFloat {
+        switch state {
+        case "speaking": return 0.035
+        case "stt_processing": return 0.055
+        default: return 0
         }
     }
 
@@ -145,6 +178,80 @@ final class AgentCircleView: NSView {
             path.lineWidth = 1.1 + n * 2.4 + peak * 2.0
             color(hueOffset: CGFloat(index) * 0.0047, alpha: 0.30 + n * 0.52 + glow * 0.20).setStroke()
             path.stroke()
+        }
+    }
+
+    private func drawSpeakingWaves(center: CGPoint, baseRadius: CGFloat) {
+        for ring in 0..<3 {
+            let radius = baseRadius + CGFloat(ring) * 15 + (phase * 26 + CGFloat(ring) * 11).truncatingRemainder(dividingBy: 28)
+            let alpha = max(0, 0.46 - CGFloat(ring) * 0.12 - ((radius - baseRadius) / 80) * 0.22)
+            let path = NSBezierPath()
+            path.appendArc(
+                withCenter: center,
+                radius: radius,
+                startAngle: 22,
+                endAngle: 338,
+                clockwise: false
+            )
+            path.lineWidth = 2.1 - CGFloat(ring) * 0.35
+            color(hueOffset: 0.06 + CGFloat(ring) * 0.05, alpha: alpha).setStroke()
+            path.stroke()
+        }
+
+        let count = 56
+        for index in 0..<count {
+            let angle = CGFloat(index) / CGFloat(count) * CGFloat.pi * 2
+            let gate = max(0, sin(angle * 4 - phase * 2.8))
+            let length = 5 + gate * 18 + max(0, sin(phase * 2.1 + CGFloat(index))) * 8
+            let inner = baseRadius + 8 + gate * 4
+            let outer = inner + length
+            let path = NSBezierPath()
+
+            path.move(to: CGPoint(
+                x: center.x + cos(angle) * inner,
+                y: center.y + sin(angle) * inner
+            ))
+            path.line(to: CGPoint(
+                x: center.x + cos(angle) * outer,
+                y: center.y + sin(angle) * outer
+            ))
+            path.lineWidth = 1.4 + gate * 1.7
+            color(hueOffset: 0.06 + CGFloat(index) * 0.0033, alpha: 0.24 + gate * 0.42).setStroke()
+            path.stroke()
+        }
+    }
+
+    private func drawProcessingIndicator(center: CGPoint, baseRadius: CGFloat) {
+        for arc in 0..<4 {
+            let start = phase * 103 + CGFloat(arc) * 104
+            let sweep = CGFloat(45 + arc * 6)
+            let path = NSBezierPath()
+
+            path.appendArc(
+                withCenter: center,
+                radius: baseRadius + CGFloat(arc) * 7,
+                startAngle: start,
+                endAngle: start + sweep,
+                clockwise: false
+            )
+            path.lineWidth = 3.2 - CGFloat(arc) * 0.35
+            color(hueOffset: CGFloat(arc) * 0.066, alpha: 0.78 - CGFloat(arc) * 0.13).setStroke()
+            path.stroke()
+        }
+
+        for dot in 0..<10 {
+            let angle = phase * 2.4 + CGFloat(dot) * CGFloat.pi * 0.2
+            let pulse = 0.55 + sin(phase * 3 + CGFloat(dot)) * 0.35
+            let radius = baseRadius - 20 + CGFloat(dot % 2) * 8
+            let size = 1.8 + pulse * 2.4
+            let rect = NSRect(
+                x: center.x + cos(angle) * radius - size,
+                y: center.y + sin(angle) * radius - size,
+                width: size * 2,
+                height: size * 2
+            )
+            color(hueOffset: CGFloat(dot) * 0.022, alpha: 0.32 + pulse * 0.45).setFill()
+            NSBezierPath(ovalIn: rect).fill()
         }
     }
 

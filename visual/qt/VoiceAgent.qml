@@ -51,6 +51,7 @@ ApplicationWindow {
     function stateColor() {
         if (uiState === "approval_pending") return "#ffd166"
         if (uiState === "error") return "#ff4d6d"
+        if (uiState === "stt_processing") return "#34d5ff"
         if (uiState === "speaking") return "#7bdff2"
         if (uiState === "wake_matched") return "#ff7a18"
         if (uiState === "listening") return "#47f5a6"
@@ -61,11 +62,21 @@ ApplicationWindow {
     function stateHue() {
         if (uiState === "approval_pending") return 46
         if (uiState === "error") return 345
+        if (uiState === "stt_processing") return 198
         if (uiState === "speaking") return 190
         if (uiState === "wake_matched") return 24
         if (uiState === "listening") return 148
         if (uiState === "thinking" || uiState === "running") return 262
         return 210
+    }
+
+    function stateActivityFloor() {
+        if (uiState === "speaking") return 0.42 + Math.sin(visualPhase * 2.2) * 0.08
+        if (uiState === "stt_processing") return 0.50
+        if (uiState === "thinking" || uiState === "running") return 0.28
+        if (uiState === "approval_pending") return 0.34
+        if (uiState === "wake_matched") return 0.72
+        return 0.0
     }
 
     WebSocket {
@@ -137,7 +148,8 @@ ApplicationWindow {
         running: true
         repeat: true
         onTriggered: {
-            root.visualPhase += 0.045 + root.rms * 0.035 + root.glow * 0.025
+            var stateBoost = root.uiState === "speaking" ? 0.035 : root.uiState === "stt_processing" ? 0.055 : 0
+            root.visualPhase += 0.045 + root.rms * 0.035 + root.glow * 0.025 + stateBoost
             waveform.requestPaint()
         }
     }
@@ -172,9 +184,11 @@ ApplicationWindow {
                     var cy = h / 2
                     var phase = root.visualPhase
                     var hue = root.stateHue()
-                    var activity = Math.max(root.rms, root.peak * 0.45, root.glow * 0.85)
+                    var activity = Math.max(root.rms, root.peak * 0.45, root.glow * 0.85, root.stateActivityFloor())
                     var base = 88 + activity * 16
                     var amp = 8 + root.rms * 40 + root.peak * 18 + root.glow * 24
+                    if (root.uiState === "speaking") amp += 12 + Math.max(0, Math.sin(phase * 2.2)) * 12
+                    if (root.uiState === "stt_processing") amp = 6 + Math.sin(phase * 2.0) * 2
 
                     ctx.clearRect(0, 0, w, h)
 
@@ -189,7 +203,13 @@ ApplicationWindow {
 
                     drawWaveRing(ctx, cx, cy, base + 2, amp, phase, hue, 3.4, 0.88, 0)
                     drawWaveRing(ctx, cx, cy, base - 10, amp * 0.42, phase * 1.18 + 1.7, (hue + 42) % 360, 1.5, 0.48, 1)
-                    drawOuterTicks(ctx, cx, cy, base + 12, amp, phase, hue)
+                    if (root.uiState === "speaking") {
+                        drawSpeakingWaves(ctx, cx, cy, base + 20, phase, hue)
+                    } else if (root.uiState === "stt_processing") {
+                        drawProcessingIndicator(ctx, cx, cy, base + 25, phase, hue)
+                    } else {
+                        drawOuterTicks(ctx, cx, cy, base + 12, amp, phase, hue)
+                    }
 
                     ctx.strokeStyle = "rgba(60, 76, 98, 0.45)"
                     ctx.lineWidth = 1
@@ -251,6 +271,57 @@ ApplicationWindow {
                         ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner)
                         ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer)
                         ctx.stroke()
+                    }
+                }
+
+                function drawSpeakingWaves(ctx, cx, cy, base, phase, hue) {
+                    ctx.lineCap = "round"
+                    for (var ring = 0; ring < 3; ring += 1) {
+                        var radius = base + ring * 15 + (phase * 26 + ring * 11) % 28
+                        var alpha = Math.max(0, 0.46 - ring * 0.12 - ((radius - base) / 80) * 0.22)
+                        ctx.strokeStyle = "hsla(" + ((hue + ring * 18) % 360) + ", 96%, 64%, " + alpha + ")"
+                        ctx.lineWidth = 2.1 - ring * 0.35
+                        ctx.beginPath()
+                        ctx.arc(cx, cy, radius, Math.PI * 0.12, Math.PI * 1.88)
+                        ctx.stroke()
+                    }
+
+                    for (var index = 0; index < 56; index += 1) {
+                        var angle = (index / 56) * Math.PI * 2
+                        var gate = Math.max(0, Math.sin(angle * 4 - phase * 2.8))
+                        var length = 5 + gate * 18 + Math.max(0, Math.sin(phase * 2.1 + index)) * 8
+                        var inner = base + 8 + gate * 4
+                        var outer = inner + length
+                        ctx.strokeStyle = "hsla(" + ((hue + 22 + index * 1.2) % 360) + ", 96%, 66%, " + (0.24 + gate * 0.42) + ")"
+                        ctx.lineWidth = 1.4 + gate * 1.7
+                        ctx.beginPath()
+                        ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner)
+                        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer)
+                        ctx.stroke()
+                    }
+                }
+
+                function drawProcessingIndicator(ctx, cx, cy, base, phase, hue) {
+                    ctx.lineCap = "round"
+                    for (var arc = 0; arc < 4; arc += 1) {
+                        var start = phase * 1.8 + arc * Math.PI * 0.58
+                        var sweep = Math.PI * (0.25 + arc * 0.035)
+                        ctx.strokeStyle = "hsla(" + ((hue + arc * 24) % 360) + ", 96%, 64%, " + (0.78 - arc * 0.13) + ")"
+                        ctx.lineWidth = 3.2 - arc * 0.35
+                        ctx.beginPath()
+                        ctx.arc(cx, cy, base + arc * 7, start, start + sweep)
+                        ctx.stroke()
+                    }
+
+                    for (var dot = 0; dot < 10; dot += 1) {
+                        var angle = phase * 2.4 + dot * Math.PI * 0.2
+                        var pulse = 0.55 + Math.sin(phase * 3 + dot) * 0.35
+                        var radius = base - 20 + dot % 2 * 8
+                        var size = 1.8 + pulse * 2.4
+                        ctx.fillStyle = "hsla(" + ((hue + dot * 8) % 360) + ", 96%, 66%, " + (0.32 + pulse * 0.45) + ")"
+                        ctx.beginPath()
+                        ctx.arc(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius, size, 0, Math.PI * 2)
+                        ctx.fill()
                     }
                 }
             }
