@@ -367,21 +367,13 @@ export class AlwaysOnVoiceHarnessRunner {
   private printWakeEvent(event: AlwaysOnWakeGateEvent): void {
     switch (event.type) {
       case "candidate_start":
-        this.terminalHarness.sendVisualEvent({
-          op: "voice-agent-ui",
-          type: "state",
-          state: "listening"
-        });
+        this.sendListeningVisualState("listening");
         this.writeLine(
           `[wake:candidate] start preRollFrames=${event.preRollFrames} preRollBytes=${event.preRollBytes}`
         );
         return;
       case "candidate_end":
-        this.terminalHarness.sendVisualEvent({
-          op: "voice-agent-ui",
-          type: "state",
-          state: "stt_processing"
-        });
+        this.sendListeningVisualState("stt_processing");
         this.writeLine(
           `[wake:candidate] end reason=${event.reason} speechDurationMs=${event.speechDurationMs}`
         );
@@ -394,6 +386,23 @@ export class AlwaysOnVoiceHarnessRunner {
         }
         return;
     }
+  }
+
+  private sendListeningVisualState(state: "listening" | "stt_processing"): void {
+    if (this.terminalHarness.ttsPlaybackState.isSpeaking()) {
+      this.terminalHarness.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "speaking"
+      });
+      return;
+    }
+
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state
+    });
   }
 
   private printTranscript(transcript: Transcript): void {

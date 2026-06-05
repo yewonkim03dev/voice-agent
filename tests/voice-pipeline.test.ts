@@ -20,6 +20,7 @@ import { normalizeTranscriptText, type Language, type Transcript } from "../src/
 import { EchoGuard } from "../src/voice/EchoGuard.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
 import type { VoiceOutput } from "../src/voice/VoiceOutput.ts";
+import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
 
 test("ManualRecordingGate opens and closes through toggle", async () => {
   const gate = new ManualRecordingGate({
@@ -393,6 +394,67 @@ test("always-on voice runner ignores wake-only speech during TTS", async () => {
   assert.ok(logs.includes("[barge:ignored] reason=wake_only"));
 });
 
+test("always-on voice runner keeps visual speaking state while TTS is active", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스",
+        language: "ko"
+      }
+    ],
+    {
+      voiceOutput: new InspectableTestVoiceOutput(),
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  emitAgentSpeech(backend, "지금 설명하고 있어.");
+  await flushAsync();
+  const firstSpeakingIndex = visualBridge.events.findIndex(isSpeakingStateEvent);
+
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  const laterStates = visualBridge.events.slice(firstSpeakingIndex + 1).filter(isStateEvent);
+  assert.notEqual(firstSpeakingIndex, -1);
+  assert.equal(laterStates.some((event) => event.state === "listening" || event.state === "stt_processing"), false);
+  assert.equal(laterStates.some((event) => event.state === "speaking"), true);
+});
+
+test("wake-only status response marks the visual as speaking", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new InspectableTestVoiceOutput();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스",
+        language: "ko"
+      }
+    ],
+    {
+      voiceOutput,
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(voiceOutput.messages.at(-1)?.text, "Codex 준비됐어.");
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "state" && event.state === "speaking"), {
+    op: "voice-agent-ui",
+    type: "state",
+    state: "speaking",
+    text: "Codex 준비됐어."
+  });
+});
+
 test("always-on voice runner stops TTS on wake plus stop intent", async () => {
   const voiceOutput = new InspectableTestVoiceOutput();
   const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
@@ -734,6 +796,7 @@ function createAlwaysOnRunner(
   options: {
     wakePhrases?: string[];
     voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] };
+    visualBridge?: VisualBridgeLike;
   } = {}
 ): {
   backend: InMemoryAgentBackend;
@@ -755,6 +818,7 @@ function createAlwaysOnRunner(
     routingMode: "passthrough",
     agentTarget: "codex",
     voiceOutput: options.voiceOutput,
+    visualBridge: options.visualBridge,
     now: () => 1000,
     createId
   });
@@ -911,6 +975,37 @@ class InspectableTestVoiceOutput implements VoiceOutput {
   onFinished(callback: (id: string) => void): void {
     this.finishedListeners.push(callback);
   }
+}
+
+class FakeVisualBridge implements VisualBridgeLike {
+  readonly events: VisualEvent[] = [];
+  private readonly controlListeners: Array<(event: VisualControlEvent) => void> = [];
+
+  send(event: VisualEvent): void {
+    this.events.push(event);
+  }
+
+  onControl(callback: (event: VisualControlEvent) => void): void {
+    this.controlListeners.push(callback);
+  }
+
+  emitControl(action: VisualControlEvent["action"]): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action
+      })
+    );
+  }
+}
+
+function isStateEvent(event: VisualEvent): event is Extract<VisualEvent, { type: "state" }> {
+  return event.type === "state";
+}
+
+function isSpeakingStateEvent(event: VisualEvent): boolean {
+  return event.type === "state" && event.state === "speaking";
 }
 
 function fakePcmFrame(amplitude: number, timestamp: number, samples = 160): AudioFrame {
