@@ -309,7 +309,8 @@ export class AlwaysOnVoiceHarnessRunner {
       this.terminalHarness.sendVisualEvent({
         op: "voice-agent-ui",
         type: "state",
-        state: "idle"
+        state: "wake_rejected",
+        text: "wake phrase not matched"
       });
       return;
     }

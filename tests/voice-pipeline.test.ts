@@ -191,12 +191,18 @@ test("voice runner does not forward ambiguous approval speech", async () => {
 });
 
 test("always-on voice runner discards candidate speech without a wake phrase", async () => {
-  const { backend, runner, audioInput, speechProcessor, logs } = createAlwaysOnRunner([
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput, speechProcessor, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "그냥 배경 발화",
+        language: "ko"
+      }
+    ],
     {
-      text: "그냥 배경 발화",
-      language: "ko"
+      visualBridge
     }
-  ]);
+  );
 
   await runner.start();
   emitCandidate(audioInput, 1000);
@@ -206,6 +212,12 @@ test("always-on voice runner discards candidate speech without a wake phrase", a
   assert.equal(speechProcessor.audio.length, 1);
   assert.equal(backend.prompts.length, 0);
   assert.ok(logs.includes("[wake:discard] no configured wake phrase matched."));
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "state" && event.state === "wake_rejected"), {
+    op: "voice-agent-ui",
+    type: "state",
+    state: "wake_rejected",
+    text: "wake phrase not matched"
+  });
 });
 
 test("always-on voice runner routes a configured custom wake phrase", async () => {

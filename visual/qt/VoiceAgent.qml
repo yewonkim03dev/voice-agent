@@ -51,6 +51,7 @@ ApplicationWindow {
     function stateColor() {
         if (uiState === "approval_pending") return "#ffd166"
         if (uiState === "error") return "#ff4d6d"
+        if (uiState === "wake_rejected") return "#ff3b5f"
         if (uiState === "stt_processing") return "#34d5ff"
         if (uiState === "submitting") return "#ffb347"
         if (uiState === "speaking") return "#7bdff2"
@@ -63,6 +64,7 @@ ApplicationWindow {
     function stateHue() {
         if (uiState === "approval_pending") return 46
         if (uiState === "error") return 345
+        if (uiState === "wake_rejected") return 350
         if (uiState === "stt_processing") return 198
         if (uiState === "submitting") return 36
         if (uiState === "speaking") return 190
@@ -78,6 +80,7 @@ ApplicationWindow {
         if (uiState === "submitting") return 0.62
         if (uiState === "thinking" || uiState === "running") return 0.28
         if (uiState === "approval_pending") return 0.34
+        if (uiState === "wake_rejected") return 0.70
         if (uiState === "wake_matched") return 0.72
         return 0.0
     }
@@ -100,6 +103,10 @@ ApplicationWindow {
             if (event.type === "state") {
                 root.uiState = event.state
                 root.statusText = event.text || event.state
+                if (event.state === "wake_rejected") {
+                    root.glow = 1
+                    rejectReset.restart()
+                }
             } else if (event.type === "volume") {
                 root.rms = Math.min(1, Math.max(0, event.rms * 14))
                 root.peak = Math.min(1, Math.max(0, event.peak * 5))
@@ -147,11 +154,23 @@ ApplicationWindow {
     }
 
     Timer {
+        id: rejectReset
+        interval: 900
+        onTriggered: {
+            if (root.uiState === "wake_rejected") {
+                root.uiState = "idle"
+                root.statusText = "idle"
+                root.glow = 0
+            }
+        }
+    }
+
+    Timer {
         interval: 33
         running: true
         repeat: true
         onTriggered: {
-            var stateBoost = root.uiState === "speaking" ? 0.035 : root.uiState === "stt_processing" ? 0.055 : root.uiState === "submitting" ? 0.07 : 0
+            var stateBoost = root.uiState === "speaking" ? 0.035 : root.uiState === "stt_processing" ? 0.055 : root.uiState === "submitting" ? 0.07 : root.uiState === "wake_rejected" ? 0.09 : 0
             root.visualPhase += 0.045 + root.rms * 0.035 + root.glow * 0.025 + stateBoost
             waveform.requestPaint()
         }
@@ -193,6 +212,7 @@ ApplicationWindow {
                     if (root.uiState === "speaking") amp += 12 + Math.max(0, Math.sin(phase * 2.2)) * 12
                     if (root.uiState === "stt_processing") amp = 6 + Math.sin(phase * 2.0) * 2
                     if (root.uiState === "submitting") amp = 10 + Math.max(0, Math.sin(phase * 3.1)) * 10
+                    if (root.uiState === "wake_rejected") amp = 16 + Math.max(0, Math.sin(phase * 5.1)) * 18
 
                     ctx.clearRect(0, 0, w, h)
 
@@ -213,6 +233,8 @@ ApplicationWindow {
                         drawProcessingIndicator(ctx, cx, cy, base + 25, phase, hue)
                     } else if (root.uiState === "submitting") {
                         drawSubmittingIndicator(ctx, cx, cy, base + 18, phase, hue)
+                    } else if (root.uiState === "wake_rejected") {
+                        drawRejectedIndicator(ctx, cx, cy, base + 15, phase, hue)
                     } else {
                         drawOuterTicks(ctx, cx, cy, base + 12, amp, phase, hue)
                     }
@@ -353,6 +375,32 @@ ApplicationWindow {
                         ctx.arc(cx, cy, base + 30 + arc * 9, start, start + Math.PI * 0.38)
                         ctx.stroke()
                     }
+                }
+
+                function drawRejectedIndicator(ctx, cx, cy, base, phase, hue) {
+                    ctx.lineCap = "round"
+                    for (var index = 0; index < 84; index += 1) {
+                        var angle = (index / 84) * Math.PI * 2
+                        var n = Math.max(0, Math.sin(angle * 9 + phase * 4.0))
+                        var snap = Math.max(0, Math.sin(angle * 3 - phase * 5.5))
+                        var inner = base + 5 + snap * 5
+                        var outer = inner + 5 + n * 28 + root.glow * 12
+                        ctx.strokeStyle = "hsla(" + ((hue + index * 0.8) % 360) + ", 98%, 62%, " + (0.34 + n * 0.54) + ")"
+                        ctx.lineWidth = 1.4 + n * 3.2
+                        ctx.beginPath()
+                        ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner)
+                        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer)
+                        ctx.stroke()
+                    }
+
+                    ctx.strokeStyle = "hsla(" + hue + ", 98%, 66%, 0.82)"
+                    ctx.lineWidth = 3.4
+                    ctx.beginPath()
+                    ctx.arc(cx, cy, base - 18, phase * 2.4, phase * 2.4 + Math.PI * 0.22)
+                    ctx.stroke()
+                    ctx.beginPath()
+                    ctx.arc(cx, cy, base - 18, phase * 2.4 + Math.PI, phase * 2.4 + Math.PI * 1.22)
+                    ctx.stroke()
                 }
             }
 

@@ -7,6 +7,7 @@ export type VisualUiState =
   | "idle"
   | "listening"
   | "wake_matched"
+  | "wake_rejected"
   | "stt_processing"
   | "submitting"
   | "thinking"

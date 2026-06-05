@@ -50,6 +50,9 @@ final class AgentCircleView: NSView {
         if state == "submitting" {
             amplitude = 10 + max(0, sin(phase * 3.1)) * 10
         }
+        if state == "wake_rejected" {
+            amplitude = 16 + max(0, sin(phase * 5.1)) * 18
+        }
         drawHalo(center: center, radius: baseRadius + 48, activity: activity)
         drawWaveRing(center: center, baseRadius: baseRadius + 2, amplitude: amplitude, phaseOffset: 0, alpha: 0.92, lineWidth: 3.6)
         drawWaveRing(center: center, baseRadius: baseRadius - 10, amplitude: amplitude * 0.42, phaseOffset: 1.7, alpha: 0.48, lineWidth: 1.6)
@@ -59,6 +62,8 @@ final class AgentCircleView: NSView {
             drawProcessingIndicator(center: center, baseRadius: baseRadius + 25)
         } else if state == "submitting" {
             drawSubmittingIndicator(center: center, baseRadius: baseRadius + 18)
+        } else if state == "wake_rejected" {
+            drawRejectedIndicator(center: center, baseRadius: baseRadius + 15)
         } else {
             drawOuterTicks(center: center, baseRadius: baseRadius + 16, amplitude: amplitude)
         }
@@ -79,6 +84,7 @@ final class AgentCircleView: NSView {
         switch state {
         case "approval_pending": return .systemYellow
         case "error": return .systemPink
+        case "wake_rejected": return .systemRed
         case "stt_processing": return .systemBlue
         case "submitting": return .systemOrange
         case "speaking": return .systemCyan
@@ -93,6 +99,7 @@ final class AgentCircleView: NSView {
         switch state {
         case "approval_pending": return 0.128
         case "error": return 0.958
+        case "wake_rejected": return 0.972
         case "stt_processing": return 0.550
         case "submitting": return 0.100
         case "speaking": return 0.528
@@ -110,6 +117,7 @@ final class AgentCircleView: NSView {
         case "submitting": return 0.62
         case "thinking", "running": return 0.28
         case "approval_pending": return 0.34
+        case "wake_rejected": return 0.70
         case "wake_matched": return 0.72
         default: return 0
         }
@@ -120,6 +128,7 @@ final class AgentCircleView: NSView {
         case "speaking": return 0.035
         case "stt_processing": return 0.055
         case "submitting": return 0.070
+        case "wake_rejected": return 0.090
         default: return 0
         }
     }
@@ -301,6 +310,46 @@ final class AgentCircleView: NSView {
         }
     }
 
+    private func drawRejectedIndicator(center: CGPoint, baseRadius: CGFloat) {
+        let count = 84
+
+        for index in 0..<count {
+            let angle = CGFloat(index) / CGFloat(count) * CGFloat.pi * 2
+            let n = max(0, sin(angle * 9 + phase * 4.0))
+            let snap = max(0, sin(angle * 3 - phase * 5.5))
+            let inner = baseRadius + 5 + snap * 5
+            let outer = inner + 5 + n * 28 + glow * 12
+            let path = NSBezierPath()
+
+            path.move(to: CGPoint(
+                x: center.x + cos(angle) * inner,
+                y: center.y + sin(angle) * inner
+            ))
+            path.line(to: CGPoint(
+                x: center.x + cos(angle) * outer,
+                y: center.y + sin(angle) * outer
+            ))
+            path.lineWidth = 1.4 + n * 3.2
+            color(hueOffset: CGFloat(index) * 0.0022, alpha: 0.34 + n * 0.54).setStroke()
+            path.stroke()
+        }
+
+        for offset in [CGFloat(0), CGFloat(180)] {
+            let start = phase * 138 + offset
+            let path = NSBezierPath()
+            path.appendArc(
+                withCenter: center,
+                radius: baseRadius - 18,
+                startAngle: start,
+                endAngle: start + 40,
+                clockwise: false
+            )
+            path.lineWidth = 3.4
+            color(hueOffset: 0, alpha: 0.82).setStroke()
+            path.stroke()
+        }
+    }
+
     private func drawInnerGuide(center: CGPoint, radius: CGFloat) {
         let rect = NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
         let path = NSBezierPath(ovalIn: rect)
@@ -452,6 +501,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         case "state":
             circleView.state = event["state"] as? String ?? "idle"
             circleView.statusText = event["text"] as? String ?? circleView.state
+            if circleView.state == "wake_rejected" {
+                circleView.glow = 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                    guard let self, self.circleView.state == "wake_rejected" else { return }
+                    self.circleView.state = "idle"
+                    self.circleView.statusText = "idle"
+                    self.circleView.glow = 0
+                }
+            }
         case "volume":
             circleView.rms = min(1, max(0, CGFloat(event["rms"] as? Double ?? 0) * 14))
             circleView.peak = min(1, max(0, CGFloat(event["peak"] as? Double ?? 0) * 5))
