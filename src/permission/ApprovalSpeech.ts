@@ -10,7 +10,7 @@ export interface ApprovalSpeechResult {
   text: string;
 }
 
-const policyApprovePhrases = [
+export const policyApprovePhrases = [
   "같은 명령 계속 허용",
   "앞으로 이 명령은 허용",
   "이 명령 계속 허용",
@@ -18,7 +18,7 @@ const policyApprovePhrases = [
   "remember this command"
 ];
 
-const sessionApprovePhrases = [
+export const sessionApprovePhrases = [
   "이번 세션 동안 허용",
   "이번 세션은 허용",
   "세션 동안 허용",
@@ -30,7 +30,7 @@ const sessionApprovePhrases = [
   "accept for session"
 ];
 
-const onceApprovePhrases = [
+export const onceApprovePhrases = [
   "허용",
   "승인",
   "응",
@@ -48,7 +48,7 @@ const onceApprovePhrases = [
   "okay"
 ];
 
-const denyPhrases = [
+export const denyPhrases = [
   "거부",
   "아니",
   "안 돼",

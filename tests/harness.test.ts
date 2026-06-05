@@ -7,8 +7,10 @@ import {
   parseVoiceAgentEventSequence,
   voiceAgentProtocolPrompt
 } from "../src/voice/VoiceAgentEvent.ts";
+import { TtsVoiceOutput } from "../src/voice/TtsVoiceOutput.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
 import type { VoiceOutput } from "../src/voice/VoiceOutput.ts";
+import type { TtsProvider, TtsSpeakRequest } from "../src/voice/TtsProvider.ts";
 import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
 
 test("routes terminal text to the in-memory backend as a Codex prompt", async () => {
@@ -194,8 +196,53 @@ test("pass-through permission prompt keeps raw commands out of TTS", async () =>
   assert.deepEqual(visualBridge.events.find((event) => event.type === "approval"), {
     op: "voice-agent-ui",
     type: "approval",
-    text: "명령 실행 권한 필요해."
+    text: [
+      "명령 실행 권한 필요해.",
+      "허용: 허용 / 승인 / 응 / 그래 / 좋아 / 진행해 / 실행해 / 해도 돼 / 해도돼 / yes / approve / allow / go ahead / ok / okay",
+      "거부: 거부 / 아니 / 안 돼 / 안돼 / 하지 마 / 하지마 / 취소 / 멈춰 / no / deny / reject / cancel / stop",
+      "세션 허용: 이번 세션 동안 허용 / 이번 세션은 허용 / 세션 동안 허용 / 다음부터 묻지 마 / 다음부터 묻지마 / 계속 허용 / always allow / allow for session / accept for session",
+      "계속 허용: 같은 명령 계속 허용 / 앞으로 이 명령은 허용 / 이 명령 계속 허용 / 항상 이 명령 허용 / remember this command"
+    ].join("\n")
   });
+});
+
+test("pass-through permission prompt waits for queued speech instead of cutting it off", async () => {
+  const backend = new InMemoryAgentBackend();
+  const provider = new BlockingTtsProvider();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "codex-test",
+    routingMode: "passthrough",
+    agentTarget: "codex",
+    voiceOutput: new TtsVoiceOutput({
+      provider
+    }),
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","text":"그 임시 파일만 지우겠습니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  backend.emitPermissionRequest(backend.createPermissionRequest("rm /tmp/example", "sess_1", "approval_1"));
+  await flushAsync();
+
+  assert.equal(provider.stopCount, 0);
+  assert.deepEqual(provider.requests.map((request) => request.text), ["그 임시 파일만 지우겠습니다."]);
+
+  provider.finishNext();
+  await flushAsync();
+
+  assert.deepEqual(provider.requests.map((request) => request.text), [
+    "그 임시 파일만 지우겠습니다.",
+    "명령 실행 권한 필요해. 허용할까?"
+  ]);
 });
 
 test("pass-through approval speech can deny a native approval", async () => {
@@ -675,6 +722,29 @@ class HoldableVoiceOutput implements VoiceOutput {
     this.finishedListeners.forEach((listener) => listener(message.id));
     this.resolvers.get(message.id)?.();
     this.resolvers.delete(message.id);
+  }
+}
+
+class BlockingTtsProvider implements TtsProvider {
+  readonly name = "macos-apple" as const;
+  readonly requests: TtsSpeakRequest[] = [];
+  private readonly resolvers: Array<() => void> = [];
+  stopCount = 0;
+
+  async speak(request: TtsSpeakRequest): Promise<void> {
+    this.requests.push(request);
+    await new Promise<void>((resolve) => {
+      this.resolvers.push(resolve);
+    });
+  }
+
+  async stop(): Promise<void> {
+    this.stopCount += 1;
+    this.finishNext();
+  }
+
+  finishNext(): void {
+    this.resolvers.shift()?.();
   }
 }
 

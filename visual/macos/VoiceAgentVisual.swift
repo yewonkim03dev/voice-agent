@@ -74,35 +74,32 @@ final class AgentCircleView: NSView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineBreakMode = .byWordWrapping
+        let fontSize: CGFloat = state == "approval_pending" ? 13 : state == "speaking" ? 20 : 15
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 15, weight: .medium),
+            .font: NSFont.systemFont(ofSize: fontSize, weight: state == "speaking" ? .semibold : .medium),
             .foregroundColor: NSColor(calibratedRed: 0.86, green: 0.89, blue: 0.94, alpha: 1),
             .paragraphStyle: paragraph
         ]
         let expandedText = bounds.width >= 320 || bounds.height >= 320
-        let textHeight = expandedText ? min(max(bounds.height * 0.34, 92), 150) : min(max(bounds.height * 0.18, 56), 78)
+        let textHeight = state == "approval_pending"
+            ? min(max(bounds.height * 0.46, 156), 240)
+            : state == "speaking"
+                ? min(max(bounds.height * 0.34, 112), 174)
+                : expandedText ? min(max(bounds.height * 0.34, 92), 150) : min(max(bounds.height * 0.18, 56), 78)
         let textRect = NSRect(x: 24, y: 16, width: bounds.width - 48, height: textHeight)
         var options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
         if !expandedText {
             options.insert(.truncatesLastVisibleLine)
         }
-        if state == "speaking", !statusText.isEmpty {
-            let measured = (statusText as NSString).boundingRect(
-                with: textRect.size,
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: attrs
-            )
-            let backdropWidth = min(textRect.width, ceil(measured.width) + 44)
-            let backdropHeight = min(textRect.height, ceil(measured.height) + 18)
-            let backdropRect = NSRect(
-                x: textRect.midX - backdropWidth / 2,
-                y: textRect.midY - backdropHeight / 2,
-                width: backdropWidth,
-                height: backdropHeight
-            )
-            NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.72).setFill()
+        if (state == "speaking" || state == "approval_pending"), !statusText.isEmpty {
+            let backdropRect = textRect.insetBy(dx: -6, dy: -10)
+            NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.82).setFill()
             NSBezierPath(roundedRect: backdropRect, xRadius: 12, yRadius: 12).fill()
-            NSColor(calibratedRed: 0.12, green: 0.19, blue: 0.27, alpha: 0.62).setStroke()
+            if state == "approval_pending" {
+                NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.36, alpha: 0.68).setStroke()
+            } else {
+                NSColor(calibratedRed: 0.12, green: 0.19, blue: 0.27, alpha: 0.72).setStroke()
+            }
             NSBezierPath(roundedRect: backdropRect, xRadius: 12, yRadius: 12).stroke()
         }
         (statusText as NSString).draw(
@@ -344,27 +341,47 @@ final class AgentCircleView: NSView {
     }
 
     private func drawThinkingIndicator(center: CGPoint, baseRadius: CGFloat) {
-        for orbit in 0..<4 {
-            let radius = baseRadius + 10 + CGFloat(orbit) * 11 + sin(phase * 1.35 + CGFloat(orbit)) * 4
-            let start = phase * (31.5 + CGFloat(orbit) * 4.6) + CGFloat(orbit) * 25
+        for orbit in 0..<6 {
+            let radius = baseRadius + 8 + CGFloat(orbit) * 9 + sin(phase * 1.35 + CGFloat(orbit)) * 6
+            let start = phase * (35.5 + CGFloat(orbit) * 5.2) + CGFloat(orbit) * 19
             let path = NSBezierPath()
             path.appendArc(
                 withCenter: center,
                 radius: radius,
                 startAngle: start,
-                endAngle: start + CGFloat(61 + orbit * 5),
+                endAngle: start + CGFloat(54 + orbit * 6),
                 clockwise: false
             )
-            path.lineWidth = 2.2 - CGFloat(orbit) * 0.22
-            color(hueOffset: CGFloat(orbit) * 0.042, alpha: 0.42 - CGFloat(orbit) * 0.055).setStroke()
+            path.lineWidth = 2.8 - CGFloat(orbit) * 0.22
+            color(hueOffset: CGFloat(orbit) * 0.050, alpha: 0.52 - CGFloat(orbit) * 0.055).setStroke()
             path.stroke()
         }
 
-        for dot in 0..<12 {
-            let angle = phase * 0.9 + CGFloat(dot) * CGFloat.pi * 2 / 12
-            let pulse = 0.45 + sin(phase * 1.8 + CGFloat(dot) * 0.7) * 0.25
-            let radius = baseRadius - 12 + pulse * 8
-            let size = 2.0 + pulse * 2.2
+        for spoke in 0..<28 {
+            let angle = CGFloat(spoke) * CGFloat.pi * 2 / 28 + phase * 0.26
+            let breath = 0.55 + sin(phase * 1.5 + CGFloat(spoke) * 0.45) * 0.32
+            let inner = baseRadius + 20 + breath * 6
+            let outer = inner + 10 + max(0, sin(angle * 4 - phase * 1.8)) * 20
+            let path = NSBezierPath()
+
+            path.move(to: CGPoint(
+                x: center.x + cos(angle) * inner,
+                y: center.y + sin(angle) * inner
+            ))
+            path.line(to: CGPoint(
+                x: center.x + cos(angle) * outer,
+                y: center.y + sin(angle) * outer
+            ))
+            path.lineWidth = 1.1 + breath * 1.6
+            color(hueOffset: 0.094 + CGFloat(spoke) * 0.004, alpha: 0.14 + breath * 0.22).setStroke()
+            path.stroke()
+        }
+
+        for dot in 0..<16 {
+            let angle = phase * 1.05 + CGFloat(dot) * CGFloat.pi * 2 / 16
+            let pulse = 0.48 + sin(phase * 1.9 + CGFloat(dot) * 0.7) * 0.30
+            let radius = baseRadius - 14 + pulse * 10
+            let size = 2.2 + pulse * 2.8
             let rect = NSRect(
                 x: center.x + cos(angle) * radius - size,
                 y: center.y + sin(angle) * radius - size,
@@ -563,13 +580,13 @@ final class VisualRootView: NSView {
 
 final class ThinkingPulseSound {
     private var timer: Timer?
-    private lazy var sound: NSSound? = Self.makePulseSound()
+    private lazy var sound: NSSound? = Self.makePulseSound() ?? NSSound(named: NSSound.Name("Glass"))
 
     func setActive(_ active: Bool) {
         if active {
             guard timer == nil else { return }
             play()
-            timer = Timer.scheduledTimer(withTimeInterval: 2.6, repeats: true) { [weak self] _ in
+            timer = Timer.scheduledTimer(withTimeInterval: 1.9, repeats: true) { [weak self] _ in
                 self?.play()
             }
             return
@@ -582,7 +599,7 @@ final class ThinkingPulseSound {
     private func play() {
         guard let sound else { return }
         sound.stop()
-        sound.volume = 0.055
+        sound.volume = 0.24
         sound.play()
     }
 
@@ -608,7 +625,7 @@ final class ThinkingPulseSound {
         for index in 0..<frameCount {
             let t = Double(index) / Double(sampleRate)
             let envelope = pow(sin(Double.pi * Double(index) / Double(frameCount)), 2)
-            let sample = (sin(2 * Double.pi * 392 * t) * 0.35 + sin(2 * Double.pi * 523.25 * t) * 0.20) * envelope * 0.18
+            let sample = (sin(2 * Double.pi * 392 * t) * 0.35 + sin(2 * Double.pi * 523.25 * t) * 0.20) * envelope * 0.40
             let clipped = max(-1, min(1, sample))
             appendInt16(Int16(clipped * Double(Int16.max)), to: &data)
         }
@@ -758,7 +775,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             break
         }
 
-        thinkingPulseSound.setActive(circleView.state == "thinking")
+        thinkingPulseSound.setActive(circleView.state == "thinking" || circleView.state == "running")
     }
 
     private func pushCommand(_ text: String) {

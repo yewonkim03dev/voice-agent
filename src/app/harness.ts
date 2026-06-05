@@ -8,7 +8,13 @@ import type { AgentBackend, CodexProcessConfig } from "../codex/CodexBridge.ts";
 import { CodexAppServerBackend } from "../codex/CodexAppServerBackend.ts";
 import { initialCodexStatus, type CodexOutputEvent, type CodexStatus } from "../codex/CodexOutputEvent.ts";
 import type { CodexPrompt } from "../codex/CodexPrompt.ts";
-import { interpretApprovalSpeech } from "../permission/ApprovalSpeech.ts";
+import {
+  denyPhrases,
+  interpretApprovalSpeech,
+  onceApprovePhrases,
+  policyApprovePhrases,
+  sessionApprovePhrases
+} from "../permission/ApprovalSpeech.ts";
 import type { PermissionDecision } from "../permission/PermissionDecision.ts";
 import type { PermissionRequest } from "../permission/PermissionRequest.ts";
 import { RuntimeController } from "../runtime/RuntimeController.ts";
@@ -508,7 +514,7 @@ export class TerminalHarness {
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "approval",
-      text: `${permissionTarget} 실행 권한 필요해.`
+      text: approvalVisualText(permissionTarget)
     });
     this.codexStatus = {
       ...this.codexStatus,
@@ -670,7 +676,7 @@ export class TerminalHarness {
       id: this.createId("voice"),
       text,
       language: voiceMessageLanguage(text),
-      priority: category === "permission" || category === "warning" ? "urgent" : "normal",
+      priority: category === "warning" ? "urgent" : "normal",
       interruptible: category !== "permission",
       category
     };
@@ -1309,6 +1315,16 @@ function statusToVisualState(task: CodexStatus["task"]): VisualUiState {
     default:
       return "idle";
   }
+}
+
+function approvalVisualText(permissionTarget: string): string {
+  return [
+    `${permissionTarget} 실행 권한 필요해.`,
+    `허용: ${onceApprovePhrases.join(" / ")}`,
+    `거부: ${denyPhrases.join(" / ")}`,
+    `세션 허용: ${sessionApprovePhrases.join(" / ")}`,
+    `계속 허용: ${policyApprovePhrases.join(" / ")}`
+  ].join("\n");
 }
 
 function runtimeStateToVisualState(state: AgentState): VisualUiState {

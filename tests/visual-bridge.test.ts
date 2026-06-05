@@ -211,8 +211,11 @@ test("visual config writes provider without removing existing voice setup", asyn
 
 test("Qt companion is native QML and avoids browser/webview imports", async () => {
   const qml = await readFile("visual/qt/VoiceAgent.qml", "utf8");
+  const thinkingPulse = await readFile("visual/qt/thinking-pulse.wav");
 
   assert.match(qml, /ApplicationWindow/u);
+  assert.equal(thinkingPulse.subarray(0, 4).toString("ascii"), "RIFF");
+  assert.equal(thinkingPulse.subarray(8, 12).toString("ascii"), "WAVE");
   assert.match(qml, /WebSocket/u);
   assert.match(qml, /Canvas/u);
   assert.match(qml, /drawWaveRing/u);
@@ -223,6 +226,10 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /drawThinkingIndicator/u);
   assert.match(qml, /drawRejectedIndicator/u);
   assert.match(qml, /thinkingEffect/u);
+  assert.match(qml, /function isThinkingAudioState\(state\)/u);
+  assert.match(qml, /running: root\.isThinkingAudioState\(root\.uiState\)/u);
+  assert.match(qml, /source: Qt\.resolvedUrl\("thinking-pulse\.wav"\)/u);
+  assert.match(qml, /volume: 0\.24/u);
   assert.match(qml, /thinkingPulseTimer/u);
   assert.match(qml, /stt_processing/u);
   assert.match(qml, /submitting/u);
@@ -234,8 +241,12 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /anchors\.bottom: controls\.top/u);
   assert.match(qml, /id: statusBackdrop/u);
   assert.match(qml, /root\.uiState === "speaking"/u);
+  assert.match(qml, /root\.uiState === "approval_pending"/u);
+  assert.match(qml, /opacity: \(root\.uiState === "speaking" \|\| root\.uiState === "approval_pending"\)/u);
   assert.match(qml, /wrapMode: Text\.WordWrap/u);
-  assert.match(qml, /maximumLineCount: root\.expandedLayout \? 99 : 3/u);
+  assert.match(qml, /maximumLineCount: root\.uiState === "approval_pending" \? 8 : root\.expandedLayout \? 99 : 3/u);
+  assert.match(qml, /root\.statusBandHeight\(\)/u);
+  assert.match(qml, /font\.bold: root\.uiState === "speaking"/u);
   assert.match(qml, /Text\.ElideNone/u);
   assert.doesNotMatch(qml, /Layout\.fillHeight: true\s*\n\s*radius: 8/u);
   assert.match(qml, /TTS Stop/u);
@@ -256,7 +267,9 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /drawThinkingIndicator/u);
   assert.match(swift, /drawRejectedIndicator/u);
   assert.match(swift, /final class ThinkingPulseSound/u);
-  assert.match(swift, /setActive\(circleView\.state == "thinking"\)/u);
+  assert.match(swift, /setActive\(circleView\.state == "thinking" \|\| circleView\.state == "running"\)/u);
+  assert.match(swift, /NSSound\(named: NSSound\.Name\("Glass"\)\)/u);
+  assert.match(swift, /sound\.volume = 0\.24/u);
   assert.match(swift, /stt_processing/u);
   assert.match(swift, /submitting/u);
   assert.match(swift, /wake_rejected/u);
@@ -268,6 +281,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /lineBreakMode = \.byWordWrapping/u);
   assert.match(swift, /usesLineFragmentOrigin/u);
   assert.match(swift, /roundedRect: backdropRect/u);
+  assert.match(swift, /state == "approval_pending" \? 13 : state == "speaking" \? 20 : 15/u);
+  assert.match(swift, /state == "approval_pending"/u);
   assert.match(swift, /if !expandedText/u);
   assert.doesNotMatch(swift, /greaterThanOrEqualToConstant:\s*180/u);
   assert.match(swift, /TTS Stop/u);
