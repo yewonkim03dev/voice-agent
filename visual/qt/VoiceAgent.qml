@@ -19,6 +19,10 @@ ApplicationWindow {
     property real peak: 0.0
     property real glow: 0.0
     property real visualPhase: 0.0
+    property bool expandedLayout: width >= 760 || height >= 760
+    property int controlsHeight: 38
+    property int commandPanelHeight: Math.round(Math.max(86, Math.min(expandedLayout ? 150 : 112, height * (expandedLayout ? 0.15 : 0.17))))
+    property int visualDiameter: Math.round(Math.max(220, Math.min(width - 48, height * 0.44, height - commandPanelHeight - controlsHeight - 96, 340)))
     property var commands: []
 
     function argumentValue(name, fallback) {
@@ -181,24 +185,20 @@ ApplicationWindow {
         easing.type: Easing.OutQuad
     }
 
-    ColumnLayout {
+    Item {
+        id: content
         anchors.fill: parent
         anchors.margins: 24
-        spacing: 18
 
-        Item {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 330
+        Canvas {
+            id: waveform
+            width: root.visualDiameter
+            height: root.visualDiameter
+            anchors.centerIn: parent
+            antialiasing: true
+            opacity: 0.96
 
-            Canvas {
-                id: waveform
-                width: 292
-                height: 292
-                anchors.centerIn: parent
-                antialiasing: true
-                opacity: 0.96
-
-                onPaint: {
+            onPaint: {
                     var ctx = getContext("2d")
                     var w = width
                     var h = height
@@ -377,7 +377,7 @@ ApplicationWindow {
                     }
                 }
 
-                function drawRejectedIndicator(ctx, cx, cy, base, phase, hue) {
+            function drawRejectedIndicator(ctx, cx, cy, base, phase, hue) {
                     ctx.lineCap = "round"
                     for (var index = 0; index < 84; index += 1) {
                         var angle = (index / 84) * Math.PI * 2
@@ -401,24 +401,29 @@ ApplicationWindow {
                     ctx.beginPath()
                     ctx.arc(cx, cy, base - 18, phase * 2.4 + Math.PI, phase * 2.4 + Math.PI * 1.22)
                     ctx.stroke()
-                }
-            }
-
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                width: parent.width
-                horizontalAlignment: Text.AlignHCenter
-                elide: Text.ElideRight
-                text: root.statusText
-                color: "#d9e2ef"
-                font.pixelSize: 17
             }
         }
 
+        Text {
+            id: statusLabel
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: Math.max(0, Math.min(waveform.y + waveform.height + 12, commandPanel.y - height - 8))
+            width: parent.width
+            height: implicitHeight
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+            text: root.statusText
+            color: "#d9e2ef"
+            font.pixelSize: 17
+        }
+
         Rectangle {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            id: commandPanel
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: controls.top
+            anchors.bottomMargin: 10
+            height: root.commandPanelHeight
             radius: 8
             color: "#101620"
             border.color: "#243042"
@@ -452,7 +457,11 @@ ApplicationWindow {
         }
 
         RowLayout {
-            Layout.fillWidth: true
+            id: controls
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: root.controlsHeight
             spacing: 10
 
             Button {

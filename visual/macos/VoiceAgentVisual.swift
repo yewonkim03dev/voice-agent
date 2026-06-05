@@ -37,7 +37,7 @@ final class AgentCircleView: NSView {
         NSColor(calibratedRed: 0.03, green: 0.04, blue: 0.06, alpha: 1).setFill()
         dirtyRect.fill()
 
-        let center = CGPoint(x: bounds.midX, y: bounds.midY + 10)
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let activity = max(rms, peak * 0.45, glow * 0.85, stateActivityFloor())
         let baseRadius = min(bounds.width, bounds.height) * 0.31 + activity * 16
         var amplitude = 7 + rms * 42 + peak * 18 + glow * 24
@@ -384,6 +384,108 @@ final class AgentCircleView: NSView {
     }
 }
 
+final class VisualRootView: NSView {
+    private let circleView: AgentCircleView
+    private let commandView: NSTextView
+    private let commandPanel = NSView(frame: .zero)
+    private let commandLabel = NSTextField(labelWithString: "Commands")
+    private let commandScroll = NSScrollView(frame: .zero)
+    private let controls: NSStackView
+
+    init(circleView: AgentCircleView, commandView: NSTextView, controls: NSStackView) {
+        self.circleView = circleView
+        self.commandView = commandView
+        self.controls = controls
+        super.init(frame: .zero)
+
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(calibratedRed: 0.03, green: 0.04, blue: 0.06, alpha: 1).cgColor
+
+        circleView.autoresizingMask = []
+        addSubview(circleView)
+
+        commandPanel.wantsLayer = true
+        commandPanel.layer?.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.09, blue: 0.13, alpha: 1).cgColor
+        commandPanel.layer?.borderColor = NSColor(calibratedRed: 0.14, green: 0.19, blue: 0.26, alpha: 1).cgColor
+        commandPanel.layer?.borderWidth = 1
+        commandPanel.layer?.cornerRadius = 8
+        addSubview(commandPanel)
+
+        commandLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
+        commandLabel.font = NSFont.boldSystemFont(ofSize: 13)
+        commandPanel.addSubview(commandLabel)
+
+        commandView.isEditable = false
+        commandView.drawsBackground = true
+        commandView.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.09, blue: 0.13, alpha: 1)
+        commandView.textColor = .white
+        commandView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        commandView.textContainerInset = NSSize(width: 0, height: 2)
+
+        commandScroll.documentView = commandView
+        commandScroll.hasVerticalScroller = true
+        commandScroll.borderType = .noBorder
+        commandScroll.drawsBackground = false
+        commandPanel.addSubview(commandScroll)
+
+        controls.orientation = .horizontal
+        controls.distribution = .fillEqually
+        controls.spacing = 10
+        addSubview(controls)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+
+        let inset: CGFloat = 22
+        let gap: CGFloat = 10
+        let controlsHeight: CGFloat = 34
+        let expanded = bounds.width >= 760 || bounds.height >= 760
+        let commandHeight = max(86, min(expanded ? 150 : 112, bounds.height * (expanded ? 0.15 : 0.17)))
+        let contentWidth = max(0, bounds.width - inset * 2)
+
+        controls.frame = NSRect(x: inset, y: inset, width: contentWidth, height: controlsHeight)
+        commandPanel.frame = NSRect(
+            x: inset,
+            y: controls.frame.maxY + gap,
+            width: contentWidth,
+            height: commandHeight
+        )
+
+        let panelInset: CGFloat = 14
+        let labelHeight: CGFloat = 18
+        commandLabel.frame = NSRect(
+            x: panelInset,
+            y: commandPanel.bounds.height - panelInset - labelHeight,
+            width: max(0, commandPanel.bounds.width - panelInset * 2),
+            height: labelHeight
+        )
+        commandScroll.frame = NSRect(
+            x: panelInset,
+            y: panelInset,
+            width: max(0, commandPanel.bounds.width - panelInset * 2),
+            height: max(24, commandLabel.frame.minY - panelInset - 8)
+        )
+        commandView.frame = commandScroll.contentView.bounds
+
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let bottomLimit = commandPanel.frame.maxY + 12
+        let topLimit = bounds.height - inset
+        let centerClearance = max(110, min(topLimit - center.y, center.y - bottomLimit))
+        let circleSize = max(220, min(contentWidth, bounds.height * 0.46, centerClearance * 2, 340))
+        circleView.frame = NSRect(
+            x: center.x - circleSize / 2,
+            y: center.y - circleSize / 2,
+            width: circleSize,
+            height: circleSize
+        )
+    }
+}
+
 final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
@@ -411,43 +513,12 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func buildContentView() -> NSView {
-        let root = NSStackView()
-        root.orientation = .vertical
-        root.spacing = 14
-        root.edgeInsets = NSEdgeInsets(top: 22, left: 22, bottom: 22, right: 22)
-        root.wantsLayer = true
-        root.layer?.backgroundColor = NSColor(calibratedRed: 0.03, green: 0.04, blue: 0.06, alpha: 1).cgColor
-
-        circleView.heightAnchor.constraint(equalToConstant: 340).isActive = true
-        root.addArrangedSubview(circleView)
-
-        let label = NSTextField(labelWithString: "Commands")
-        label.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        label.font = NSFont.boldSystemFont(ofSize: 13)
-        root.addArrangedSubview(label)
-
-        commandView.isEditable = false
-        commandView.drawsBackground = true
-        commandView.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.09, blue: 0.13, alpha: 1)
-        commandView.textColor = .white
-        commandView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        let scroll = NSScrollView()
-        scroll.documentView = commandView
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .lineBorder
-        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
-        root.addArrangedSubview(scroll)
-
         let controls = NSStackView()
-        controls.orientation = .horizontal
-        controls.distribution = .fillEqually
-        controls.spacing = 10
         controls.addArrangedSubview(button("TTS Stop", action: #selector(stopTts)))
         controls.addArrangedSubview(button("Clear", action: #selector(clearCommands)))
         controls.addArrangedSubview(button("Exit", action: #selector(exitVisual)))
-        root.addArrangedSubview(controls)
 
-        return root
+        return VisualRootView(circleView: circleView, commandView: commandView, controls: controls)
     }
 
     private func button(_ title: String, action: Selector) -> NSButton {

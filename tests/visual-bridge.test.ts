@@ -224,6 +224,11 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /stt_processing/u);
   assert.match(qml, /submitting/u);
   assert.match(qml, /wake_rejected/u);
+  assert.match(qml, /property int commandPanelHeight/u);
+  assert.match(qml, /property int visualDiameter/u);
+  assert.match(qml, /anchors\.centerIn: parent/u);
+  assert.match(qml, /anchors\.bottom: controls\.top/u);
+  assert.doesNotMatch(qml, /Layout\.fillHeight: true\s*\n\s*radius: 8/u);
   assert.match(qml, /TTS Stop/u);
   assert.match(qml, /Commands/u);
   assert.doesNotMatch(qml, /WebView|WebEngine|Chromium|Electron|Tauri/iu);
@@ -243,6 +248,11 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /stt_processing/u);
   assert.match(swift, /submitting/u);
   assert.match(swift, /wake_rejected/u);
+  assert.match(swift, /final class VisualRootView/u);
+  assert.match(swift, /let center = CGPoint\(x: bounds\.midX, y: bounds\.midY\)/u);
+  assert.match(swift, /commandPanel\.frame/u);
+  assert.match(swift, /circleView\.frame/u);
+  assert.doesNotMatch(swift, /greaterThanOrEqualToConstant:\s*180/u);
   assert.match(swift, /TTS Stop/u);
   assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);
 });
