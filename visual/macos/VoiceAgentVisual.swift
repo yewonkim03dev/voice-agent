@@ -77,11 +77,16 @@ final class AgentCircleView: NSView {
             .foregroundColor: NSColor(calibratedRed: 0.86, green: 0.89, blue: 0.94, alpha: 1),
             .paragraphStyle: paragraph
         ]
-        let textHeight = min(max(bounds.height * 0.18, 56), 78)
+        let expandedText = bounds.width >= 320 || bounds.height >= 320
+        let textHeight = expandedText ? min(max(bounds.height * 0.34, 92), 150) : min(max(bounds.height * 0.18, 56), 78)
         let textRect = NSRect(x: 24, y: 16, width: bounds.width - 48, height: textHeight)
+        var options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+        if !expandedText {
+            options.insert(.truncatesLastVisibleLine)
+        }
         (statusText as NSString).draw(
             with: textRect,
-            options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+            options: options,
             attributes: attrs
         )
     }

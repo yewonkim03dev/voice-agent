@@ -409,12 +409,14 @@ ApplicationWindow {
             anchors.horizontalCenter: parent.horizontalCenter
             y: Math.max(0, Math.min(waveform.y + waveform.height + 10, commandPanel.y - height - 10))
             width: parent.width
-            height: Math.min(implicitHeight + 8, Math.max(32, commandPanel.y - waveform.y - waveform.height - 20))
+            height: root.expandedLayout
+                ? Math.max(32, commandPanel.y - waveform.y - waveform.height - 20)
+                : Math.min(implicitHeight + 8, Math.max(32, commandPanel.y - waveform.y - waveform.height - 20))
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.WordWrap
-            maximumLineCount: 3
-            elide: Text.ElideRight
+            maximumLineCount: root.expandedLayout ? 99 : 3
+            elide: root.expandedLayout ? Text.ElideNone : Text.ElideRight
             text: root.statusText
             color: "#d9e2ef"
             font.pixelSize: 16

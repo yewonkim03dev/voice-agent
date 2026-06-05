@@ -20,6 +20,7 @@ export class TtsPlaybackState {
   private readonly recentGraceMs: number;
   private readonly now: () => number;
   private readonly chunks: TtsPlaybackChunk[] = [];
+  private readonly queuedIds = new Set<string>();
   private readonly speakingIds = new Set<string>();
 
   constructor(options: TtsPlaybackStateOptions = {}) {
@@ -29,8 +30,8 @@ export class TtsPlaybackState {
     this.now = options.now ?? Date.now;
   }
 
-  recordStart(message: VoiceMessage, timestamp = this.now()): void {
-    this.speakingIds.add(message.id);
+  recordQueued(message: VoiceMessage, timestamp = this.now()): void {
+    this.queuedIds.add(message.id);
     this.chunks.push({
       id: message.id,
       text: message.text,
@@ -39,7 +40,26 @@ export class TtsPlaybackState {
     this.prune(timestamp);
   }
 
+  recordStart(message: VoiceMessage, timestamp = this.now()): void {
+    this.queuedIds.delete(message.id);
+    this.speakingIds.add(message.id);
+    const queued = this.chunks.findLast((candidate) => candidate.id === message.id);
+    if (queued) {
+      queued.text = message.text;
+      queued.startedAt = timestamp;
+      queued.endedAt = undefined;
+    } else {
+      this.chunks.push({
+        id: message.id,
+        text: message.text,
+        startedAt: timestamp
+      });
+    }
+    this.prune(timestamp);
+  }
+
   recordFinished(id: string, timestamp = this.now()): void {
+    this.queuedIds.delete(id);
     this.speakingIds.delete(id);
     const chunk = this.chunks.findLast((candidate) => candidate.id === id);
     if (chunk) chunk.endedAt = timestamp;
@@ -47,11 +67,12 @@ export class TtsPlaybackState {
   }
 
   recordStopped(timestamp = this.now()): void {
-    for (const id of this.speakingIds) {
+    for (const id of new Set([...this.queuedIds, ...this.speakingIds])) {
       const chunk = this.chunks.findLast((candidate) => candidate.id === id);
       if (chunk && chunk.endedAt === undefined) chunk.endedAt = timestamp;
     }
 
+    this.queuedIds.clear();
     this.speakingIds.clear();
     this.prune(timestamp);
   }
@@ -85,6 +106,7 @@ export class TtsPlaybackState {
       const chunk = this.chunks[0];
       const reference = chunk.endedAt ?? chunk.startedAt;
       if (timestamp - reference <= this.maxAgeMs && this.chunks.length <= this.maxChunks) break;
+      this.queuedIds.delete(chunk.id);
       this.speakingIds.delete(chunk.id);
       this.chunks.shift();
     }

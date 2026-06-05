@@ -229,7 +229,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /anchors\.centerIn: parent/u);
   assert.match(qml, /anchors\.bottom: controls\.top/u);
   assert.match(qml, /wrapMode: Text\.WordWrap/u);
-  assert.match(qml, /maximumLineCount: 3/u);
+  assert.match(qml, /maximumLineCount: root\.expandedLayout \? 99 : 3/u);
+  assert.match(qml, /Text\.ElideNone/u);
   assert.doesNotMatch(qml, /Layout\.fillHeight: true\s*\n\s*radius: 8/u);
   assert.match(qml, /TTS Stop/u);
   assert.match(qml, /Commands/u);
@@ -256,6 +257,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /circleView\.frame/u);
   assert.match(swift, /lineBreakMode = \.byWordWrapping/u);
   assert.match(swift, /usesLineFragmentOrigin/u);
+  assert.match(swift, /if !expandedText/u);
   assert.doesNotMatch(swift, /greaterThanOrEqualToConstant:\s*180/u);
   assert.match(swift, /TTS Stop/u);
   assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);

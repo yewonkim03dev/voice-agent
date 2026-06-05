@@ -221,6 +221,8 @@ export class TerminalHarness {
   private readonly passthroughOutputBuffers = new Map<string, string>();
   private readonly passthroughStructuredSpeechSessions = new Set<string>();
   private readonly scheduledVoiceTasks = new Set<Promise<void>>();
+  private voiceQueue: Promise<void> = Promise.resolve();
+  private voiceGeneration = 0;
 
   constructor(options: TerminalHarnessOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -364,6 +366,8 @@ export class TerminalHarness {
   }
 
   async stopVoiceOutput(): Promise<void> {
+    this.voiceGeneration += 1;
+    this.voiceQueue = Promise.resolve();
     this.ttsPlaybackState.recordStopped(this.now());
     await this.voiceOutput.stop();
     this.restoreCurrentVisualState();
@@ -607,11 +611,6 @@ export class TerminalHarness {
     switch (event.type) {
       case "speech":
         this.printAgentOutputBlock("speech", event.text);
-        this.sendVisualEvent({
-          op: "voice-agent-ui",
-          type: "speech",
-          text: event.text
-        });
         this.passthroughStructuredSpeechSessions.add(sessionId);
         this.scheduleSpeak(event.text, "speech");
         return;
@@ -667,7 +666,6 @@ export class TerminalHarness {
   }
 
   private async speak(text: string, category: VoiceMessage["category"]): Promise<void> {
-    this.lastSpokenText = text;
     const message: VoiceMessage = {
       id: this.createId("voice"),
       text,
@@ -677,12 +675,36 @@ export class TerminalHarness {
       category
     };
 
+    if (message.priority === "urgent") {
+      this.voiceGeneration += 1;
+      this.voiceQueue = Promise.resolve();
+      this.ttsPlaybackState.recordStopped(this.now());
+      await this.voiceOutput.stop();
+      this.ttsPlaybackState.recordQueued(message, this.now());
+      await this.speakQueuedMessage(message, this.voiceGeneration);
+      return;
+    }
+
+    this.ttsPlaybackState.recordQueued(message, this.now());
+    const generation = this.voiceGeneration;
+    const task = this.voiceQueue
+      .catch(() => {})
+      .then(() => this.speakQueuedMessage(message, generation));
+
+    this.voiceQueue = task.catch(() => {});
+    await task;
+  }
+
+  private async speakQueuedMessage(message: VoiceMessage, generation: number): Promise<void> {
+    if (generation !== this.voiceGeneration) return;
+
+    this.lastSpokenText = message.text;
     this.ttsPlaybackState.recordStart(message, this.now());
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "state",
       state: "speaking",
-      text
+      text: message.text
     });
     await this.voiceOutput.speak(message);
   }

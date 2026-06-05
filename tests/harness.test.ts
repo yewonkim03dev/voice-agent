@@ -217,7 +217,7 @@ test("pass-through mode does not parse agent text into fake approval requests", 
 
   await harness.start();
   backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
-  await Promise.resolve();
+  await flushAsync();
   const messagesBeforeOutput = harness.voiceOutput.messages.length;
 
   backend.emitOutput({
@@ -226,7 +226,7 @@ test("pass-through mode does not parse agent text into fake approval requests", 
     text: "approve_action 실행 권한 필요해. 허용할까?",
     timestamp: 1000
   });
-  await Promise.resolve();
+  await flushAsync();
 
   assert.equal(harness.voiceOutput.messages.length, messagesBeforeOutput);
 
@@ -381,6 +381,52 @@ test("pass-through visual stays speaking until TTS finishes", async () => {
   assert.equal(lastStateEvent(visualBridge.events)?.state, "idle");
 });
 
+test("pass-through visual follows the currently spoken queued speech", async () => {
+  const backend = new InMemoryAgentBackend();
+  const voiceOutput = new HoldableVoiceOutput();
+  const visualBridge = new FakeVisualBridge();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "codex-test",
+    routingMode: "passthrough",
+    agentTarget: "codex",
+    voiceOutput,
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      '{"op":"voice-agent","type":"speech","text":"첫 번째 대사입니다."}\n' +
+      '{"op":"voice-agent","type":"speech","text":"두 번째 대사입니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), ["첫 번째 대사입니다."]);
+  assert.deepEqual(lastStateEvent(visualBridge.events), {
+    op: "voice-agent-ui",
+    type: "state",
+    state: "speaking",
+    text: "첫 번째 대사입니다."
+  });
+
+  voiceOutput.finishLast();
+  await flushAsync();
+
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), ["첫 번째 대사입니다.", "두 번째 대사입니다."]);
+  assert.deepEqual(lastStateEvent(visualBridge.events), {
+    op: "voice-agent-ui",
+    type: "state",
+    state: "speaking",
+    text: "두 번째 대사입니다."
+  });
+});
+
 test("pass-through mode displays command events without speaking them", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
@@ -451,7 +497,7 @@ test("pass-through mode recovers adjacent structured events", async () => {
   assert.equal(lines.some((line) => line.includes("[agent:speech] 작업 폴더 확인했습니다.")), true);
   assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), ["작업 폴더 확인했습니다."]);
   assert.equal(visualBridge.events.some((event) => event.type === "status"), true);
-  assert.equal(visualBridge.events.some((event) => event.type === "speech"), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "speaking"), true);
 });
 
 test("pass-through mode keeps invalid JSON and mixed raw stdout as raw fallback", async () => {
@@ -578,6 +624,9 @@ function createPassthroughHarness(
 async function flushAsync(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 class StoppableVoiceOutput {

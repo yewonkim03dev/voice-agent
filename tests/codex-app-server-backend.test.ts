@@ -322,7 +322,7 @@ test("terminal harness speaks app-server approvals and routes Korean allow decis
       cwd: "/repo"
     }
   });
-  await Promise.resolve();
+  await flushAsync();
 
   assert.equal(harness.voiceOutput.messages.at(-1)?.text, "명령 실행 권한 필요해. 허용할까?");
 
@@ -370,6 +370,14 @@ test("terminal harness accepts numeric zero app-server approval ids", async () =
     }
   });
 });
+
+async function flushAsync(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+}
 
 function createStartedBackend(options: {
   voiceAgentProtocol?: boolean;
