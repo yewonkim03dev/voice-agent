@@ -165,7 +165,7 @@ ApplicationWindow {
     SoundEffect {
         id: thinkingEffect
         source: Qt.resolvedUrl("thinking-pulse.wav")
-        volume: 0.24
+        volume: 0.32
     }
 
     Timer {

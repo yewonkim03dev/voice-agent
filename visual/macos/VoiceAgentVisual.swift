@@ -599,7 +599,7 @@ final class ThinkingPulseSound {
     private func play() {
         guard let sound else { return }
         sound.stop()
-        sound.volume = 0.24
+        sound.volume = 0.32
         sound.play()
     }
 
