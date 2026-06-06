@@ -41,7 +41,7 @@ export class EndOfSpeechDetector {
   private readonly silencePeak: number;
   private readonly silenceEndMs: number;
   private readonly minSpeechMs: number;
-  private readonly maxUtteranceMs: number;
+  private maxUtteranceMs: number;
   private speaking = false;
   private startedAt = 0;
   private lastSpeechAt = 0;
@@ -63,6 +63,11 @@ export class EndOfSpeechDetector {
 
   get isSpeaking(): boolean {
     return this.speaking;
+  }
+
+  setMaxUtteranceMs(value: number): void {
+    if (!Number.isFinite(value)) return;
+    this.maxUtteranceMs = Math.max(0, value);
   }
 
   consume(frame: AudioFrame): EndOfSpeechEvent[] {

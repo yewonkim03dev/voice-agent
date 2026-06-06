@@ -45,6 +45,7 @@ export interface VisualRuntimeSettings {
   chatHistoryEnabled?: boolean;
   hudEnabled?: boolean;
   speakWakeRejectedWarnings?: boolean;
+  maxUtteranceSeconds?: number;
 }
 
 export type VisualEvent =
@@ -312,6 +313,9 @@ function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRunt
     ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
+      : {}),
+    ...(typeof record.maxUtteranceSeconds === "number" && Number.isFinite(record.maxUtteranceSeconds)
+      ? { maxUtteranceSeconds: record.maxUtteranceSeconds }
       : {})
   };
 }

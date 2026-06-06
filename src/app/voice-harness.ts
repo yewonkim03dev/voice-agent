@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { RecorderCommandAudioInput } from "../audio/RecorderCommandAudioInput.ts";
 import type { AudioFrame, AudioInput } from "../audio/AudioFrame.ts";
 import { AlwaysOnWakeGate, type AlwaysOnWakeGateEvent } from "../listening/AlwaysOnWakeGate.ts";
+import { EndOfSpeechDetector } from "../listening/EndOfSpeechDetector.ts";
 import { ManualRecordingGate } from "../listening/ManualRecordingGate.ts";
 import { RecordingController } from "../recorder/RecordingController.ts";
 import { UtteranceRecorder } from "../recorder/UtteranceRecorder.ts";
@@ -22,8 +23,10 @@ import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakeP
 import { createCodexThreadStore } from "./codex-thread-config.ts";
 import { createTerminalHarnessFromArgs, parseHarnessCliArgs, TerminalHarness } from "./harness.ts";
 import {
+  defaultMaxUtteranceSeconds,
   VoiceLocalSettingsStore,
   resolveVoiceHarnessConfig,
+  sanitizeMaxUtteranceSeconds,
   type VoiceHarnessConfig,
   type VoiceSettingsPersistence
 } from "./voice-config.ts";
@@ -489,6 +492,18 @@ export class AlwaysOnVoiceHarnessRunner {
     });
   }
 
+  updateMaxUtteranceSeconds(value: unknown): void {
+    const seconds = sanitizeMaxUtteranceSeconds(value);
+    this.wakeGate.setMaxUtteranceMs(seconds * 1000);
+    if (this.debug) {
+      this.writeLine(`[wake:settings] maxUtteranceSeconds=${seconds}`);
+    }
+  }
+
+  resetMaxUtteranceSeconds(): void {
+    this.updateMaxUtteranceSeconds(defaultMaxUtteranceSeconds);
+  }
+
   private sendVisualWakeSettings(): void {
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
@@ -775,7 +790,10 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
       options.wakeGate ??
       new AlwaysOnWakeGate({
         now: options.now,
-        createId: options.createId
+        createId: options.createId,
+        detector: new EndOfSpeechDetector({
+          maxUtteranceMs: sanitizeMaxUtteranceSeconds(config.visual?.maxUtteranceSeconds) * 1000
+        })
       }),
     speechProcessor,
     wakePhrases: options.wakePhrases ?? config.wakePhrases,
@@ -1074,7 +1092,7 @@ function bindVisualContextControls(textContext: SupplementalTextBuffer, visualBr
 }
 
 function bindVisualWakeSettingsControls(
-  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases">,
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds">,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
@@ -1085,6 +1103,12 @@ function bindVisualWakeSettingsControls(
 
     if (event.action === "reset_settings") {
       runner.resetWakePhrases();
+      runner.resetMaxUtteranceSeconds();
+      return;
+    }
+
+    if (event.action === "update_visual_settings" && event.visual?.maxUtteranceSeconds !== undefined) {
+      runner.updateMaxUtteranceSeconds(event.visual.maxUtteranceSeconds);
     }
   });
 }

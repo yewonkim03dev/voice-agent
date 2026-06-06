@@ -74,6 +74,10 @@ export class AlwaysOnWakeGate {
     return this.active;
   }
 
+  setMaxUtteranceMs(value: number): void {
+    this.detector.setMaxUtteranceMs(value);
+  }
+
   consume(frame: AudioFrame): void {
     const events = this.detector.consume(frame);
     const started = events.some((event) => event.type === "speech_start");

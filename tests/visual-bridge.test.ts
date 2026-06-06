@@ -111,7 +111,7 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false,"speakWakeRejectedWarnings":false}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
@@ -120,7 +120,8 @@ test("visual bridge parses allowed control events only", () => {
       responseLanguage: "en",
       chatHistoryEnabled: false,
       hudEnabled: false,
-      speakWakeRejectedWarnings: false
+      speakWakeRejectedWarnings: false,
+      maxUtteranceSeconds: 80
     }
   });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
@@ -373,6 +374,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /reset_settings/u);
   assert.match(qml, /Restore Defaults/u);
   assert.match(qml, /Speak wake warning/u);
+  assert.match(qml, /Max speech/u);
+  assert.match(qml, /maxUtteranceSeconds/u);
   assert.match(qml, /Wake phrases/u);
   assert.match(qml, /Codex thread id \(applies after restart\)/u);
   assert.match(qml, /id: codexThreadField/u);
@@ -492,6 +495,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsCodexThreadField/u);
   assert.match(swift, /Codex Thread/u);
   assert.match(swift, /settingsThinkingVolumeField/u);
+  assert.match(swift, /settingsMaxUtteranceField/u);
+  assert.match(swift, /Max Speech/u);
   assert.match(swift, /settingsHudCheckbox/u);
   assert.match(swift, /Show floating HUD/u);
   assert.match(swift, /Thinking Fx/u);

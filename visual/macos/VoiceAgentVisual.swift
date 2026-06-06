@@ -1562,6 +1562,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let settingsPitchField = NSTextField(string: "1.00")
     private let settingsVolumeField = NSTextField(string: "1.00")
     private let settingsThinkingVolumeField = NSTextField(string: "0.32")
+    private let settingsMaxUtteranceField = NSTextField(string: "15")
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
     private let settingsHudCheckbox = NSButton(checkboxWithTitle: "Show floating HUD", target: nil, action: nil)
     private let settingsWakeRejectedWarningCheckbox = NSButton(checkboxWithTitle: "Speak wake warning", target: nil, action: nil)
@@ -1574,6 +1575,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private var ttsPitch = 1.0
     private var ttsVolume = 1.0
     private var thinkingVolume = 0.32
+    private var maxUtteranceSeconds = 15.0
     private var responseLanguage = "auto"
     private var chatHistoryEnabled = true
     private var hudEnabled = true
@@ -1863,6 +1865,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         ttsPitch = clampedDouble(settingsPitchField.stringValue, fallback: ttsPitch, min: 0.5, max: 2)
         ttsVolume = clampedDouble(settingsVolumeField.stringValue, fallback: ttsVolume, min: 0, max: 1)
         thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
+        maxUtteranceSeconds = clampedDouble(settingsMaxUtteranceField.stringValue, fallback: maxUtteranceSeconds, min: 5, max: 55)
         responseLanguage = ttsLanguage
         chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
         hudEnabled = settingsHudCheckbox.state == .on
@@ -1880,6 +1883,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func resetSettings() {
         thinkingVolume = 0.32
+        maxUtteranceSeconds = 15
         chatHistoryEnabled = true
         hudEnabled = true
         speakWakeRejectedWarnings = true
@@ -1925,6 +1929,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         if let value = settings["thinkingVolume"] as? Double {
             thinkingVolume = min(0.8, max(0, value))
         }
+        if let value = settings["maxUtteranceSeconds"] as? Double {
+            maxUtteranceSeconds = min(55, max(5, value))
+        }
         if let value = settings["responseLanguage"] as? String {
             responseLanguage = normalizedLanguage(value)
             ttsLanguage = responseLanguage
@@ -1957,7 +1964,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeSettingsWindow() -> NSWindow {
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 552),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 640),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -1965,33 +1972,34 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Settings"
         window.isReleasedWhenClosed = false
 
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 552))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 640))
         window.contentView = view
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
 
-        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 482)
-        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 442)
-        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 402)
-        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 362)
-        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 322)
-        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 282)
-        addSettingsRow(view, label: "Thinking Fx", control: settingsThinkingVolumeField, y: 242)
-        addSettingsRow(view, label: "Codex Thread", control: settingsCodexThreadField, y: 202)
-        settingsChatHistoryCheckbox.frame = NSRect(x: 132, y: 172, width: 216, height: 22)
+        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 570)
+        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 530)
+        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 490)
+        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 450)
+        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 410)
+        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 370)
+        addSettingsRow(view, label: "Thinking Fx", control: settingsThinkingVolumeField, y: 330)
+        addSettingsRow(view, label: "Max Speech", control: settingsMaxUtteranceField, y: 290)
+        addSettingsRow(view, label: "Codex Thread", control: settingsCodexThreadField, y: 250)
+        settingsChatHistoryCheckbox.frame = NSRect(x: 132, y: 220, width: 216, height: 22)
         view.addSubview(settingsChatHistoryCheckbox)
-        settingsHudCheckbox.frame = NSRect(x: 132, y: 150, width: 216, height: 22)
+        settingsHudCheckbox.frame = NSRect(x: 132, y: 198, width: 216, height: 22)
         view.addSubview(settingsHudCheckbox)
-        settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 128, width: 216, height: 22)
+        settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 176, width: 216, height: 22)
         view.addSubview(settingsWakeRejectedWarningCheckbox)
 
         let wakeLabel = NSTextField(labelWithString: "Wake")
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        wakeLabel.frame = NSRect(x: 26, y: 100, width: 96, height: 20)
+        wakeLabel.frame = NSRect(x: 26, y: 146, width: 96, height: 20)
         view.addSubview(wakeLabel)
 
-        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 50, width: 216, height: 72))
+        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 86, width: 216, height: 72))
         wakeScroll.borderType = .bezelBorder
         wakeScroll.hasVerticalScroller = true
         settingsWakePhrasesView.isVerticallyResizable = true
@@ -2030,6 +2038,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         settingsPitchField.stringValue = String(format: "%.2f", ttsPitch)
         settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
         settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
+        settingsMaxUtteranceField.stringValue = String(format: "%.0f", maxUtteranceSeconds)
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
         settingsHudCheckbox.state = hudEnabled ? .on : .off
         settingsWakeRejectedWarningCheckbox.state = speakWakeRejectedWarnings ? .on : .off
@@ -2057,6 +2066,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             "action": "update_visual_settings",
             "visual": [
                 "thinkingVolume": thinkingVolume,
+                "maxUtteranceSeconds": maxUtteranceSeconds,
                 "responseLanguage": responseLanguage,
                 "chatHistoryEnabled": chatHistoryEnabled,
                 "hudEnabled": hudEnabled,

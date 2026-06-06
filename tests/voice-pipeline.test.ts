@@ -297,6 +297,33 @@ test("always-on voice runner can disable wake rejected TTS while keeping visual 
   assert.match(rejected?.text ?? "", /wake 명령어를 확인해 주세요/u);
 });
 
+test("always-on voice runner applies visual max utterance seconds to wake candidates", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 긴 명령 처리해줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  visualBridge.emitVisualControl({
+    maxUtteranceSeconds: 5
+  });
+  await flushAsync();
+  emitLongCandidate(audioInput, 1000, 6200);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.ok(logs.includes("[wake:candidate] end reason=max_duration speechDurationMs=5200"));
+});
+
 test("always-on voice runner routes a configured custom wake phrase", async () => {
   const { backend, runner, audioInput, speechProcessor } = createAlwaysOnRunner(
     [
@@ -1263,7 +1290,8 @@ test("voice local settings store persists overrides and reset restores factory d
         thinkingVolume: 0.47,
         chatHistoryEnabled: false,
         hudEnabled: false,
-        speakWakeRejectedWarnings: false
+        speakWakeRejectedWarnings: false,
+        maxUtteranceSeconds: 55
       },
       codexThreadId: "thread_456"
     });
@@ -1290,7 +1318,8 @@ test("voice local settings store persists overrides and reset restores factory d
       thinkingVolume: 0.47,
       chatHistoryEnabled: false,
       hudEnabled: false,
-      speakWakeRejectedWarnings: false
+      speakWakeRejectedWarnings: false,
+      maxUtteranceSeconds: 55
     });
 
     await store.resetAll();
@@ -1503,6 +1532,13 @@ function emitCandidate(audioInput: FakeAudioInput, startedAt: number): void {
   audioInput.emitPcm(0.2, startedAt);
   audioInput.emitPcm(0.2, startedAt + 80);
   audioInput.emitPcm(0, startedAt + 220);
+}
+
+function emitLongCandidate(audioInput: FakeAudioInput, startedAt: number, endedAt: number): void {
+  audioInput.emitPcm(0, startedAt - 200);
+  audioInput.emitPcm(0.2, startedAt);
+  audioInput.emitPcm(0.2, startedAt + 2000);
+  audioInput.emitPcm(0.2, endedAt);
 }
 
 function createVoiceRunner(transcripts: Array<{ text: string; language: Language }>): {

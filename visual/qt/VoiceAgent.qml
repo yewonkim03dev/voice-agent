@@ -43,6 +43,7 @@ ApplicationWindow {
     property real ttsPitch: 1.0
     property real ttsVolume: 1.0
     property real thinkingVolume: 0.32
+    property real maxUtteranceSeconds: 15
     property string responseLanguage: "auto"
     property bool speakWakeRejectedWarnings: true
     property var wakePhrases: []
@@ -110,6 +111,7 @@ ApplicationWindow {
                 action: "update_visual_settings",
                 visual: {
                     thinkingVolume: root.thinkingVolume,
+                    maxUtteranceSeconds: root.maxUtteranceSeconds,
                     responseLanguage: languageBox.currentText,
                     chatHistoryEnabled: chatHistoryCheck.checked,
                     speakWakeRejectedWarnings: wakeWarningCheck.checked
@@ -121,10 +123,12 @@ ApplicationWindow {
 
     function resetSettings() {
         root.thinkingVolume = 0.32
+        root.maxUtteranceSeconds = 15
         root.chatHistoryEnabled = true
         root.speakWakeRejectedWarnings = true
         root.chatPanelOpen = true
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
+        if (maxUtteranceSlider) maxUtteranceSlider.value = root.maxUtteranceSeconds
         if (chatHistoryCheck) chatHistoryCheck.checked = true
         if (wakeWarningCheck) wakeWarningCheck.checked = true
         if (socket.status === WebSocket.Open) {
@@ -172,11 +176,13 @@ ApplicationWindow {
 
     function applyRuntimeVisualSettings(settings) {
         root.thinkingVolume = settings.thinkingVolume === undefined ? 0.32 : Math.max(0, Math.min(0.8, settings.thinkingVolume))
+        root.maxUtteranceSeconds = settings.maxUtteranceSeconds === undefined ? 15 : Math.max(5, Math.min(55, settings.maxUtteranceSeconds))
         root.responseLanguage = settings.responseLanguage || "auto"
         root.chatHistoryEnabled = settings.chatHistoryEnabled === undefined ? true : !!settings.chatHistoryEnabled
         root.speakWakeRejectedWarnings = settings.speakWakeRejectedWarnings === undefined ? true : !!settings.speakWakeRejectedWarnings
         if (root.chatHistoryEnabled && !root.chatPanelOpen) root.chatPanelOpen = true
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
+        if (maxUtteranceSlider) maxUtteranceSlider.value = root.maxUtteranceSeconds
         if (chatHistoryCheck) chatHistoryCheck.checked = root.chatHistoryEnabled
         if (wakeWarningCheck) wakeWarningCheck.checked = root.speakWakeRejectedWarnings
         if (languageBox) languageBox.currentIndex = root.indexOfValue(["auto", "ko", "en"], root.responseLanguage)
@@ -1211,6 +1217,21 @@ ApplicationWindow {
                     value: root.thinkingVolume
                     stepSize: 0.01
                     onValueChanged: root.thinkingVolume = value
+                }
+
+                Text {
+                    text: "Max speech " + Math.round(maxUtteranceSlider.value) + "s"
+                    color: "#91a4bd"
+                }
+
+                Slider {
+                    id: maxUtteranceSlider
+                    Layout.fillWidth: true
+                    from: 5
+                    to: 55
+                    value: root.maxUtteranceSeconds
+                    stepSize: 1
+                    onValueChanged: root.maxUtteranceSeconds = value
                 }
 
                 CheckBox {

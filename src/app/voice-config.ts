@@ -6,6 +6,9 @@ import { defaultWakePhrases, normalizedWakePhrases } from "../wake/WakePhraseRou
 
 export const defaultVoiceConfigPath = ".voice-agent.local.json";
 export const defaultVisualThinkingVolume = 0.32;
+export const defaultMaxUtteranceSeconds = 15;
+export const minMaxUtteranceSeconds = 5;
+export const maxMaxUtteranceSeconds = 55;
 
 export interface VoiceHarnessConfig {
   recorderCommand: string;
@@ -23,6 +26,7 @@ export type VoiceVisualFileConfig = Partial<{
   chatHistoryEnabled: boolean;
   hudEnabled: boolean;
   speakWakeRejectedWarnings: boolean;
+  maxUtteranceSeconds: string | number;
 }>;
 
 export interface VoiceLocalSettingsOverride {
@@ -280,6 +284,7 @@ export async function resetVoiceLocalSettings(options: {
   delete visual.chatHistoryEnabled;
   delete visual.hudEnabled;
   delete visual.speakWakeRejectedWarnings;
+  delete visual.maxUtteranceSeconds;
 
   if (Object.keys(visual).length > 0) {
     next.visual = visual;
@@ -471,6 +476,9 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
     ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
+      : {}),
+    ...(parseVisualMaxUtteranceSeconds(record.maxUtteranceSeconds) !== undefined
+      ? { maxUtteranceSeconds: parseVisualMaxUtteranceSeconds(record.maxUtteranceSeconds) }
       : {})
   };
 }
@@ -480,6 +488,28 @@ function parseVisualThinkingVolume(value: unknown): number | undefined {
   if (typeof value !== "string" || value.trim() === "") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? clamp(parsed, 0, 0.8) : undefined;
+}
+
+function parseVisualMaxUtteranceSeconds(value: unknown): number | undefined {
+  if (typeof value !== "number" && typeof value !== "string") return undefined;
+  if (typeof value === "string" && value.trim() === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number(value.trim());
+  return Number.isFinite(parsed) ? sanitizeMaxUtteranceSeconds(parsed) : undefined;
+}
+
+export function sanitizeMaxUtteranceSeconds(
+  value: unknown,
+  fallback = defaultMaxUtteranceSeconds
+): number {
+  const parsed = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim() !== ""
+      ? Number(value.trim())
+      : Number.NaN;
+
+  return Number.isFinite(parsed)
+    ? clamp(parsed, minMaxUtteranceSeconds, maxMaxUtteranceSeconds)
+    : fallback;
 }
 
 function parseVisualResponseLanguage(value: unknown): VoiceVisualFileConfig["responseLanguage"] | undefined {

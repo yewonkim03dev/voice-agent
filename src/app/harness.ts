@@ -56,7 +56,9 @@ import type {
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
 import { createCodexThreadStore } from "./codex-thread-config.ts";
 import {
+  defaultMaxUtteranceSeconds,
   defaultVisualThinkingVolume,
+  sanitizeMaxUtteranceSeconds,
   type VoiceSettingsPersistence,
   type VoiceVisualFileConfig
 } from "./voice-config.ts";
@@ -1470,7 +1472,8 @@ export class TerminalHarness {
       responseLanguage: this.visualSettings.responseLanguage ?? "auto",
       chatHistoryEnabled: this.visualSettings.chatHistoryEnabled ?? true,
       hudEnabled: this.visualSettings.hudEnabled ?? true,
-      speakWakeRejectedWarnings: this.visualSettings.speakWakeRejectedWarnings ?? true
+      speakWakeRejectedWarnings: this.visualSettings.speakWakeRejectedWarnings ?? true,
+      maxUtteranceSeconds: this.visualSettings.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
     };
   }
 
@@ -1962,7 +1965,8 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
     responseLanguage: "auto",
     chatHistoryEnabled: true,
     hudEnabled: true,
-    speakWakeRejectedWarnings: true
+    speakWakeRejectedWarnings: true,
+    maxUtteranceSeconds: defaultMaxUtteranceSeconds
   };
 }
 
@@ -1985,6 +1989,9 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
     hudEnabled: typeof settings?.hudEnabled === "boolean" ? settings.hudEnabled : undefined,
     speakWakeRejectedWarnings: typeof settings?.speakWakeRejectedWarnings === "boolean"
       ? settings.speakWakeRejectedWarnings
+      : undefined,
+    maxUtteranceSeconds: settings?.maxUtteranceSeconds !== undefined
+      ? sanitizeMaxUtteranceSeconds(settings.maxUtteranceSeconds)
       : undefined
   }, defaultVisualRuntimeSettings());
 }
@@ -2000,7 +2007,10 @@ function sanitizeVisualRuntimeSettings(
     responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto",
     chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true,
     hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true,
-    speakWakeRejectedWarnings: settings.speakWakeRejectedWarnings ?? fallback.speakWakeRejectedWarnings ?? true
+    speakWakeRejectedWarnings: settings.speakWakeRejectedWarnings ?? fallback.speakWakeRejectedWarnings ?? true,
+    maxUtteranceSeconds: settings.maxUtteranceSeconds === undefined
+      ? fallback.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
+      : sanitizeMaxUtteranceSeconds(settings.maxUtteranceSeconds, fallback.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds)
   };
 }
 
