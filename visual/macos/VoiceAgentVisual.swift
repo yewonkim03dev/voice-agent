@@ -1238,10 +1238,15 @@ final class HoverHelpButton: NSButton {
 
 final class MenuBarCompanion {
     private var statusItem: NSStatusItem?
+    private var hudPanel: NSPanel?
     private let popover = NSPopover()
     private let stateLabel = NSTextField(labelWithString: "idle")
     private let detailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
     private let questionLabel = NSTextField(wrappingLabelWithString: "Q: none")
+    private let hudCircle = AgentCircleView(frame: .zero)
+    private let hudStateLabel = NSTextField(labelWithString: "idle")
+    private let hudDetailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
+    private let hudQuestionLabel = NSTextField(wrappingLabelWithString: "Q: none")
     private var onStop: (() -> Void)?
     private var onTtsStop: (() -> Void)?
     private var onShowWindow: (() -> Void)?
@@ -1261,23 +1266,37 @@ final class MenuBarCompanion {
         popover.behavior = .transient
         popover.contentViewController = NSViewController()
         popover.contentViewController?.view = makePopoverView()
+
+        showFloatingHud()
     }
 
     func update(state: String, text: String) {
         statusItem?.button?.title = "VA \(compactState(state))"
         stateLabel.stringValue = state
         detailLabel.stringValue = text.isEmpty ? state : text
+        hudCircle.state = state
+        hudCircle.statusText = text.isEmpty ? state : text
+        hudStateLabel.stringValue = state
+        hudDetailLabel.stringValue = text.isEmpty ? state : text
     }
 
     func updateQuestion(_ question: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         questionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
+        hudQuestionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
     }
 
     func updateMessage(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         detailLabel.stringValue = trimmed
+        hudDetailLabel.stringValue = trimmed
+        hudCircle.statusText = trimmed
+    }
+
+    func updateVolume(rms: CGFloat, peak: CGFloat) {
+        hudCircle.rms = rms
+        hudCircle.peak = peak
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -1300,6 +1319,47 @@ final class MenuBarCompanion {
 
     @objc private func showWindow() {
         onShowWindow?()
+    }
+
+    @objc private func showFloatingHud() {
+        if hudPanel == nil {
+            let size = NSSize(width: 286, height: 172)
+            let panel = NSPanel(
+                contentRect: NSRect(origin: .zero, size: size),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.isFloatingPanel = true
+            panel.level = .floating
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            panel.hidesOnDeactivate = false
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.isMovableByWindowBackground = true
+            panel.contentView = makeHudView()
+            hudPanel = panel
+        }
+
+        positionHud()
+        if let panel = hudPanel {
+            panel.orderFrontRegardless()
+        }
+    }
+
+    private func positionHud() {
+        guard let panel = hudPanel else { return }
+
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let margin: CGFloat = 18
+        let frame = NSRect(
+            x: screenFrame.maxX - panel.frame.width - margin,
+            y: screenFrame.maxY - panel.frame.height - margin,
+            width: panel.frame.width,
+            height: panel.frame.height
+        )
+        panel.setFrame(frame, display: true)
     }
 
     private func makePopoverView() -> NSView {
@@ -1338,6 +1398,47 @@ final class MenuBarCompanion {
 
         let show = NSButton(title: "Show", target: self, action: #selector(showWindow))
         show.frame = NSRect(x: 200, y: 14, width: 88, height: 28)
+        view.addSubview(show)
+
+        return view
+    }
+
+    private func makeHudView() -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 286, height: 172))
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 16
+        view.layer?.borderWidth = 1
+        view.layer?.borderColor = NSColor(calibratedRed: 0.18, green: 0.26, blue: 0.36, alpha: 0.86).cgColor
+        view.layer?.backgroundColor = NSColor(calibratedRed: 0.03, green: 0.05, blue: 0.08, alpha: 0.88).cgColor
+
+        hudCircle.frame = NSRect(x: 14, y: 42, width: 104, height: 104)
+        view.addSubview(hudCircle)
+
+        hudStateLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
+        hudStateLabel.textColor = NSColor(calibratedRed: 0.53, green: 0.78, blue: 1.0, alpha: 1)
+        hudStateLabel.frame = NSRect(x: 130, y: 128, width: 138, height: 18)
+        view.addSubview(hudStateLabel)
+
+        hudDetailLabel.font = NSFont.systemFont(ofSize: 12)
+        hudDetailLabel.textColor = NSColor(calibratedRed: 0.86, green: 0.90, blue: 0.96, alpha: 1)
+        hudDetailLabel.frame = NSRect(x: 130, y: 78, width: 138, height: 46)
+        view.addSubview(hudDetailLabel)
+
+        hudQuestionLabel.font = NSFont.systemFont(ofSize: 11)
+        hudQuestionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
+        hudQuestionLabel.frame = NSRect(x: 130, y: 48, width: 138, height: 26)
+        view.addSubview(hudQuestionLabel)
+
+        let stop = NSButton(title: "STOP", target: self, action: #selector(stopAgent))
+        stop.frame = NSRect(x: 14, y: 10, width: 72, height: 26)
+        view.addSubview(stop)
+
+        let ttsStop = NSButton(title: "TTS", target: self, action: #selector(stopTts))
+        ttsStop.frame = NSRect(x: 94, y: 10, width: 62, height: 26)
+        view.addSubview(ttsStop)
+
+        let show = NSButton(title: "Show", target: self, action: #selector(showWindow))
+        show.frame = NSRect(x: 164, y: 10, width: 68, height: 26)
         view.addSubview(show)
 
         return view
@@ -1551,6 +1652,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         case "volume":
             circleView.rms = min(1, max(0, CGFloat(event["rms"] as? Double ?? 0) * 14))
             circleView.peak = min(1, max(0, CGFloat(event["peak"] as? Double ?? 0) * 5))
+            menuBarCompanion.updateVolume(rms: circleView.rms, peak: circleView.peak)
         case "wake":
             circleView.state = "wake_matched"
             circleView.statusText = "wake: \(event["phrase"] as? String ?? "")"
