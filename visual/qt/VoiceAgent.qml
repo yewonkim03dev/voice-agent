@@ -709,8 +709,8 @@ ApplicationWindow {
         Rectangle {
             id: questionBackdrop
             anchors.centerIn: questionLabel
-            width: Math.min(root.width - 16, questionLabel.width + 28)
-            height: questionLabel.height + 14
+            width: Math.min(root.width - 16, questionLabel.width + 36)
+            height: questionLabel.height + 26
             radius: 11
             color: "#05080c"
             opacity: root.currentQuestion.length > 0 ? 0.72 : 0

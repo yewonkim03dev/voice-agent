@@ -329,6 +329,7 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /property string currentQuestion/u);
   assert.match(qml, /type === "question"/u);
   assert.match(qml, /id: questionLabel/u);
+  assert.match(qml, /questionLabel\.height \+ 26/u);
   assert.match(qml, /"Q: " \+ root\.currentQuestion/u);
   assert.match(qml, /root\.uiState === "speaking"/u);
   assert.match(qml, /root\.uiState === "approval_pending"/u);
@@ -410,10 +411,12 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /let visualCenterLift = max\(96, min\(220, bounds\.height \* 0\.20\)\)/u);
   assert.match(swift, /let center = CGPoint\(x: bounds\.midX, y: centerY\)/u);
   assert.match(swift, /func updateSessionId\(_ sessionId: String\)/u);
-  assert.match(swift, /questionLabel = NSTextField\(labelWithString: ""\)/u);
+  assert.match(swift, /final class QuestionLabelView: NSView/u);
+  assert.match(swift, /private let questionView = QuestionLabelView\(frame: \.zero\)/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
   assert.match(swift, /case "question":/u);
-  assert.ok(swift.includes('"Q: \\(trimmed)"'));
+  assert.match(swift, /bounds\.insetBy\(dx: 14, dy: 11\)/u);
+  assert.ok(swift.includes('"Q: \\(question)"'));
   assert.match(swift, /rootView\?\.updateSessionId\(codexThreadId\)/u);
   assert.match(swift, /commandPanel\.frame/u);
   assert.match(swift, /circleView\.frame/u);

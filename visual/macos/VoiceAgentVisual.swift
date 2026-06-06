@@ -485,7 +485,7 @@ final class VisualRootView: NSView {
     private let commandScroll = NSScrollView(frame: .zero)
     private let guideButton = NSButton(title: "?", target: nil, action: nil)
     private let sessionLabel = NSTextField(labelWithString: "session: new")
-    private let questionLabel = NSTextField(labelWithString: "")
+    private let questionView = QuestionLabelView(frame: .zero)
     private let controls: NSStackView
 
     init(
@@ -512,18 +512,8 @@ final class VisualRootView: NSView {
         circleView.autoresizingMask = []
         addSubview(circleView)
 
-        questionLabel.textColor = NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1)
-        questionLabel.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
-        questionLabel.alignment = .center
-        questionLabel.lineBreakMode = .byTruncatingTail
-        questionLabel.maximumNumberOfLines = 2
-        questionLabel.isHidden = true
-        questionLabel.wantsLayer = true
-        questionLabel.layer?.backgroundColor = NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.72).cgColor
-        questionLabel.layer?.borderColor = NSColor(calibratedRed: 0.11, green: 0.20, blue: 0.28, alpha: 0.90).cgColor
-        questionLabel.layer?.borderWidth = 1
-        questionLabel.layer?.cornerRadius = 11
-        addSubview(questionLabel)
+        questionView.isHidden = true
+        addSubview(questionView)
 
         sessionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
         sessionLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -730,9 +720,9 @@ final class VisualRootView: NSView {
             height: circleSize
         )
 
-        let questionHeight: CGFloat = expanded ? 50 : 42
-        questionLabel.font = NSFont.systemFont(ofSize: expanded ? 17 : 15, weight: .semibold)
-        questionLabel.frame = NSRect(
+        let questionHeight: CGFloat = expanded ? 58 : 50
+        questionView.fontSize = expanded ? 17 : 15
+        questionView.frame = NSRect(
             x: inset,
             y: max(commandPanel.frame.maxY + 8, circleView.frame.minY - questionHeight - 8),
             width: contentWidth,
@@ -747,8 +737,55 @@ final class VisualRootView: NSView {
 
     func updateQuestion(_ question: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        questionLabel.stringValue = trimmed.isEmpty ? "" : "Q: \(trimmed)"
-        questionLabel.isHidden = trimmed.isEmpty
+        questionView.question = trimmed
+    }
+}
+
+final class QuestionLabelView: NSView {
+    var question = "" {
+        didSet {
+            isHidden = question.isEmpty
+            needsDisplay = true
+        }
+    }
+    var fontSize: CGFloat = 15 {
+        didSet { needsDisplay = true }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = false
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !question.isEmpty else { return }
+
+        let backgroundPath = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11)
+        NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.72).setFill()
+        backgroundPath.fill()
+        NSColor(calibratedRed: 0.11, green: 0.20, blue: 0.28, alpha: 0.90).setStroke()
+        backgroundPath.lineWidth = 1
+        backgroundPath.stroke()
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1),
+            .paragraphStyle: paragraph
+        ]
+        let textRect = bounds.insetBy(dx: 14, dy: 11)
+        ("Q: \(question)" as NSString).draw(
+            with: textRect,
+            options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+            attributes: attrs
+        )
     }
 }
 
