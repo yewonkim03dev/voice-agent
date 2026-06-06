@@ -571,11 +571,18 @@ final class VisualRootView: NSView {
         commandPanel.addSubview(commandLabel)
 
         commandView.isEditable = false
+        commandView.isSelectable = true
+        commandView.allowsUndo = false
         commandView.drawsBackground = true
         commandView.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.09, blue: 0.13, alpha: 1)
         commandView.textColor = .white
         commandView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        commandView.textContainerInset = NSSize(width: 0, height: 2)
+        commandView.textContainerInset = NSSize(width: 8, height: 8)
+        commandView.isVerticallyResizable = true
+        commandView.isHorizontallyResizable = false
+        commandView.autoresizingMask = [.width]
+        commandView.textContainer?.widthTracksTextView = true
+        commandView.textContainer?.heightTracksTextView = false
 
         commandScroll.documentView = commandView
         commandScroll.hasVerticalScroller = true
@@ -645,12 +652,21 @@ final class VisualRootView: NSView {
         }
         chatToggleButton.isHidden = !chatAvailable
         chatToggleButton.title = chatPanelOpen ? "Hide" : "Q/A"
-        chatToggleButton.frame = NSRect(
-            x: bounds.width - inset - 72,
-            y: bounds.height - inset - 68,
-            width: 72,
-            height: 28
-        )
+        if chatVisible {
+            chatToggleButton.frame = NSRect(
+                x: chatView.frame.minX + 104,
+                y: chatView.frame.maxY - 36,
+                width: 62,
+                height: 24
+            )
+        } else {
+            chatToggleButton.frame = NSRect(
+                x: bounds.width - inset - 72,
+                y: bounds.height - inset - 68,
+                width: 72,
+                height: 28
+            )
+        }
 
         let panelInset: CGFloat = 14
         let labelHeight: CGFloat = 18
@@ -720,7 +736,20 @@ final class VisualRootView: NSView {
             width: max(0, commandPanel.bounds.width - panelInset * 2),
             height: max(24, commandLabel.frame.minY - panelInset - 8)
         )
-        commandView.frame = commandScroll.contentView.bounds
+        let commandContentSize = commandScroll.contentSize
+        commandView.minSize = NSSize(width: 0, height: commandContentSize.height)
+        commandView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        commandView.textContainer?.containerSize = NSSize(
+            width: commandContentSize.width,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        commandView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: commandContentSize.width,
+            height: max(commandContentSize.height, commandView.frame.height)
+        )
+        resizeCommandTextView()
 
         let bottomLimit = commandPanel.frame.maxY + 12
         let topLimit = bounds.height - inset
@@ -776,6 +805,21 @@ final class VisualRootView: NSView {
 
     func pushChat(role: String, kind: String, text: String) {
         chatView.push(role: role, kind: kind, text: text)
+    }
+
+    func resizeCommandTextView(scrollToTop: Bool = false) {
+        guard let textContainer = commandView.textContainer, let layoutManager = commandView.layoutManager else { return }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let contentSize = commandScroll.contentSize
+        commandView.frame.size = NSSize(
+            width: contentSize.width,
+            height: max(contentSize.height, ceil(usedRect.height + commandView.textContainerInset.height * 2 + 12))
+        )
+        if scrollToTop {
+            commandView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        }
     }
 
     func updateChatHistory(enabled: Bool) {
@@ -880,7 +924,7 @@ final class ChatHistoryView: NSView {
 
     override func layout() {
         super.layout()
-        scrollView.frame = NSRect(x: 8, y: 8, width: max(0, bounds.width - 16), height: max(0, bounds.height - 44))
+        scrollView.frame = NSRect(x: 8, y: 8, width: max(0, bounds.width - 20), height: max(0, bounds.height - 44))
         layoutBubbles(scrollToBottom: false)
     }
 
@@ -915,13 +959,15 @@ final class ChatHistoryView: NSView {
 
     private func layoutBubbles(scrollToBottom: Bool) {
         let scrollBounds = scrollView.contentView.bounds
-        let bubbleWidth = max(160, scrollView.bounds.width * 0.86)
+        let scrollbarReserve: CGFloat = scrollView.hasVerticalScroller ? 16 : 0
+        let availableWidth = max(0, scrollView.contentView.bounds.width - scrollbarReserve)
+        let bubbleWidth = max(160, availableWidth * 0.86)
         let spacing: CGFloat = 8
         let margin: CGFloat = 8
         let heights = bubbleViews.map { $0.preferredHeight(width: bubbleWidth) }
         let totalHeight = heights.reduce(margin, +) + CGFloat(max(0, heights.count - 1)) * spacing + margin
         let contentHeight = max(scrollView.bounds.height, totalHeight)
-        contentView.frame = NSRect(x: 0, y: 0, width: scrollView.bounds.width, height: contentHeight)
+        contentView.frame = NSRect(x: 0, y: 0, width: max(0, scrollView.contentView.bounds.width - scrollbarReserve), height: contentHeight)
 
         var y = contentHeight - margin
         for (index, bubble) in bubbleViews.enumerated() {
@@ -941,10 +987,33 @@ final class ChatHistoryView: NSView {
 
 final class ChatBubbleView: NSView {
     let item: ChatHistoryItem
+    private let kindLabel = NSTextField(labelWithString: "")
+    private let textView = NSTextView(frame: .zero)
 
     init(item: ChatHistoryItem) {
         self.item = item
         super.init(frame: .zero)
+
+        kindLabel.stringValue = label(for: item.kind)
+        kindLabel.font = NSFont.systemFont(ofSize: 11, weight: .bold)
+        kindLabel.textColor = item.role == "user"
+            ? NSColor(calibratedRed: 0.56, green: 0.78, blue: 1.0, alpha: 1)
+            : NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
+        addSubview(kindLabel)
+
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textColor = NSColor(calibratedRed: 0.96, green: 0.97, blue: 0.99, alpha: 1)
+        textView.font = item.kind == "command"
+            ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            : NSFont.systemFont(ofSize: 13, weight: .regular)
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+        textView.textStorage?.setAttributedString(NSAttributedString(string: item.text, attributes: textAttributes()))
+        addSubview(textView)
     }
 
     required init?(coder: NSCoder) {
@@ -964,6 +1033,14 @@ final class ChatBubbleView: NSView {
         return max(48, textHeight + 34)
     }
 
+    override func layout() {
+        super.layout()
+        let textWidth = bounds.width - 24
+        kindLabel.frame = NSRect(x: 12, y: bounds.height - 22, width: textWidth, height: 14)
+        textView.frame = NSRect(x: 12, y: 10, width: textWidth, height: max(18, bounds.height - 30))
+        textView.textContainer?.containerSize = NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         bubbleColor().setFill()
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
@@ -971,27 +1048,6 @@ final class ChatBubbleView: NSView {
         borderColor().setStroke()
         path.lineWidth = 1
         path.stroke()
-
-        let textWidth = bounds.width - 24
-        (label(for: item.kind) as NSString).draw(
-            with: NSRect(x: 12, y: bounds.height - 22, width: textWidth, height: 14),
-            options: [.usesLineFragmentOrigin],
-            attributes: kindAttributes()
-        )
-        (item.text as NSString).draw(
-            with: NSRect(x: 12, y: 10, width: textWidth, height: bounds.height - 30),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: textAttributes()
-        )
-    }
-
-    private func kindAttributes() -> [NSAttributedString.Key: Any] {
-        [
-            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
-            .foregroundColor: item.role == "user"
-                ? NSColor(calibratedRed: 0.56, green: 0.78, blue: 1.0, alpha: 1)
-                : NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
-        ]
     }
 
     private func textAttributes() -> [NSAttributedString.Key: Any] {
@@ -1219,6 +1275,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMainMenu()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -1231,6 +1288,28 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         connect()
+    }
+
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+        let appItem = NSMenuItem()
+        let editItem = NSMenuItem()
+        mainMenu.addItem(appItem)
+        mainMenu.addItem(editItem)
+
+        let appMenu = NSMenu()
+        appMenu.addItem(NSMenuItem(title: "Quit Voice Agent", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appItem.submenu = appMenu
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editItem.submenu = editMenu
+
+        NSApp.mainMenu = mainMenu
     }
 
     private func buildContentView() -> NSView {
@@ -1393,7 +1472,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         guard !text.isEmpty else { return }
         commands.insert(text, at: 0)
         commands = Array(commands.prefix(8))
-        commandView.string = commands.map { "• \($0)" }.joined(separator: "\n")
+        commandView.string = commands.map { "• \($0)" }.joined(separator: "\n\n")
+        rootView?.resizeCommandTextView(scrollToTop: true)
     }
 
     @objc private func stopTts() {
@@ -1407,6 +1487,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func clearCommands() {
         commands.removeAll()
         commandView.string = ""
+        rootView?.resizeCommandTextView(scrollToTop: true)
         sendControl("clear_commands")
     }
 

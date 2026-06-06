@@ -346,6 +346,9 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /id: chatOpenButton/u);
   assert.match(qml, /Show Recent Q\/A panel/u);
   assert.match(qml, /model: root\.chatItems/u);
+  assert.match(qml, /id: bubbleText/u);
+  assert.match(qml, /selectByMouse: true/u);
+  assert.match(qml, /persistentSelection: true/u);
   assert.match(qml, /root\.uiState === "speaking"/u);
   assert.match(qml, /root\.uiState === "approval_pending"/u);
   assert.match(qml, /root\.uiState === "wake_rejected"/u);
@@ -432,6 +435,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
   assert.match(swift, /final class ChatHistoryView: NSView/u);
   assert.match(swift, /final class ChatBubbleView: NSView/u);
+  assert.match(swift, /private let textView = NSTextView\(frame: \.zero\)/u);
+  assert.match(swift, /textView\.isSelectable = true/u);
   assert.match(swift, /private let chatView = ChatHistoryView\(frame: \.zero\)/u);
   assert.match(swift, /private let chatToggleButton = NSButton\(title: "Q\/A"/u);
   assert.match(swift, /func pushChat\(role: String, kind: String, text: String\)/u);

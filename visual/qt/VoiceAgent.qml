@@ -33,6 +33,7 @@ ApplicationWindow {
     property int visualDiameter: Math.round(Math.max(220, Math.min((width - mainRightInset) * (expandedLayout ? 0.78 : 0.84), height * (expandedLayout ? 0.60 : 0.48), height - commandPanelHeight - controlsHeight - 92, expandedLayout ? 720 : 360)))
     property int visualCenterYOffset: -Math.round(Math.max(96, Math.min(220, height * 0.20)))
     property var commands: []
+    property string commandText: ""
     property var contextEntries: []
     property bool settingsOpen: false
     property string ttsLanguage: "auto"
@@ -67,7 +68,10 @@ ApplicationWindow {
             socket.sendTextMessage(JSON.stringify(payload))
         }
 
-        if (action === "clear_commands") commands = []
+        if (action === "clear_commands") {
+            commands = []
+            commandText = ""
+        }
         if (action === "clear_context") contextEntries = []
         if (action === "exit") exitTimer.restart()
     }
@@ -201,6 +205,7 @@ ApplicationWindow {
         var next = commands.slice()
         next.unshift(text)
         commands = next.slice(0, 8)
+        commandText = commands.map(function(command) { return "• " + command }).join("\n\n")
     }
 
     function pushChat(role, kind, text) {
@@ -914,17 +919,24 @@ ApplicationWindow {
                     font.bold: true
                 }
 
-                ListView {
+                ScrollView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
-                    model: root.commands
-                    delegate: Text {
-                        width: ListView.view.width
-                        text: "• " + modelData
+
+                    TextArea {
+                        id: commandTextArea
+                        text: root.commandText
                         color: "#f4f7fb"
                         font.pixelSize: 14
-                        elide: Text.ElideRight
+                        font.family: "Menlo"
+                        readOnly: true
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                        persistentSelection: true
+                        background: Rectangle {
+                            color: "transparent"
+                        }
                     }
                 }
             }
@@ -955,7 +967,6 @@ ApplicationWindow {
 
                     Text {
                         id: chatTitle
-                        Layout.fillWidth: true
                         text: "Recent Q/A"
                         color: "#e7edf7"
                         font.pixelSize: 15
@@ -965,6 +976,10 @@ ApplicationWindow {
                     Button {
                         text: "Hide"
                         onClicked: root.chatPanelOpen = false
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
                     }
                 }
 
@@ -976,10 +991,14 @@ ApplicationWindow {
                     spacing: 8
                     model: root.chatItems
                     onCountChanged: positionViewAtEnd()
+                    ScrollBar.vertical: ScrollBar {
+                        width: 8
+                        policy: ScrollBar.AsNeeded
+                    }
 
                     delegate: Item {
-                        width: ListView.view.width
-                        height: Math.max(46, bubbleText.implicitHeight + bubbleKind.implicitHeight + 26)
+                        width: Math.max(0, ListView.view.width - 14)
+                        height: Math.max(52, bubbleColumn.implicitHeight + 22)
 
                         Rectangle {
                             id: bubble
@@ -992,6 +1011,7 @@ ApplicationWindow {
                             border.width: 1
 
                             Column {
+                                id: bubbleColumn
                                 anchors.fill: parent
                                 anchors.margins: 10
                                 spacing: 4
@@ -1005,17 +1025,22 @@ ApplicationWindow {
                                     font.bold: true
                                 }
 
-                                Text {
+                                TextArea {
                                     id: bubbleText
                                     width: parent.width
                                     text: modelData.text
                                     color: "#f4f7fb"
                                     font.pixelSize: modelData.kind === "command" ? 12 : 13
                                     font.family: modelData.kind === "command" ? "Menlo" : ""
-                                    wrapMode: modelData.kind === "command" ? Text.WrapAnywhere : Text.WordWrap
-                                    elide: Text.ElideNone
+                                    readOnly: true
+                                    selectByMouse: true
+                                    persistentSelection: true
+                                    wrapMode: modelData.kind === "command" ? TextEdit.WrapAnywhere : TextEdit.WordWrap
                                     lineHeight: 1.12
                                     lineHeightMode: Text.ProportionalHeight
+                                    background: Rectangle {
+                                        color: "transparent"
+                                    }
                                 }
                             }
                         }
