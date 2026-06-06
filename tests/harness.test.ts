@@ -298,25 +298,23 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
     pitch: 1,
     volume: 1
   });
-  assert.deepEqual(visualBridge.events.findLast((event) => event.type === "settings"), {
-    op: "voice-agent-ui",
-    type: "settings",
-    tts: {
-      language: "auto",
-      gender: "auto",
-      rate: 0.56,
-      pitch: 1,
-      volume: 1
-    },
-    visual: {
-      thinkingVolume: 0.32,
-      responseLanguage: "auto",
-      chatHistoryEnabled: true,
-      hudEnabled: true,
-      speakWakeRejectedWarnings: true,
-      maxUtteranceSeconds: 15
-    }
+  const settings = visualBridge.events.findLast((event): event is Extract<VisualEvent, { type: "settings" }> => event.type === "settings");
+  assert.deepEqual(settings?.tts, {
+    language: "auto",
+    gender: "auto",
+    rate: 0.56,
+    pitch: 1,
+    volume: 1
   });
+  assert.deepEqual(settings?.visual, {
+    thinkingVolume: 0.32,
+    responseLanguage: "auto",
+    chatHistoryEnabled: true,
+    hudEnabled: true,
+    speakWakeRejectedWarnings: true,
+    maxUtteranceSeconds: 15
+  });
+  assert.deepEqual(settings?.approvalPhrases?.onceApprove.slice(0, 2), ["허용", "승인"]);
 });
 
 test("visual reset_settings clears persisted overrides", async () => {
@@ -337,25 +335,23 @@ test("visual reset_settings clears persisted overrides", async () => {
   await flushAsync();
 
   assert.equal(settingsPersistence.resetCount, 1);
-  assert.deepEqual(visualBridge.events.findLast((event) => event.type === "settings"), {
-    op: "voice-agent-ui",
-    type: "settings",
-    tts: {
-      language: "auto",
-      gender: "auto",
-      rate: 0.56,
-      pitch: 1,
-      volume: 1
-    },
-    visual: {
-      thinkingVolume: 0.32,
-      responseLanguage: "auto",
-      chatHistoryEnabled: true,
-      hudEnabled: true,
-      speakWakeRejectedWarnings: true,
-      maxUtteranceSeconds: 15
-    }
+  const settings = visualBridge.events.findLast((event): event is Extract<VisualEvent, { type: "settings" }> => event.type === "settings");
+  assert.deepEqual(settings?.tts, {
+    language: "auto",
+    gender: "auto",
+    rate: 0.56,
+    pitch: 1,
+    volume: 1
   });
+  assert.deepEqual(settings?.visual, {
+    thinkingVolume: 0.32,
+    responseLanguage: "auto",
+    chatHistoryEnabled: true,
+    hudEnabled: true,
+    speakWakeRejectedWarnings: true,
+    maxUtteranceSeconds: 15
+  });
+  assert.deepEqual(settings?.approvalPhrases?.onceApprove.slice(0, 2), ["허용", "승인"]);
 });
 
 test("visual exit control requests full harness shutdown", async () => {
@@ -639,6 +635,67 @@ test("pass-through approval speech can deny a native approval", async () => {
 
   assert.equal(backend.permissions.length, 1);
   assert.equal(backend.permissions[0].decision, "deny");
+});
+
+test("pass-through approval speech uses configured visual approval phrases", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const settingsPersistence = new FakeSettingsPersistence();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "codex-test",
+    routingMode: "passthrough",
+    agentTarget: "codex",
+    visualBridge,
+    settingsPersistence,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  await harness.start();
+  visualBridge.emitApprovalPhrasesControl({
+    onceApprove: ["진행"],
+    deny: ["그만"],
+    sessionApprove: ["오늘은 허용"]
+  });
+  await flushAsync();
+
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+
+  const state = lastStateEvent(visualBridge.events);
+  assert.match(state?.text ?? "", /허용: 진행/u);
+  assert.match(state?.text ?? "", /거부: 그만/u);
+
+  await harness.processLine("진행");
+
+  assert.equal(backend.permissions.length, 1);
+  assert.equal(backend.permissions[0].decision, "allow");
+  assert.deepEqual(settingsPersistence.updates.at(-1), {
+    approvalPhrases: {
+      onceApprove: ["진행"],
+      deny: ["그만"],
+      sessionApprove: ["오늘은 허용"],
+      policyApprove: [
+        "같은 명령 계속 허용",
+        "앞으로 이 명령은 허용",
+        "이 명령 계속 허용",
+        "항상 이 명령 허용",
+        "remember this command"
+      ],
+      networkPolicyApprove: [
+        "같은 네트워크 계속 허용",
+        "이 네트워크 계속 허용",
+        "이 호스트 허용",
+        "이 호스트 계속 허용",
+        "깃허브 계속 허용",
+        "github 계속 허용",
+        "allow this host",
+        "allow this network",
+        "remember this host"
+      ]
+    }
+  });
 });
 
 test("pass-through session approval explains available alternatives when unsupported", async () => {
@@ -1479,6 +1536,17 @@ class FakeVisualBridge implements VisualBridgeLike {
         type: "control",
         action: "update_visual_settings",
         visual
+      })
+    );
+  }
+
+  emitApprovalPhrasesControl(approvalPhrases: NonNullable<VisualControlEvent["approvalPhrases"]>): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action: "update_approval_phrases",
+        approvalPhrases
       })
     );
   }

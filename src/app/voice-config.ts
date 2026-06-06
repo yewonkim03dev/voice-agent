@@ -1,6 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import {
+  sanitizeApprovalPhraseConfig,
+  type ApprovalPhraseConfig
+} from "../permission/ApprovalSpeech.ts";
 import type { VoiceTtsFileConfig } from "../voice/TtsConfig.ts";
 import { defaultWakePhrases, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 
@@ -16,6 +20,7 @@ export interface VoiceHarnessConfig {
   sampleRate: number;
   channels: number;
   wakePhrases: string[];
+  approvalPhrases?: ApprovalPhraseConfig;
   tts?: VoiceTtsFileConfig;
   visual?: VoiceVisualFileConfig;
 }
@@ -31,6 +36,7 @@ export type VoiceVisualFileConfig = Partial<{
 
 export interface VoiceLocalSettingsOverride {
   wakePhrases?: string[];
+  approvalPhrases?: ApprovalPhraseConfig;
   tts?: VoiceTtsFileConfig;
   visual?: VoiceVisualFileConfig;
   codexThreadId?: string | null;
@@ -232,6 +238,10 @@ export async function updateVoiceLocalSettings(
     next.wakePhrases = normalizedWakePhrases(overrides.wakePhrases);
   }
 
+  if (overrides.approvalPhrases !== undefined) {
+    next.approvalPhrases = sanitizeApprovalPhraseConfig(overrides.approvalPhrases);
+  }
+
   if (overrides.tts !== undefined) {
     next.tts = {
       ...readNestedObject(existing.tts),
@@ -278,6 +288,7 @@ export async function resetVoiceLocalSettings(options: {
   const visual = readNestedObject(existing.visual);
 
   delete next.wakePhrases;
+  delete next.approvalPhrases;
   delete next.tts;
   delete visual.thinkingVolume;
   delete visual.responseLanguage;
@@ -383,6 +394,7 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
         sampleRate: parsePositiveInteger(String(parsed.sampleRate ?? ""), 16_000),
         channels: parsePositiveInteger(String(parsed.channels ?? ""), 1),
         wakePhrases: parseWakePhrases(parsed.wakePhrases),
+        approvalPhrases: parseApprovalPhrases(parsed.approvalPhrases),
         tts: parseTtsFileConfig(parsed),
         visual: parseVisualFileConfig(parsed)
       },
@@ -436,6 +448,7 @@ function hasVoiceConfigFields(parsed: Record<string, unknown>): boolean {
     "sampleRate" in parsed ||
     "channels" in parsed ||
     "wakePhrases" in parsed ||
+    "approvalPhrases" in parsed ||
     "tts" in parsed ||
     "visual" in parsed;
 }
@@ -460,6 +473,19 @@ function parseTtsFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<string,
   return undefined;
 }
 
+function parseApprovalPhrases(value: unknown): ApprovalPhraseConfig | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const record = value as Record<string, unknown>;
+  return sanitizeApprovalPhraseConfig({
+    onceApprove: parsePhraseArray(record.onceApprove),
+    deny: parsePhraseArray(record.deny),
+    sessionApprove: parsePhraseArray(record.sessionApprove),
+    policyApprove: parsePhraseArray(record.policyApprove),
+    networkPolicyApprove: parsePhraseArray(record.networkPolicyApprove)
+  });
+}
+
 function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<string, unknown>): VoiceVisualFileConfig | undefined {
   const visual = parsed.visual;
   if (!visual || typeof visual !== "object" || Array.isArray(visual)) return undefined;
@@ -481,6 +507,26 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
       ? { maxUtteranceSeconds: parseVisualMaxUtteranceSeconds(record.maxUtteranceSeconds) }
       : {})
   };
+}
+
+function parsePhraseArray(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) {
+    const parsed = value
+      .filter((phrase): phrase is string => typeof phrase === "string")
+      .map((phrase) => phrase.trim())
+      .filter(Boolean);
+    return parsed.length > 0 ? parsed : undefined;
+  }
+
+  if (typeof value === "string") {
+    const parsed = value
+      .split(/[,;\n]/u)
+      .map((phrase) => phrase.trim())
+      .filter(Boolean);
+    return parsed.length > 0 ? parsed : undefined;
+  }
+
+  return undefined;
 }
 
 function parseVisualThinkingVolume(value: unknown): number | undefined {

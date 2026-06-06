@@ -1637,6 +1637,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsWakeRejectedWarningCheckbox = NSButton(checkboxWithTitle: "Speak wake warning", target: nil, action: nil)
     private let settingsCodexThreadField = NSTextField(string: "")
     private let settingsWakePhrasesView = NSTextView(frame: .zero)
+    private let settingsApprovalOncePhrasesView = NSTextView(frame: .zero)
+    private let settingsApprovalDenyPhrasesView = NSTextView(frame: .zero)
+    private let settingsApprovalSessionPhrasesView = NSTextView(frame: .zero)
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
     private var ttsVoiceName = ""
@@ -1650,6 +1653,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var hudEnabled = true
     private var speakWakeRejectedWarnings = true
     private var wakePhrases: [String] = []
+    private var approvalOncePhrases: [String] = []
+    private var approvalDenyPhrases: [String] = []
+    private var approvalSessionPhrases: [String] = []
     private var codexThreadId = ""
 
     init(bridgeUrl: String) {
@@ -1871,6 +1877,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             if let phrases = event["wakePhrases"] as? [String] {
                 updateWakePhrases(phrases)
             }
+            if let phrases = event["approvalPhrases"] as? [String: Any] {
+                updateApprovalPhrases(phrases)
+            }
             if let threadId = event["codexThreadId"] as? String {
                 updateCodexThreadId(threadId)
             }
@@ -1947,9 +1956,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         rootView?.updateChatHistory(enabled: chatHistoryEnabled)
         menuBarCompanion.setHudEnabled(hudEnabled)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
+        approvalOncePhrases = normalizedPhrases([settingsApprovalOncePhrasesView.string])
+        approvalDenyPhrases = normalizedPhrases([settingsApprovalDenyPhrasesView.string])
+        approvalSessionPhrases = normalizedPhrases([settingsApprovalSessionPhrasesView.string])
         codexThreadId = settingsCodexThreadField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         sendTtsSettings()
         sendWakePhrases()
+        sendApprovalPhrases()
         sendCodexThreadId()
         settingsWindow?.close()
     }
@@ -2024,6 +2037,19 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         syncSettingsControls()
     }
 
+    private func updateApprovalPhrases(_ settings: [String: Any]) {
+        if let phrases = settings["onceApprove"] as? [String] {
+            approvalOncePhrases = normalizedPhrases(phrases)
+        }
+        if let phrases = settings["deny"] as? [String] {
+            approvalDenyPhrases = normalizedPhrases(phrases)
+        }
+        if let phrases = settings["sessionApprove"] as? [String] {
+            approvalSessionPhrases = normalizedPhrases(phrases)
+        }
+        syncSettingsControls()
+    }
+
     private func updateWakePhrases(_ phrases: [String]) {
         wakePhrases = normalizedPhrases(phrases)
         syncSettingsControls()
@@ -2037,7 +2063,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 820),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -2045,12 +2071,37 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         window.title = "Settings"
         window.isReleasedWhenClosed = false
 
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 640))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 820))
         window.contentView = view
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
         settingsMaxUtteranceField.delegate = self
+
+        addSettingsPhraseArea(
+            view,
+            label: "Allow",
+            textView: settingsApprovalOncePhrasesView,
+            y: 738,
+            placeholderHeight: 46,
+            help: "한국어: 권한 요청에서 한 번만 허용으로 처리할 문구입니다. 줄마다 하나씩 입력합니다.\n\nEnglish: Phrases that approve once during permission prompts. One phrase per line."
+        )
+        addSettingsPhraseArea(
+            view,
+            label: "Deny",
+            textView: settingsApprovalDenyPhrasesView,
+            y: 676,
+            placeholderHeight: 46,
+            help: "한국어: 권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 안전하게 unknown으로 처리될 수 있습니다.\n\nEnglish: Phrases that deny permission prompts. Overlaps with allow phrases may be treated as unknown."
+        )
+        addSettingsPhraseArea(
+            view,
+            label: "Session Allow",
+            textView: settingsApprovalSessionPhrasesView,
+            y: 614,
+            placeholderHeight: 46,
+            help: "한국어: 현재 세션 동안 허용으로 처리할 문구입니다.\n\nEnglish: Phrases that approve for the current session."
+        )
 
         addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 570)
         addSettingsHelp(view, y: 570, text: "한국어: TTS와 응답 언어를 자동, 한국어, 영어 중 선택합니다.\n\nEnglish: Choose auto, Korean, or English for TTS and response language.")
@@ -2124,6 +2175,32 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         view.addSubview(help)
     }
 
+    private func addSettingsPhraseArea(
+        _ view: NSView,
+        label: String,
+        textView: NSTextView,
+        y: CGFloat,
+        placeholderHeight: CGFloat,
+        help: String
+    ) {
+        let labelView = NSTextField(labelWithString: label)
+        labelView.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
+        labelView.frame = NSRect(x: 26, y: y + placeholderHeight - 22, width: 96, height: 20)
+        view.addSubview(labelView)
+        addSettingsHelp(view, y: y + placeholderHeight - 26, text: help)
+
+        let scroll = NSScrollView(frame: NSRect(x: 132, y: y, width: 216, height: placeholderHeight))
+        scroll.borderType = .bezelBorder
+        scroll.hasVerticalScroller = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.frame = NSRect(x: 0, y: 0, width: 216, height: placeholderHeight + 18)
+        textView.font = NSFont.systemFont(ofSize: 12)
+        scroll.documentView = textView
+        view.addSubview(scroll)
+    }
+
     private func syncSettingsControls() {
         settingsLanguagePopup.selectItem(withTitle: ttsLanguage)
         settingsGenderPopup.selectItem(withTitle: ttsGender)
@@ -2138,6 +2215,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsWakeRejectedWarningCheckbox.state = speakWakeRejectedWarnings ? .on : .off
         settingsCodexThreadField.stringValue = codexThreadId
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
+        settingsApprovalOncePhrasesView.string = approvalOncePhrases.joined(separator: "\n")
+        settingsApprovalDenyPhrasesView.string = approvalDenyPhrases.joined(separator: "\n")
+        settingsApprovalSessionPhrasesView.string = approvalSessionPhrases.joined(separator: "\n")
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -2187,6 +2267,19 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             "type": "control",
             "action": "update_wake_phrases",
             "wakePhrases": wakePhrases
+        ])
+    }
+
+    private func sendApprovalPhrases() {
+        sendPayload([
+            "op": "voice-agent-ui",
+            "type": "control",
+            "action": "update_approval_phrases",
+            "approvalPhrases": [
+                "onceApprove": approvalOncePhrases,
+                "deny": approvalDenyPhrases,
+                "sessionApprove": approvalSessionPhrases
+            ]
         ])
     }
 

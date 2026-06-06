@@ -100,6 +100,16 @@ test("visual bridge parses allowed control events only", () => {
     action: "update_wake_phrases",
     wakePhrases: ["코덱스", "자비스"]
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_approval_phrases","approvalPhrases":{"onceApprove":["  해  ",""],"deny":["마"],"sessionApprove":["오늘만"]}}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "update_approval_phrases",
+    approvalPhrases: {
+      onceApprove: ["해"],
+      deny: ["마"],
+      sessionApprove: ["오늘만"]
+    }
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_codex_thread_id","codexThreadId":" 019e-session "}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -146,6 +156,7 @@ test("visual bridge replays latest settings to late visual clients", async () =>
   assert.match(source, /readyClient\.send\(this\.latestSettings\)/u);
   assert.match(source, /readyClient\.send\(this\.latestUsage\)/u);
   assert.match(source, /event\.wakePhrases !== undefined/u);
+  assert.match(source, /event\.approvalPhrases !== undefined/u);
   assert.match(source, /event\.tts !== undefined/u);
   assert.match(source, /event\.visual !== undefined/u);
   assert.match(source, /event\.codexThreadId !== undefined/u);
@@ -380,6 +391,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Settings/u);
   assert.match(qml, /update_tts_settings/u);
   assert.match(qml, /update_wake_phrases/u);
+  assert.match(qml, /update_approval_phrases/u);
+  assert.match(qml, /Approval allow phrases/u);
   assert.match(qml, /update_codex_thread_id/u);
   assert.match(qml, /update_visual_settings/u);
   assert.match(qml, /reset_settings/u);
@@ -456,6 +469,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /let center = CGPoint\(x: bounds\.midX, y: centerY\)/u);
   assert.match(swift, /func updateSessionId\(_ sessionId: String\)/u);
   assert.match(swift, /func updateUsage\(_ usage: String\)/u);
+  assert.match(swift, /settingsApprovalOncePhrasesView/u);
+  assert.match(swift, /update_approval_phrases/u);
   assert.match(swift, /final class QuestionLabelView: NSView/u);
   assert.match(swift, /private let questionView = QuestionLabelView\(frame: \.zero\)/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);

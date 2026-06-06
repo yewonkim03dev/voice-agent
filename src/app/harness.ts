@@ -15,12 +15,10 @@ import {
 } from "../codex/CodexOutputEvent.ts";
 import type { CodexPrompt } from "../codex/CodexPrompt.ts";
 import {
-  denyPhrases,
-  interpretApprovalSpeech,
-  networkPolicyApprovePhrases,
-  onceApprovePhrases,
-  policyApprovePhrases,
-  sessionApprovePhrases
+  approvalPhraseSet,
+  type ApprovalPhraseConfig,
+  type ApprovalPhraseSet,
+  interpretApprovalSpeech
 } from "../permission/ApprovalSpeech.ts";
 import type { PermissionDecision } from "../permission/PermissionDecision.ts";
 import type { PermissionRequest } from "../permission/PermissionRequest.ts";
@@ -52,6 +50,7 @@ import type { VoiceMessage } from "../voice/VoiceMessage.ts";
 import type { SpawnTtsProcess } from "../voice/MacosAppleTtsProvider.ts";
 import { TtsPlaybackState } from "../voice/TtsPlaybackState.ts";
 import type {
+  VisualApprovalPhrases,
   VisualBridgeLike,
   VisualControlEvent,
   VisualEvent,
@@ -230,6 +229,7 @@ export interface TerminalHarnessOptions {
   visualBridge?: VisualBridgeLike;
   visualConfig?: VoiceVisualFileConfig;
   settingsPersistence?: VoiceSettingsPersistence;
+  approvalPhrases?: ApprovalPhraseConfig;
   codexThreadId?: string;
   onExitRequest?: () => void | Promise<void>;
 }
@@ -250,6 +250,7 @@ export class TerminalHarness {
   private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
   private readonly onExitRequest: (() => void | Promise<void>) | undefined;
   private visualSettings: VisualRuntimeSettings;
+  private approvalPhrases: ApprovalPhraseSet;
   private codexThreadId: string | undefined;
   private idSequence = 0;
   private started = false;
@@ -282,6 +283,7 @@ export class TerminalHarness {
     this.settingsPersistence = options.settingsPersistence;
     this.onExitRequest = options.onExitRequest;
     this.visualSettings = visualRuntimeSettingsFromFile(options.visualConfig);
+    this.approvalPhrases = approvalPhraseSet(options.approvalPhrases);
     this.codexThreadId = parseOptionalThreadId(options.codexThreadId);
     this.routingMode =
       options.routingMode ??
@@ -601,7 +603,7 @@ export class TerminalHarness {
     const pending = this.pendingPermission;
     if (!pending) return;
 
-    const interpreted = interpretApprovalSpeech(text);
+    const interpreted = interpretApprovalSpeech(text, this.approvalPhrases);
 
     if (interpreted.intent === "unknown") {
       await this.speak("허용인지 거부인지 다시 말해줘.", "permission");
@@ -684,7 +686,7 @@ export class TerminalHarness {
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "approval",
-      text: approvalVisualText(permissionTarget, request)
+      text: approvalVisualText(permissionTarget, request, this.approvalPhrases)
     });
     this.codexStatus = {
       ...this.codexStatus,
@@ -1333,6 +1335,9 @@ export class TerminalHarness {
       case "clear_context":
       case "update_wake_phrases":
         return;
+      case "update_approval_phrases":
+        await this.updateApprovalPhrases(event.approvalPhrases ?? {});
+        return;
       case "reset_settings":
         await this.resetVisualSettings();
         return;
@@ -1418,6 +1423,7 @@ export class TerminalHarness {
       type: "settings",
       tts: this.currentVisualTtsSettings(),
       visual: this.currentVisualRuntimeSettings(),
+      approvalPhrases: this.currentVisualApprovalPhrases(),
       codexThreadId: this.codexThreadId ?? ""
     });
   }
@@ -1459,12 +1465,14 @@ export class TerminalHarness {
   private async resetVisualSettings(): Promise<void> {
     const applied = this.voiceOutput.updateSettings?.(defaultVisualTtsSettings()) ?? defaultVisualTtsSettings();
     this.visualSettings = defaultVisualRuntimeSettings();
+    this.approvalPhrases = approvalPhraseSet();
     await this.persistResetSettings();
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "settings",
       tts: visualTtsSettingsFromVoiceOutput(applied),
-      visual: this.currentVisualRuntimeSettings()
+      visual: this.currentVisualRuntimeSettings(),
+      approvalPhrases: this.currentVisualApprovalPhrases()
     });
     this.sendVisualEvent({
       op: "voice-agent-ui",
@@ -1483,6 +1491,22 @@ export class TerminalHarness {
     await this.persistSettings({
       visual: this.currentVisualRuntimeSettings()
     });
+  }
+
+  private async updateApprovalPhrases(phrases: VisualApprovalPhrases): Promise<void> {
+    this.approvalPhrases = approvalPhraseSet(phrases);
+    const approvalPhrases = this.currentVisualApprovalPhrases();
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      approvalPhrases
+    });
+    await this.persistSettings({
+      approvalPhrases
+    });
+    if (this.currentVisualState() === "approval_pending") {
+      this.sendVisualState("approval_pending");
+    }
   }
 
   private async updateCodexThreadId(threadId: string): Promise<void> {
@@ -1517,9 +1541,20 @@ export class TerminalHarness {
     };
   }
 
+  private currentVisualApprovalPhrases(): VisualApprovalPhrases {
+    return {
+      onceApprove: [...this.approvalPhrases.onceApprove],
+      deny: [...this.approvalPhrases.deny],
+      sessionApprove: [...this.approvalPhrases.sessionApprove],
+      policyApprove: [...this.approvalPhrases.policyApprove],
+      networkPolicyApprove: [...this.approvalPhrases.networkPolicyApprove]
+    };
+  }
+
   private async persistSettings(overrides: {
     tts?: ReturnType<typeof ttsFileConfigFromVisualSettings>;
     visual?: VoiceVisualFileConfig;
+    approvalPhrases?: ApprovalPhraseConfig;
     codexThreadId?: string | null;
   }): Promise<void> {
     try {
@@ -1595,7 +1630,7 @@ export class TerminalHarness {
   private currentApprovalVisualText(): string | undefined {
     const request = this.runtime?.getContext().pendingPermission ?? this.pendingPermission;
     if (!request) return undefined;
-    return approvalVisualText(request.command ? "명령" : "작업");
+    return approvalVisualText(request.command ? "명령" : "작업", request, this.approvalPhrases);
   }
 
   private printStartupBanner(): void {
@@ -2169,13 +2204,17 @@ function formatVisualPercent(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/u, "");
 }
 
-function approvalVisualText(permissionTarget: string, request?: PermissionRequest): string {
+function approvalVisualText(
+  permissionTarget: string,
+  request: PermissionRequest | undefined,
+  phrases: ApprovalPhraseSet
+): string {
   const lines = [
     permissionTarget === "네트워크" ? "네트워크 권한 필요해." : `${permissionTarget} 실행 권한 필요해.`,
-    `허용: ${onceApprovePhrases.join(" / ")}`,
-    `거부: ${denyPhrases.join(" / ")}`,
-    `세션 허용: ${sessionApprovePhrases.join(" / ")}`,
-    `계속 허용: ${policyApprovePhrases.join(" / ")}`
+    `허용: ${phrases.onceApprove.join(" / ")}`,
+    `거부: ${phrases.deny.join(" / ")}`,
+    `세션 허용: ${phrases.sessionApprove.join(" / ")}`,
+    `계속 허용: ${phrases.policyApprove.join(" / ")}`
   ];
 
   if (permissionTarget === "네트워크") {
@@ -2184,7 +2223,7 @@ function approvalVisualText(permissionTarget: string, request?: PermissionReques
     if (request?.rawText) lines.push(`사유: ${request.rawText}`);
     const choices = describeNativeChoices(request?.native?.availableDecisions);
     if (choices) lines.push(`Codex 선택지: ${choices}`);
-    lines.push(`네트워크 계속 허용: ${networkPolicyApprovePhrases.join(" / ")}`);
+    lines.push(`네트워크 계속 허용: ${phrases.networkPolicyApprove.join(" / ")}`);
   }
 
   return lines.join("\n");

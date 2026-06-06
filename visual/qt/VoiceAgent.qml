@@ -48,6 +48,9 @@ ApplicationWindow {
     property string responseLanguage: "auto"
     property bool speakWakeRejectedWarnings: true
     property var wakePhrases: []
+    property var approvalOncePhrases: []
+    property var approvalDenyPhrases: []
+    property var approvalSessionPhrases: []
     property string codexThreadId: ""
     property string voiceGuideText: "한국어\n1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\nEnglish\n1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn."
     property string referenceHelpText: "한국어: 파일명, URL, 조건 같은 참고자료만 적고 Add를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.\nEnglish: Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request."
@@ -99,6 +102,16 @@ ApplicationWindow {
                 type: "control",
                 action: "update_wake_phrases",
                 wakePhrases: root.parseWakePhrases(wakeField.text)
+            }))
+            socket.sendTextMessage(JSON.stringify({
+                op: "voice-agent-ui",
+                type: "control",
+                action: "update_approval_phrases",
+                approvalPhrases: {
+                    onceApprove: root.parseWakePhrases(approvalOnceField.text),
+                    deny: root.parseWakePhrases(approvalDenyField.text),
+                    sessionApprove: root.parseWakePhrases(approvalSessionField.text)
+                }
             }))
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
@@ -168,10 +181,20 @@ ApplicationWindow {
         if (wakeField) wakeField.text = root.wakePhrases.join("\n")
     }
 
+    function applyApprovalPhrases(phrases) {
+        root.approvalOncePhrases = root.normalizedPhrases((phrases && phrases.onceApprove) || [])
+        root.approvalDenyPhrases = root.normalizedPhrases((phrases && phrases.deny) || [])
+        root.approvalSessionPhrases = root.normalizedPhrases((phrases && phrases.sessionApprove) || [])
+        if (approvalOnceField) approvalOnceField.text = root.approvalOncePhrases.join("\n")
+        if (approvalDenyField) approvalDenyField.text = root.approvalDenyPhrases.join("\n")
+        if (approvalSessionField) approvalSessionField.text = root.approvalSessionPhrases.join("\n")
+    }
+
     function applyVisualSettings(event) {
         if (event.tts) root.applyTtsSettings(event.tts)
         if (event.visual) root.applyRuntimeVisualSettings(event.visual)
         if (event.wakePhrases) root.applyWakePhrases(event.wakePhrases)
+        if (event.approvalPhrases) root.applyApprovalPhrases(event.approvalPhrases)
         if (event.codexThreadId !== undefined) root.applyCodexThreadId(event.codexThreadId)
     }
 
@@ -1438,6 +1461,108 @@ ApplicationWindow {
                         id: wakeField
                         text: root.wakePhrases.join("\n")
                         placeholderText: "코덱스\n자비스\nhey jarvis"
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Approval allow phrases"
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 권한 요청에서 한 번 허용으로 처리할 문구입니다.\nEnglish: Phrases that approve once during permission prompts."
+                    }
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 64
+                    clip: true
+
+                    TextArea {
+                        id: approvalOnceField
+                        text: root.approvalOncePhrases.join("\n")
+                        placeholderText: "허용\n승인\napprove"
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Approval deny phrases"
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 unknown으로 처리될 수 있습니다.\nEnglish: Phrases that deny permission prompts. Overlaps can be treated as unknown."
+                    }
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 64
+                    clip: true
+
+                    TextArea {
+                        id: approvalDenyField
+                        text: root.approvalDenyPhrases.join("\n")
+                        placeholderText: "거부\n아니\ndeny"
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Session allow phrases"
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 현재 세션 동안 허용으로 처리할 문구입니다.\nEnglish: Phrases that approve for the current session."
+                    }
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 64
+                    clip: true
+
+                    TextArea {
+                        id: approvalSessionField
+                        text: root.approvalSessionPhrases.join("\n")
+                        placeholderText: "이번 세션 동안 허용\nalways allow"
                         selectByMouse: true
                         wrapMode: TextEdit.WrapAnywhere
                     }

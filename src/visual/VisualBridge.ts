@@ -26,6 +26,7 @@ export type VisualControlAction =
   | "emergency_stop"
   | "reset_settings"
   | "update_wake_phrases"
+  | "update_approval_phrases"
   | "update_codex_thread_id"
   | "update_visual_settings"
   | "update_tts_settings";
@@ -46,6 +47,14 @@ export interface VisualRuntimeSettings {
   hudEnabled?: boolean;
   speakWakeRejectedWarnings?: boolean;
   maxUtteranceSeconds?: number;
+}
+
+export interface VisualApprovalPhrases {
+  onceApprove?: string[];
+  deny?: string[];
+  sessionApprove?: string[];
+  policyApprove?: string[];
+  networkPolicyApprove?: string[];
 }
 
 export type VisualEvent =
@@ -114,6 +123,7 @@ export type VisualEvent =
       type: "settings";
       tts?: VisualTtsSettings;
       visual?: VisualRuntimeSettings;
+      approvalPhrases?: VisualApprovalPhrases;
       wakePhrases?: string[];
       codexThreadId?: string;
     };
@@ -125,6 +135,7 @@ export interface VisualControlEvent {
   text?: string;
   tts?: VisualTtsSettings;
   visual?: VisualRuntimeSettings;
+  approvalPhrases?: VisualApprovalPhrases;
   wakePhrases?: string[];
   codexThreadId?: string;
 }
@@ -246,10 +257,12 @@ export class VisualBridge implements VisualBridgeLike {
       type: "settings",
       ...(this.latestSettings?.tts !== undefined ? { tts: { ...this.latestSettings.tts } } : {}),
       ...(this.latestSettings?.visual !== undefined ? { visual: { ...this.latestSettings.visual } } : {}),
+      ...(this.latestSettings?.approvalPhrases !== undefined ? { approvalPhrases: cloneApprovalPhrases(this.latestSettings.approvalPhrases) } : {}),
       ...(this.latestSettings?.wakePhrases !== undefined ? { wakePhrases: [...this.latestSettings.wakePhrases] } : {}),
       ...(this.latestSettings?.codexThreadId !== undefined ? { codexThreadId: this.latestSettings.codexThreadId } : {}),
       ...(event.tts !== undefined ? { tts: { ...event.tts } } : {}),
       ...(event.visual !== undefined ? { visual: { ...event.visual } } : {}),
+      ...(event.approvalPhrases !== undefined ? { approvalPhrases: cloneApprovalPhrases(event.approvalPhrases) } : {}),
       ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {}),
       ...(event.codexThreadId !== undefined ? { codexThreadId: event.codexThreadId } : {})
     };
@@ -292,6 +305,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "emergency_stop" &&
     record.action !== "reset_settings" &&
     record.action !== "update_wake_phrases" &&
+    record.action !== "update_approval_phrases" &&
     record.action !== "update_codex_thread_id" &&
     record.action !== "update_tts_settings" &&
     record.action !== "update_visual_settings"
@@ -306,16 +320,48 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     ...(typeof record.text === "string" ? { text: record.text } : {}),
     ...(isRecord(record.tts) ? { tts: parseVisualTtsSettings(record.tts) } : {}),
     ...(isRecord(record.visual) ? { visual: parseVisualRuntimeSettings(record.visual) } : {}),
+    ...(isRecord(record.approvalPhrases) ? { approvalPhrases: parseVisualApprovalPhrases(record.approvalPhrases) } : {}),
     ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {}),
     ...(typeof record.codexThreadId === "string" ? { codexThreadId: record.codexThreadId.trim() } : {})
   };
 }
 
-function parseWakePhrases(values: unknown[]): string[] {
+function parsePhrases(values: unknown): string[] | undefined {
+  if (!Array.isArray(values)) return undefined;
   return values
     .filter((value): value is string => typeof value === "string")
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function parseWakePhrases(values: unknown[]): string[] {
+  return parsePhrases(values) ?? [];
+}
+
+function parseVisualApprovalPhrases(record: Record<string, unknown>): VisualApprovalPhrases {
+  const onceApprove = parsePhrases(record.onceApprove);
+  const deny = parsePhrases(record.deny);
+  const sessionApprove = parsePhrases(record.sessionApprove);
+  const policyApprove = parsePhrases(record.policyApprove);
+  const networkPolicyApprove = parsePhrases(record.networkPolicyApprove);
+
+  return {
+    ...(onceApprove !== undefined ? { onceApprove } : {}),
+    ...(deny !== undefined ? { deny } : {}),
+    ...(sessionApprove !== undefined ? { sessionApprove } : {}),
+    ...(policyApprove !== undefined ? { policyApprove } : {}),
+    ...(networkPolicyApprove !== undefined ? { networkPolicyApprove } : {})
+  };
+}
+
+function cloneApprovalPhrases(phrases: VisualApprovalPhrases): VisualApprovalPhrases {
+  return {
+    ...(phrases.onceApprove !== undefined ? { onceApprove: [...phrases.onceApprove] } : {}),
+    ...(phrases.deny !== undefined ? { deny: [...phrases.deny] } : {}),
+    ...(phrases.sessionApprove !== undefined ? { sessionApprove: [...phrases.sessionApprove] } : {}),
+    ...(phrases.policyApprove !== undefined ? { policyApprove: [...phrases.policyApprove] } : {}),
+    ...(phrases.networkPolicyApprove !== undefined ? { networkPolicyApprove: [...phrases.networkPolicyApprove] } : {})
+  };
 }
 
 function parseVisualTtsSettings(record: Record<string, unknown>): VisualTtsSettings {

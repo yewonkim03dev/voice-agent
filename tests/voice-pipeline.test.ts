@@ -1344,6 +1344,11 @@ test("voice local settings store persists overrides and reset restores factory d
     });
     await store.update({
       wakePhrases: ["자비스", "hey jarvis"],
+      approvalPhrases: {
+        onceApprove: ["진행"],
+        deny: ["그만"],
+        sessionApprove: ["오늘은 허용"]
+      },
       tts: {
         enabled: true,
         language: "ko",
@@ -1371,6 +1376,29 @@ test("voice local settings store persists overrides and reset restores factory d
     });
     assert.equal(await readCodexThreadId(join(cwd, configPath)), "thread_456");
     assert.deepEqual(updated.wakePhrases, ["hey jarvis", "자비스"]);
+    assert.deepEqual(updated.approvalPhrases, {
+      onceApprove: ["진행"],
+      deny: ["그만"],
+      sessionApprove: ["오늘은 허용"],
+      policyApprove: [
+        "같은 명령 계속 허용",
+        "앞으로 이 명령은 허용",
+        "이 명령 계속 허용",
+        "항상 이 명령 허용",
+        "remember this command"
+      ],
+      networkPolicyApprove: [
+        "같은 네트워크 계속 허용",
+        "이 네트워크 계속 허용",
+        "이 호스트 허용",
+        "이 호스트 계속 허용",
+        "깃허브 계속 허용",
+        "github 계속 허용",
+        "allow this host",
+        "allow this network",
+        "remember this host"
+      ]
+    });
     assert.deepEqual(updated.tts, {
       enabled: true,
       language: "ko",
@@ -1397,6 +1425,7 @@ test("voice local settings store persists overrides and reset restores factory d
       threadId: "thread_456"
     });
     assert.equal("wakePhrases" in reset, false);
+    assert.equal("approvalPhrases" in reset, false);
     assert.equal("tts" in reset, false);
     assert.deepEqual(reset.visual, {
       provider: "qtqml"
@@ -1408,6 +1437,7 @@ test("voice local settings store persists overrides and reset restores factory d
       configPath
     });
     assert.deepEqual(resolution.config?.wakePhrases, defaultWakePhrases);
+    assert.equal(resolution.config?.approvalPhrases, undefined);
     assert.equal(resolution.config?.tts, undefined);
   } finally {
     await rm(cwd, {
