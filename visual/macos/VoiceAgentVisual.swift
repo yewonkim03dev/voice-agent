@@ -535,11 +535,11 @@ final class VisualRootView: NSView {
 
         referenceHelpButton.title = "?"
         referenceHelpButton.helpText =
-            "한국어: 파일명, URL, 조건 같은 참고자료를 적고 Add를 누르세요. 다음 wake 요청에만 붙고 전송 후 비워집니다.\n\n" +
-            "English: Add filenames, URLs, or constraints here. They attach only to the next wake request and then clear."
+            "한국어: 파일명, URL, 조건 같은 참고자료만 적고 Add를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.\n\n" +
+            "English: Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request."
         commandPanel.addSubview(referenceHelpButton)
 
-        contextField.placeholderString = "/add reference text"
+        contextField.placeholderString = "reference text"
         contextField.font = NSFont.systemFont(ofSize: 13)
         commandPanel.addSubview(contextField)
 

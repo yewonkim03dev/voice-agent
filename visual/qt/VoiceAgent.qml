@@ -37,7 +37,7 @@ ApplicationWindow {
     property var wakePhrases: []
     property string codexThreadId: ""
     property string voiceGuideText: "한국어\n1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\nEnglish\n1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn."
-    property string referenceHelpText: "한국어: 파일명, URL, 조건 같은 참고자료를 적고 Add를 누르세요. 다음 wake 요청에만 붙고 전송 후 비워집니다.\nEnglish: Add filenames, URLs, or constraints here. They are attached only to the next wake request and then cleared."
+    property string referenceHelpText: "한국어: 파일명, URL, 조건 같은 참고자료만 적고 Add를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.\nEnglish: Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request."
 
     function argumentValue(name, fallback) {
         var args = Qt.application.arguments
@@ -781,7 +781,7 @@ ApplicationWindow {
                     TextField {
                         id: contextInput
                         Layout.fillWidth: true
-                        placeholderText: "/add reference text"
+                        placeholderText: "reference text"
                         selectByMouse: true
                         onAccepted: root.addContextFromInput()
                     }

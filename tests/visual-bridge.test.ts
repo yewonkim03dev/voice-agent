@@ -368,7 +368,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /add_context/u);
   assert.match(qml, /clear_context/u);
   assert.match(qml, /contextEntries/u);
-  assert.match(qml, /\/add reference text/u);
+  assert.match(qml, /placeholderText: "reference text"/u);
+  assert.match(qml, /Visual에서는 \/add를 붙이지 않아도/u);
   assert.doesNotMatch(qml, /WebView|WebEngine|Chromium|Electron|Tauri/iu);
 });
 
@@ -446,6 +447,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /References/u);
   assert.match(swift, /add_context/u);
   assert.match(swift, /clear_context/u);
+  assert.match(swift, /placeholderString = "reference text"/u);
+  assert.match(swift, /Visual에서는 \/add를 붙이지 않아도/u);
   assert.match(swift, /No references queued/u);
   assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);
 });
