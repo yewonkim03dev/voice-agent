@@ -1123,6 +1123,16 @@ ApplicationWindow {
                         model: ["auto", "ko", "en"]
                         currentIndex: root.indexOfValue(["auto", "ko", "en"], root.ttsLanguage)
                     }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: TTS와 응답 언어를 선택합니다.\nEnglish: Choose TTS and response language."
+                    }
                 }
 
                 RowLayout {
@@ -1140,6 +1150,16 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         model: ["auto", "female", "male"]
                         currentIndex: root.indexOfValue(["auto", "female", "male"], root.ttsGender)
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 가능한 경우 남성/여성 음성 선호도를 적용합니다.\nEnglish: Sets preferred voice gender when available."
                     }
                 }
 
@@ -1160,11 +1180,36 @@ ApplicationWindow {
                         text: root.ttsVoiceName
                         selectByMouse: true
                     }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 설치된 macOS 음성 이름을 직접 지정합니다.\nEnglish: Overrides the installed voice name."
+                    }
                 }
 
-                Text {
-                    text: "Rate " + rateSlider.value.toFixed(2)
-                    color: "#91a4bd"
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Rate " + rateSlider.value.toFixed(2)
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: TTS 말하기 속도입니다.\nEnglish: TTS speaking rate."
+                    }
                 }
 
                 Slider {
@@ -1176,9 +1221,24 @@ ApplicationWindow {
                     stepSize: 0.01
                 }
 
-                Text {
-                    text: "Pitch " + pitchSlider.value.toFixed(2)
-                    color: "#91a4bd"
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Pitch " + pitchSlider.value.toFixed(2)
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: TTS 음높이입니다.\nEnglish: TTS voice pitch."
+                    }
                 }
 
                 Slider {
@@ -1190,9 +1250,24 @@ ApplicationWindow {
                     stepSize: 0.01
                 }
 
-                Text {
-                    text: "Volume " + volumeSlider.value.toFixed(2)
-                    color: "#91a4bd"
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Volume " + volumeSlider.value.toFixed(2)
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: TTS 출력 볼륨입니다.\nEnglish: TTS output volume."
+                    }
                 }
 
                 Slider {
@@ -1204,9 +1279,24 @@ ApplicationWindow {
                     stepSize: 0.01
                 }
 
-                Text {
-                    text: "Thinking sound " + thinkingVolumeSlider.value.toFixed(2)
-                    color: "#91a4bd"
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Thinking sound " + thinkingVolumeSlider.value.toFixed(2)
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 작업 중 반복 효과음 볼륨입니다.\nEnglish: Thinking-loop sound volume."
+                    }
                 }
 
                 Slider {
@@ -1219,9 +1309,24 @@ ApplicationWindow {
                     onValueChanged: root.thinkingVolume = value
                 }
 
-                Text {
-                    text: "Max speech " + Math.round(maxUtteranceSlider.value) + "s"
-                    color: "#91a4bd"
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Max speech " + Math.round(maxUtteranceSlider.value) + "s"
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 한 번에 받을 발화 최대 길이입니다. 5초에서 55초 사이입니다.\nEnglish: Maximum utterance length, from 5 to 55 seconds."
+                    }
                 }
 
                 Slider {
@@ -1234,23 +1339,68 @@ ApplicationWindow {
                     onValueChanged: root.maxUtteranceSeconds = value
                 }
 
-                CheckBox {
-                    id: chatHistoryCheck
-                    text: "Show Recent Q/A panel"
-                    checked: root.chatHistoryEnabled
-                    onCheckedChanged: root.chatHistoryEnabled = checked
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    CheckBox {
+                        id: chatHistoryCheck
+                        Layout.fillWidth: true
+                        text: "Show Recent Q/A panel"
+                        checked: root.chatHistoryEnabled
+                        onCheckedChanged: root.chatHistoryEnabled = checked
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 최근 질문과 답변 패널 표시 여부입니다.\nEnglish: Shows or hides the Recent Q/A panel."
+                    }
                 }
 
-                CheckBox {
-                    id: wakeWarningCheck
-                    text: "Speak wake warning"
-                    checked: root.speakWakeRejectedWarnings
-                    onCheckedChanged: root.speakWakeRejectedWarnings = checked
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    CheckBox {
+                        id: wakeWarningCheck
+                        Layout.fillWidth: true
+                        text: "Speak wake warning"
+                        checked: root.speakWakeRejectedWarnings
+                        onCheckedChanged: root.speakWakeRejectedWarnings = checked
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: wake 명령어 불일치 안내를 TTS로 읽을지 정합니다.\nEnglish: Speaks or mutes wake mismatch warnings."
+                    }
                 }
 
-                Text {
-                    text: "Wake phrases replace list"
-                    color: "#91a4bd"
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Wake phrases replace list"
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 줄마다 하나씩 호출어를 입력하면 기존 목록을 대체합니다.\nEnglish: One wake phrase per line replaces the current list."
+                    }
                 }
 
                 ScrollView {
@@ -1272,12 +1422,26 @@ ApplicationWindow {
                     color: "#91a4bd"
                 }
 
-                TextField {
-                    id: codexThreadField
+                RowLayout {
                     Layout.fillWidth: true
-                    placeholderText: "019e..."
-                    text: root.codexThreadId
-                    selectByMouse: true
+
+                    TextField {
+                        id: codexThreadField
+                        Layout.fillWidth: true
+                        placeholderText: "019e..."
+                        text: root.codexThreadId
+                        selectByMouse: true
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 다음 재시작 때 이어갈 Codex thread id입니다.\nEnglish: Codex thread id to resume after restart."
+                    }
                 }
 
                 RowLayout {

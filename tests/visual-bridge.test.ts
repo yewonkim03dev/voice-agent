@@ -376,6 +376,10 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Speak wake warning/u);
   assert.match(qml, /Max speech/u);
   assert.match(qml, /maxUtteranceSeconds/u);
+  assert.match(qml, /ToolTip\.text: "한국어:/u);
+  assert.match(qml, /Maximum utterance length/u);
+  assert.match(qml, /Layout\.preferredWidth: 22/u);
+  assert.match(qml, /Layout\.preferredHeight: 22/u);
   assert.match(qml, /Wake phrases/u);
   assert.match(qml, /Codex thread id \(applies after restart\)/u);
   assert.match(qml, /id: codexThreadField/u);
@@ -497,6 +501,15 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsThinkingVolumeField/u);
   assert.match(swift, /settingsMaxUtteranceField/u);
   assert.match(swift, /Max Speech/u);
+  assert.match(swift, /NSTextFieldDelegate/u);
+  assert.match(swift, /settingsMaxUtteranceField\.delegate = self/u);
+  assert.match(swift, /func controlTextDidChange/u);
+  assert.match(swift, /field\.stringValue = "55"/u);
+  assert.match(swift, /addSettingsHelp/u);
+  assert.match(swift, /compact: true/u);
+  assert.match(swift, /bezelStyle = \.circular/u);
+  assert.match(swift, /width: 16, height: 16/u);
+  assert.match(swift, /한국어: 한 번에 받을 always-on 발화 최대 길이입니다/u);
   assert.match(swift, /settingsHudCheckbox/u);
   assert.match(swift, /Show floating HUD/u);
   assert.match(swift, /Thinking Fx/u);

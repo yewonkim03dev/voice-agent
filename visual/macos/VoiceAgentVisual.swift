@@ -1184,7 +1184,22 @@ final class HoverHelpButton: NSButton {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        configure(compact: false)
+    }
+
+    init(frame frameRect: NSRect, compact: Bool) {
+        super.init(frame: frameRect)
+        configure(compact: compact)
+    }
+
+    private func configure(compact: Bool) {
         bezelStyle = .helpButton
+        if compact {
+            bezelStyle = .circular
+            controlSize = .small
+            font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+            focusRingType = .none
+        }
         popover.behavior = .transient
     }
 
@@ -1541,7 +1556,7 @@ final class MenuBarCompanion {
     }
 }
 
-final class VisualAppDelegate: NSObject, NSApplicationDelegate {
+final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
     private weak var rootView: VisualRootView?
@@ -1977,27 +1992,41 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
+        settingsMaxUtteranceField.delegate = self
 
         addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 570)
+        addSettingsHelp(view, y: 570, text: "한국어: TTS와 응답 언어를 자동, 한국어, 영어 중 선택합니다.\n\nEnglish: Choose auto, Korean, or English for TTS and response language.")
         addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 530)
+        addSettingsHelp(view, y: 530, text: "한국어: 가능한 경우 남성/여성 음성 선호도를 적용합니다.\n\nEnglish: Sets preferred male or female voice when available.")
         addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 490)
+        addSettingsHelp(view, y: 490, text: "한국어: macOS에 설치된 특정 음성 이름을 직접 지정합니다.\n\nEnglish: Overrides the voice with an installed macOS voice name.")
         addSettingsRow(view, label: "Rate", control: settingsRateField, y: 450)
+        addSettingsHelp(view, y: 450, text: "한국어: TTS 말하기 속도입니다. 높을수록 빠르게 읽습니다.\n\nEnglish: TTS speaking rate. Higher values speak faster.")
         addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 410)
+        addSettingsHelp(view, y: 410, text: "한국어: TTS 음높이입니다. 기본값은 1.00입니다.\n\nEnglish: TTS voice pitch. The default is 1.00.")
         addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 370)
+        addSettingsHelp(view, y: 370, text: "한국어: TTS 출력 볼륨입니다.\n\nEnglish: TTS output volume.")
         addSettingsRow(view, label: "Thinking Fx", control: settingsThinkingVolumeField, y: 330)
+        addSettingsHelp(view, y: 330, text: "한국어: 작업 중 반복 효과음 볼륨입니다. 0이면 꺼집니다.\n\nEnglish: Thinking-loop sound volume. Set to 0 to mute it.")
         addSettingsRow(view, label: "Max Speech", control: settingsMaxUtteranceField, y: 290)
+        addSettingsHelp(view, y: 290, text: "한국어: 한 번에 받을 always-on 발화 최대 길이입니다. 5초에서 55초 사이입니다.\n\nEnglish: Maximum always-on utterance length, from 5 to 55 seconds.")
         addSettingsRow(view, label: "Codex Thread", control: settingsCodexThreadField, y: 250)
+        addSettingsHelp(view, y: 250, text: "한국어: 다음 재시작 때 이어갈 Codex thread id입니다.\n\nEnglish: Codex thread id to resume on next restart.")
         settingsChatHistoryCheckbox.frame = NSRect(x: 132, y: 220, width: 216, height: 22)
         view.addSubview(settingsChatHistoryCheckbox)
+        addSettingsHelp(view, y: 218, text: "한국어: 최근 질문과 답변 패널 표시 여부입니다.\n\nEnglish: Shows or hides the Recent Q/A panel.")
         settingsHudCheckbox.frame = NSRect(x: 132, y: 198, width: 216, height: 22)
         view.addSubview(settingsHudCheckbox)
+        addSettingsHelp(view, y: 196, text: "한국어: 다른 앱 위에 뜨는 floating HUD 표시 여부입니다.\n\nEnglish: Shows or hides the floating HUD above other apps.")
         settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 176, width: 216, height: 22)
         view.addSubview(settingsWakeRejectedWarningCheckbox)
+        addSettingsHelp(view, y: 174, text: "한국어: wake 명령어 불일치 안내를 TTS로 읽을지 정합니다.\n\nEnglish: Controls whether wake mismatch warnings are spoken aloud.")
 
         let wakeLabel = NSTextField(labelWithString: "Wake")
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
         wakeLabel.frame = NSRect(x: 26, y: 146, width: 96, height: 20)
         view.addSubview(wakeLabel)
+        addSettingsHelp(view, y: 142, text: "한국어: 호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.\n\nEnglish: Wake phrase list. One phrase per line replaces the current list.")
 
         let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 86, width: 216, height: 72))
         wakeScroll.borderType = .bezelBorder
@@ -2025,9 +2054,16 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         let labelView = NSTextField(labelWithString: label)
         labelView.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
         labelView.frame = NSRect(x: 26, y: y + 4, width: 96, height: 20)
-        control.frame = NSRect(x: 132, y: y, width: 216, height: 26)
+        control.frame = NSRect(x: 132, y: y, width: 206, height: 26)
         view.addSubview(labelView)
         view.addSubview(control)
+    }
+
+    private func addSettingsHelp(_ view: NSView, y: CGFloat, text: String) {
+        let help = HoverHelpButton(frame: NSRect(x: 352, y: y + 5, width: 16, height: 16), compact: true)
+        help.title = "?"
+        help.helpText = text
+        view.addSubview(help)
     }
 
     private func syncSettingsControls() {
@@ -2044,6 +2080,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         settingsWakeRejectedWarningCheckbox.state = speakWakeRejectedWarnings ? .on : .off
         settingsCodexThreadField.stringValue = codexThreadId
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field === settingsMaxUtteranceField else { return }
+
+        let raw = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Double(raw), value > 55 else { return }
+        field.stringValue = "55"
     }
 
     private func sendTtsSettings() {
