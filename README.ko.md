@@ -6,6 +6,8 @@ Voice Agent는 Codex를 대화형 로컬 코딩 에이전트처럼 쓰기 위한
 
 핵심 원칙은 pass-through입니다. 로컬 레이어는 코딩 의도를 직접 분류하지 않고, wake/STT/TTS/visual/approval bridge만 담당합니다. 일반 명령은 그대로 Codex 또는 Claude backend로 전달됩니다.
 
+![Voice Agent visual companion 및 floating HUD](./docs/voice-agent.png)
+
 ## macOS 빠른 시작
 
 필요한 것:

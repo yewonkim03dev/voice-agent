@@ -8,6 +8,8 @@ The local layer is intentionally thin: it handles voice I/O, wake phrases, STT/T
 
 Korean documentation is available in [`README.ko.md`](./README.ko.md).
 
+![Voice Agent visual companion and floating HUD](./docs/voice-agent.png)
+
 ## macOS Quick Start
 
 Prerequisites:
