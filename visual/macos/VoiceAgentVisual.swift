@@ -1236,10 +1236,130 @@ final class HoverHelpButton: NSButton {
     }
 }
 
+final class MenuBarCompanion {
+    private var statusItem: NSStatusItem?
+    private let popover = NSPopover()
+    private let stateLabel = NSTextField(labelWithString: "idle")
+    private let detailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
+    private let questionLabel = NSTextField(wrappingLabelWithString: "Q: none")
+    private var onStop: (() -> Void)?
+    private var onTtsStop: (() -> Void)?
+    private var onShowWindow: (() -> Void)?
+
+    func install(onStop: @escaping () -> Void, onTtsStop: @escaping () -> Void, onShowWindow: @escaping () -> Void) {
+        self.onStop = onStop
+        self.onTtsStop = onTtsStop
+        self.onShowWindow = onShowWindow
+
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.title = "VA idle"
+        item.button?.target = self
+        item.button?.action = #selector(togglePopover(_:))
+        item.button?.toolTip = "Voice Agent"
+        statusItem = item
+
+        popover.behavior = .transient
+        popover.contentViewController = NSViewController()
+        popover.contentViewController?.view = makePopoverView()
+    }
+
+    func update(state: String, text: String) {
+        statusItem?.button?.title = "VA \(compactState(state))"
+        stateLabel.stringValue = state
+        detailLabel.stringValue = text.isEmpty ? state : text
+    }
+
+    func updateQuestion(_ question: String) {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        questionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
+    }
+
+    func updateMessage(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        detailLabel.stringValue = trimmed
+    }
+
+    @objc private func togglePopover(_ sender: Any?) {
+        guard let button = statusItem?.button else { return }
+
+        if popover.isShown {
+            popover.performClose(sender)
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
+    @objc private func stopAgent() {
+        onStop?()
+    }
+
+    @objc private func stopTts() {
+        onTtsStop?()
+    }
+
+    @objc private func showWindow() {
+        onShowWindow?()
+    }
+
+    private func makePopoverView() -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 188))
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 1).cgColor
+
+        let title = NSTextField(labelWithString: "Voice Agent")
+        title.font = NSFont.systemFont(ofSize: 16, weight: .bold)
+        title.textColor = NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1)
+        title.frame = NSRect(x: 16, y: 150, width: 288, height: 22)
+        view.addSubview(title)
+
+        stateLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+        stateLabel.textColor = NSColor(calibratedRed: 0.53, green: 0.78, blue: 1.0, alpha: 1)
+        stateLabel.frame = NSRect(x: 16, y: 126, width: 288, height: 18)
+        view.addSubview(stateLabel)
+
+        detailLabel.font = NSFont.systemFont(ofSize: 12)
+        detailLabel.textColor = NSColor(calibratedRed: 0.82, green: 0.87, blue: 0.94, alpha: 1)
+        detailLabel.frame = NSRect(x: 16, y: 78, width: 288, height: 44)
+        view.addSubview(detailLabel)
+
+        questionLabel.font = NSFont.systemFont(ofSize: 12)
+        questionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
+        questionLabel.frame = NSRect(x: 16, y: 50, width: 288, height: 24)
+        view.addSubview(questionLabel)
+
+        let stop = NSButton(title: "STOP", target: self, action: #selector(stopAgent))
+        stop.frame = NSRect(x: 16, y: 14, width: 76, height: 28)
+        view.addSubview(stop)
+
+        let ttsStop = NSButton(title: "TTS Stop", target: self, action: #selector(stopTts))
+        ttsStop.frame = NSRect(x: 102, y: 14, width: 88, height: 28)
+        view.addSubview(ttsStop)
+
+        let show = NSButton(title: "Show", target: self, action: #selector(showWindow))
+        show.frame = NSRect(x: 200, y: 14, width: 88, height: 28)
+        view.addSubview(show)
+
+        return view
+    }
+
+    private func compactState(_ state: String) -> String {
+        switch state {
+        case "approval_pending": return "approval"
+        case "stt_processing": return "stt"
+        case "wake_rejected": return "rejected"
+        case "wake_matched": return "wake"
+        default: return state
+        }
+    }
+}
+
 final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
     private weak var rootView: VisualRootView?
+    private var mainWindow: NSWindow?
+    private let menuBarCompanion = MenuBarCompanion()
     private let commandView = NSTextView(frame: .zero)
     private let contextField = NSTextField(string: "")
     private let contextSummary = NSTextField(labelWithString: "No references queued")
@@ -1285,8 +1405,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Voice Agent"
         window.center()
         window.contentView = buildContentView()
+        mainWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        menuBarCompanion.install(
+            onStop: { [weak self] in self?.sendControl("emergency_stop") },
+            onTtsStop: { [weak self] in self?.sendControl("tts_stop") },
+            onShowWindow: { [weak self] in self?.showMainWindow() }
+        )
         connect()
     }
 
@@ -1338,6 +1464,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         return rootView
     }
 
+    private func showMainWindow() {
+        mainWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     private func button(_ title: String, action: Selector) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
         button.bezelStyle = .rounded
@@ -1359,14 +1490,17 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private func connect() {
         guard let url = URL(string: bridgeUrl), !bridgeUrl.isEmpty else {
             circleView.statusText = "waiting for bridge"
+            menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             return
         }
 
         circleView.statusText = "connecting"
+        menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
         let task = URLSession.shared.webSocketTask(with: url)
         webSocket = task
         task.resume()
         circleView.statusText = "connected"
+        menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
         receiveNext()
     }
 
@@ -1384,6 +1518,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     self.circleView.state = "error"
                     self.circleView.statusText = "bridge disconnected"
+                    self.menuBarCompanion.update(state: "error", text: "bridge disconnected")
                     self.thinkingPulseSound.setActive(false)
                 }
             }
@@ -1402,12 +1537,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         case "state":
             circleView.state = event["state"] as? String ?? "idle"
             circleView.statusText = event["text"] as? String ?? circleView.state
+            menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             if circleView.state == "wake_rejected" {
                 circleView.glow = 1
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) { [weak self] in
                     guard let self, self.circleView.state == "wake_rejected" else { return }
                     self.circleView.state = "idle"
                     self.circleView.statusText = "idle"
+                    self.menuBarCompanion.update(state: "idle", text: "idle")
                     self.circleView.glow = 0
                 }
             }
@@ -1417,35 +1554,42 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         case "wake":
             circleView.state = "wake_matched"
             circleView.statusText = "wake: \(event["phrase"] as? String ?? "")"
+            menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             circleView.glow = 1
             NSSound.beep()
         case "question":
             let question = event["text"] as? String ?? ""
             rootView?.updateQuestion(question)
             rootView?.pushChat(role: "user", kind: "question", text: question)
+            menuBarCompanion.updateQuestion(question)
         case "command":
             let command = event["text"] as? String ?? ""
             pushCommand(command)
             rootView?.pushChat(role: "assistant", kind: "command", text: command)
+            menuBarCompanion.updateMessage(command)
         case "speech":
             circleView.state = "speaking"
             let speech = event["text"] as? String ?? "speaking"
             circleView.statusText = speech
             rootView?.pushChat(role: "assistant", kind: "speech", text: speech)
+            menuBarCompanion.update(state: "speaking", text: speech)
         case "status":
             let status = event["text"] as? String ?? "status"
             circleView.statusText = status
             rootView?.pushChat(role: "assistant", kind: "status", text: status)
+            menuBarCompanion.update(state: circleView.state, text: status)
         case "error":
             circleView.state = "error"
             let error = event["text"] as? String ?? "error"
             circleView.statusText = error
             rootView?.pushChat(role: "assistant", kind: "error", text: error)
+            menuBarCompanion.update(state: "error", text: error)
         case "approval":
             circleView.state = "approval_pending"
             let approval = event["text"] as? String ?? "approval pending"
             circleView.statusText = approval
             rootView?.pushChat(role: "assistant", kind: "status", text: approval)
+            menuBarCompanion.update(state: "approval_pending", text: approval)
         case "context":
             updateContext(event["entries"] as? [String] ?? [])
         case "settings":

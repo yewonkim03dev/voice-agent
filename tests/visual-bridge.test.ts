@@ -485,6 +485,14 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /"thinkingVolume": thinkingVolume/u);
   assert.match(swift, /"responseLanguage": responseLanguage/u);
   assert.match(swift, /final class HoverHelpButton/u);
+  assert.match(swift, /final class MenuBarCompanion/u);
+  assert.match(swift, /NSStatusBar\.system\.statusItem/u);
+  assert.match(swift, /item\.button\?\.title = "VA idle"/u);
+  assert.match(swift, /func update\(state: String, text: String\)/u);
+  assert.match(swift, /func updateQuestion\(_ question: String\)/u);
+  assert.match(swift, /private let menuBarCompanion = MenuBarCompanion\(\)/u);
+  assert.match(swift, /menuBarCompanion\.install/u);
+  assert.match(swift, /menuBarCompanion\.update\(state: circleView\.state, text: circleView\.statusText\)/u);
   assert.match(swift, /NSPopover/u);
   assert.match(swift, /referenceHelpButton/u);
   assert.match(swift, /guideButton/u);
