@@ -1237,6 +1237,11 @@ final class HoverHelpButton: NSButton {
     }
 }
 
+final class FloatingHudPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 final class MenuBarCompanion {
     private var statusItem: NSStatusItem?
     private var hudPanel: NSPanel?
@@ -1247,7 +1252,7 @@ final class MenuBarCompanion {
     private let hudCircle = AgentCircleView(frame: .zero)
     private let hudStateLabel = NSTextField(labelWithString: "idle")
     private let hudDetailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
-    private let hudQuestionLabel = NSTextField(wrappingLabelWithString: "Q: none")
+    private let hudQuestionLabel = NSTextField(wrappingLabelWithString: "")
     private let hudContextField = NSTextField(string: "")
     private let hudContextSummary = NSTextField(labelWithString: "No references queued")
     private var onStop: (() -> Void)?
@@ -1306,7 +1311,7 @@ final class MenuBarCompanion {
     func updateQuestion(_ question: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         questionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
-        hudQuestionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
+        hudQuestionLabel.stringValue = trimmed.isEmpty ? "" : "Q: \(trimmed)"
     }
 
     func updateContext(_ entries: [String]) {
@@ -1371,9 +1376,9 @@ final class MenuBarCompanion {
 
         if hudPanel == nil {
             let size = NSSize(width: 326, height: 224)
-            let panel = NSPanel(
+            let panel = FloatingHudPanel(
                 contentRect: NSRect(origin: .zero, size: size),
-                styleMask: [.borderless, .nonactivatingPanel],
+                styleMask: [.borderless],
                 backing: .buffered,
                 defer: false
             )
@@ -1484,6 +1489,8 @@ final class MenuBarCompanion {
 
         hudContextField.placeholderString = "reference text"
         hudContextField.font = NSFont.systemFont(ofSize: 11)
+        hudContextField.isEditable = true
+        hudContextField.isSelectable = true
         hudContextField.target = self
         hudContextField.action = #selector(addContext)
         hudContextField.frame = NSRect(x: 14, y: 40, width: 188, height: 22)
