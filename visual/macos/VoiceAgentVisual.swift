@@ -71,29 +71,29 @@ final class AgentCircleView: NSView {
         }
         drawInnerGuide(center: center, radius: baseRadius - 26)
 
+        let expandedText = bounds.width >= 320 || bounds.height >= 320
+        let compactStateText = !expandedText && state != "approval_pending" && state != "wake_rejected"
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        paragraph.lineBreakMode = .byWordWrapping
-        let fontSize: CGFloat = state == "approval_pending" || state == "wake_rejected" ? 13 : state == "speaking" ? 20 : 15
+        paragraph.lineBreakMode = compactStateText ? .byTruncatingTail : .byWordWrapping
+        let fontSize: CGFloat = state == "approval_pending" || state == "wake_rejected" ? 13 : 15
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: state == "speaking" || state == "wake_rejected" ? .semibold : .medium),
+            .font: NSFont.systemFont(ofSize: fontSize, weight: state == "wake_rejected" ? .semibold : .medium),
             .foregroundColor: NSColor(calibratedRed: 0.86, green: 0.89, blue: 0.94, alpha: 1),
             .paragraphStyle: paragraph
         ]
-        let expandedText = bounds.width >= 320 || bounds.height >= 320
         let textHeight = state == "approval_pending"
             ? min(max(bounds.height * 0.46, 156), 240)
             : state == "wake_rejected"
                 ? min(max(bounds.height * 0.38, 128), 198)
-            : state == "speaking"
-                ? min(max(bounds.height * 0.34, 112), 174)
-                : expandedText ? min(max(bounds.height * 0.34, 92), 150) : min(max(bounds.height * 0.18, 56), 78)
-        let textRect = NSRect(x: 24, y: 16, width: bounds.width - 48, height: textHeight)
+            : expandedText ? min(max(bounds.height * 0.34, 92), 150) : min(max(bounds.height * 0.18, 56), 78)
+        let textInset: CGFloat = compactStateText ? 8 : 24
+        let textRect = NSRect(x: textInset, y: 16, width: bounds.width - textInset * 2, height: textHeight)
         var options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
         if !expandedText && state != "wake_rejected" {
             options.insert(.truncatesLastVisibleLine)
         }
-        if (state == "speaking" || state == "approval_pending" || state == "wake_rejected"), !statusText.isEmpty {
+        if (state == "approval_pending" || state == "wake_rejected"), !statusText.isEmpty {
             let backdropRect = textRect.insetBy(dx: -6, dy: -10)
             NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.82).setFill()
             NSBezierPath(roundedRect: backdropRect, xRadius: 12, yRadius: 12).fill()
@@ -101,8 +101,6 @@ final class AgentCircleView: NSView {
                 NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.36, alpha: 0.68).setStroke()
             } else if state == "wake_rejected" {
                 NSColor(calibratedRed: 1.0, green: 0.24, blue: 0.37, alpha: 0.72).setStroke()
-            } else {
-                NSColor(calibratedRed: 0.12, green: 0.19, blue: 0.27, alpha: 0.72).setStroke()
             }
             NSBezierPath(roundedRect: backdropRect, xRadius: 12, yRadius: 12).stroke()
         }
@@ -1275,7 +1273,7 @@ final class MenuBarCompanion {
         stateLabel.stringValue = state
         detailLabel.stringValue = text.isEmpty ? state : text
         hudCircle.state = state
-        hudCircle.statusText = text.isEmpty ? state : text
+        hudCircle.statusText = state
         hudStateLabel.stringValue = state
         hudDetailLabel.stringValue = text.isEmpty ? state : text
     }

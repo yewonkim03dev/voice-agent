@@ -456,10 +456,15 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /commandPanel\.frame/u);
   assert.match(swift, /circleView\.frame/u);
   assert.match(swift, /let maxCircle: CGFloat = expanded \? 720 : 360/u);
-  assert.match(swift, /lineBreakMode = \.byWordWrapping/u);
+  assert.match(swift, /let compactStateText = !expandedText && state != "approval_pending" && state != "wake_rejected"/u);
+  assert.match(swift, /lineBreakMode = compactStateText \? \.byTruncatingTail : \.byWordWrapping/u);
   assert.match(swift, /usesLineFragmentOrigin/u);
+  assert.match(swift, /let textInset: CGFloat = compactStateText \? 8 : 24/u);
+  assert.match(swift, /width: bounds\.width - textInset \* 2/u);
   assert.match(swift, /roundedRect: backdropRect/u);
-  assert.match(swift, /state == "approval_pending" \|\| state == "wake_rejected" \? 13 : state == "speaking" \? 20 : 15/u);
+  assert.match(swift, /state == "approval_pending" \|\| state == "wake_rejected" \? 13 : 15/u);
+  assert.doesNotMatch(swift, /state == "speaking" \? 20/u);
+  assert.doesNotMatch(swift, /state == "speaking" \|\| state == "approval_pending" \|\| state == "wake_rejected"/u);
   assert.match(swift, /state == "approval_pending"/u);
   assert.match(swift, /state == "wake_rejected"/u);
   assert.match(swift, /if !expandedText && state != "wake_rejected"/u);
@@ -495,6 +500,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /hudCircle = AgentCircleView\(frame: \.zero\)/u);
   assert.match(swift, /func updateVolume\(rms: CGFloat, peak: CGFloat\)/u);
   assert.match(swift, /func update\(state: String, text: String\)/u);
+  assert.match(swift, /hudCircle\.statusText = state/u);
+  assert.doesNotMatch(swift, /hudCircle\.statusText = text\.isEmpty \? state : text/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
   const hudUpdateMessage = swift.match(/func updateMessage\(_ text: String\) \{[\s\S]*?\n    \}/u);
   assert.ok(hudUpdateMessage);
