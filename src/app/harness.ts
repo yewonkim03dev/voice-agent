@@ -5,12 +5,13 @@ import { fileURLToPath } from "node:url";
 
 import { ClaudeCodeBackend } from "../claude/ClaudeCodeBackend.ts";
 import type { AgentBackend, CodexProcessConfig } from "../codex/CodexBridge.ts";
-import { CodexAppServerBackend } from "../codex/CodexAppServerBackend.ts";
+import { CodexAppServerBackend, type CodexApprovalPolicy } from "../codex/CodexAppServerBackend.ts";
 import { initialCodexStatus, type CodexOutputEvent, type CodexStatus } from "../codex/CodexOutputEvent.ts";
 import type { CodexPrompt } from "../codex/CodexPrompt.ts";
 import {
   denyPhrases,
   interpretApprovalSpeech,
+  networkPolicyApprovePhrases,
   onceApprovePhrases,
   policyApprovePhrases,
   sessionApprovePhrases
@@ -624,7 +625,7 @@ export class TerminalHarness {
 
   private async activatePendingPermission(request: PermissionRequest): Promise<void> {
     this.pendingPermission = request;
-    const permissionTarget = request.command ? "명령" : "작업";
+    const permissionTarget = permissionTargetLabel(request);
     if (request.command) {
       this.sendVisualEvent({
         op: "voice-agent-ui",
@@ -635,7 +636,7 @@ export class TerminalHarness {
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "approval",
-      text: approvalVisualText(permissionTarget)
+      text: approvalVisualText(permissionTarget, request)
     });
     this.codexStatus = {
       ...this.codexStatus,
@@ -643,12 +644,17 @@ export class TerminalHarness {
       currentTool: request.tool
     };
     this.passthroughState = "CONFIRMING";
-    await this.speak(`${permissionTarget} 실행 권한 필요해. 허용할까?`, "permission");
+    await this.speak(permissionPromptText(permissionTarget), "permission");
     this.passthroughState = "CONFIRMING";
   }
 
   private async handlePassthroughOutput(output: CodexOutputEvent): Promise<void> {
     const text = output.text ?? output.raw ?? "";
+
+    if (output.type === "approval_resolved") {
+      this.clearResolvedPendingPermission(text);
+      return;
+    }
 
     if (output.type === "task_complete") {
       await this.flushPassthroughOutputBuffers(output.sessionId);
@@ -930,6 +936,19 @@ export class TerminalHarness {
   private clearPendingPermissions(): void {
     this.pendingPermission = undefined;
     this.pendingPermissionQueue.length = 0;
+  }
+
+  private clearResolvedPendingPermission(requestId: string): void {
+    if (!requestId) return;
+
+    if (this.pendingPermission?.id === requestId) {
+      this.pendingPermission = undefined;
+      void this.activateNextPendingPermission();
+      return;
+    }
+
+    const index = this.pendingPermissionQueue.findIndex((request) => request.id === requestId);
+    if (index !== -1) this.pendingPermissionQueue.splice(index, 1);
   }
 
   private markCurrentPassthroughSessionInterrupted(): void {
@@ -1476,6 +1495,7 @@ export interface HarnessCliOptions {
   backendMode: "mock" | "codex" | "claude";
   codexCommand: string;
   codexArgs: string[];
+  codexApprovalPolicy?: CodexApprovalPolicy;
   codexThreadId?: string;
   claudeCommand: string;
   cwd: string;
@@ -1490,6 +1510,7 @@ export function createTerminalHarnessFromArgs(
 
   if (cli.backendMode === "codex") {
     const codexThreadId = parseOptionalThreadId(cli.codexThreadId ?? options.codexThreadId);
+    const codexApprovalPolicy = resolveCodexApprovalPolicy(cli.codexApprovalPolicy, options.env);
 
     return new TerminalHarness({
       ...options,
@@ -1507,6 +1528,7 @@ export function createTerminalHarnessFromArgs(
         now: options.now,
         writeLine: options.writeLine,
         threadId: codexThreadId,
+        approvalPolicy: codexApprovalPolicy,
         threadStore: createCodexThreadStore({
           cwd: cli.cwd,
           env: options.env
@@ -1548,6 +1570,7 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
   const extraCodexArgs = separator === -1 ? [] : args.slice(separator + 1);
   let backendMode: HarnessCliOptions["backendMode"] = "mock";
   let codexCommand = "codex";
+  let codexApprovalPolicy: CodexApprovalPolicy | undefined;
   let codexThreadId: string | undefined;
   let claudeCommand = "claude";
   let cwd = defaultCwd;
@@ -1572,6 +1595,9 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
         break;
       case "--codex-thread-id":
         codexThreadId = requiredValue(harnessArgs, ++index, "--codex-thread-id");
+        break;
+      case "--codex-approval-policy":
+        codexApprovalPolicy = parseRequiredCodexApprovalPolicy(requiredValue(harnessArgs, ++index, "--codex-approval-policy"));
         break;
       case "--claude-command":
         claudeCommand = requiredValue(harnessArgs, ++index, "--claude-command");
@@ -1649,6 +1675,7 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
     backendMode,
     codexCommand,
     codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", ...extraCodexArgs],
+    ...(codexApprovalPolicy ? { codexApprovalPolicy } : {}),
     ...(codexThreadId ? { codexThreadId } : {}),
     claudeCommand,
     cwd,
@@ -1736,6 +1763,31 @@ function requiredValue(args: string[], index: number, option: string): string {
 
 function parseOptionalThreadId(value: string | undefined): string | undefined {
   return value?.trim() || undefined;
+}
+
+function resolveCodexApprovalPolicy(cliValue: CodexApprovalPolicy | undefined, env: NodeJS.ProcessEnv | undefined): CodexApprovalPolicy {
+  const envValue = parseCodexApprovalPolicy(env?.VOICE_AGENT_CODEX_APPROVAL_POLICY ?? process.env.VOICE_AGENT_CODEX_APPROVAL_POLICY);
+  return cliValue ?? envValue ?? "on-request";
+}
+
+function parseRequiredCodexApprovalPolicy(value: string): CodexApprovalPolicy {
+  const policy = parseCodexApprovalPolicy(value);
+  if (!policy) throw new Error(`Unsupported --codex-approval-policy value: ${value}.`);
+  return policy;
+}
+
+function parseCodexApprovalPolicy(value: string | undefined): CodexApprovalPolicy | undefined {
+  const normalized = value?.trim();
+  if (
+    normalized === "on-request" ||
+    normalized === "untrusted" ||
+    normalized === "on-failure" ||
+    normalized === "never"
+  ) {
+    return normalized;
+  }
+
+  return undefined;
 }
 
 function parseRequiredTtsProvider(value: string): NonNullable<TtsCliOptions["provider"]> {
@@ -1853,6 +1905,8 @@ function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["inten
       return "session";
     case "approve_policy":
       return "tool";
+    case "approve_network_policy":
+      return "network";
     case "approve_once":
     case "deny":
     case "unknown":
@@ -1880,6 +1934,10 @@ function unsupportedApprovalGuidance(
 
   if (intent === "approve_policy" && !supportsNativeDecision(decisions, "acceptWithExecpolicyAmendment")) {
     return "이번 요청은 같은 명령 계속 허용을 지원하지 않아. 한 번만 허용하려면 허용, 거부하려면 거부라고 말해줘.";
+  }
+
+  if (intent === "approve_network_policy" && !supportsNativeDecision(decisions, "applyNetworkPolicyAmendment")) {
+    return "이번 요청은 같은 네트워크 계속 허용을 지원하지 않아. 한 번만 허용하려면 허용, 세션 동안 허용하려면 이번 세션 동안 허용, 거부하려면 거부라고 말해줘.";
   }
 
   return `${formatError(error)} 다시 말해줘.`;
@@ -1920,14 +1978,72 @@ function statusToVisualState(task: CodexStatus["task"]): VisualUiState {
   }
 }
 
-function approvalVisualText(permissionTarget: string): string {
-  return [
-    `${permissionTarget} 실행 권한 필요해.`,
+function approvalVisualText(permissionTarget: string, request?: PermissionRequest): string {
+  const lines = [
+    permissionTarget === "네트워크" ? "네트워크 권한 필요해." : `${permissionTarget} 실행 권한 필요해.`,
     `허용: ${onceApprovePhrases.join(" / ")}`,
     `거부: ${denyPhrases.join(" / ")}`,
     `세션 허용: ${sessionApprovePhrases.join(" / ")}`,
     `계속 허용: ${policyApprovePhrases.join(" / ")}`
-  ].join("\n");
+  ];
+
+  if (permissionTarget === "네트워크") {
+    const host = parseNativeNetworkHost(request);
+    if (host) lines.push(`대상: ${host}`);
+    if (request?.rawText) lines.push(`사유: ${request.rawText}`);
+    const choices = describeNativeChoices(request?.native?.availableDecisions);
+    if (choices) lines.push(`Codex 선택지: ${choices}`);
+    lines.push(`네트워크 계속 허용: ${networkPolicyApprovePhrases.join(" / ")}`);
+  }
+
+  return lines.join("\n");
+}
+
+function permissionPromptText(permissionTarget: string): string {
+  if (permissionTarget === "네트워크") return "네트워크 권한이 필요해. 허용할까?";
+  return `${permissionTarget} 실행 권한 필요해. 허용할까?`;
+}
+
+function permissionTargetLabel(request: PermissionRequest): string {
+  if (isNativeNetworkPermissionRequest(request)) return "네트워크";
+  return request.command ? "명령" : "작업";
+}
+
+function isNativeNetworkPermissionRequest(request: PermissionRequest): boolean {
+  const native = request.native;
+  if (!native) return false;
+
+  return (
+    request.action.includes("network") ||
+    hasEnabledNetworkPermission(native.additionalPermissions) ||
+    hasEnabledNetworkPermission(native.requestedPermissions) ||
+    Object.keys(asRecord(native.networkApprovalContext)).length > 0 ||
+    (native.proposedNetworkPolicyAmendments?.length ?? 0) > 0 ||
+    /\b(network|dns|host|github|connection|connect|internet)\b|네트워크|디엔에스|깃허브|호스트|접속|연결/iu.test(request.rawText)
+  );
+}
+
+function hasEnabledNetworkPermission(value: unknown): boolean {
+  const permissions = asRecord(value);
+  const network = asRecord(permissions.network);
+  return network.enabled === true;
+}
+
+function parseNativeNetworkHost(request: PermissionRequest | undefined): string | undefined {
+  const host = asRecord(request?.native?.networkApprovalContext).host;
+  return typeof host === "string" && host.trim() ? host.trim() : undefined;
+}
+
+function describeNativeChoices(decisions: unknown[] | undefined): string | undefined {
+  if (!decisions || decisions.length === 0) return undefined;
+
+  return decisions
+    .map((decision) => {
+      if (typeof decision === "string") return decision;
+      const record = asRecord(decision);
+      return String(record.decision ?? record.type ?? record.name ?? Object.keys(record)[0] ?? "unknown");
+    })
+    .join(", ");
 }
 
 function runtimeStateToVisualState(state: AgentState): VisualUiState {

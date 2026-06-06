@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
+import { createTerminalHarnessFromArgs, InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
 import type { VoiceLocalSettingsOverride, VoiceSettingsPersistence } from "../src/app/voice-config.ts";
 import {
   parseVoiceAgentEventLine,
@@ -364,6 +364,35 @@ test("parses a fixed Codex thread id without forwarding it to app-server", () =>
   });
 });
 
+test("parses Codex approval policy without forwarding it to app-server args", () => {
+  assert.deepEqual(parseHarnessCliArgs(["--codex", "--codex-approval-policy", "on-failure", "-c", "model=\"gpt\""], "/repo"), {
+    backendMode: "codex",
+    codexCommand: "codex",
+    codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", "-c", "model=\"gpt\""],
+    codexApprovalPolicy: "on-failure",
+    claudeCommand: "claude",
+    cwd: "/repo"
+  });
+});
+
+test("rejects unsupported Codex approval policy values", () => {
+  assert.throws(
+    () => parseHarnessCliArgs(["--codex", "--codex-approval-policy", "full-auto"], "/repo"),
+    /Unsupported --codex-approval-policy value/u
+  );
+});
+
+test("uses Codex approval policy from env when CLI flag is omitted", () => {
+  const harness = createTerminalHarnessFromArgs(["--codex"], {
+    env: {
+      VOICE_AGENT_CODEX_APPROVAL_POLICY: "never"
+    },
+    cwd: "/repo"
+  });
+
+  assert.equal((harness.backend as unknown as { approvalPolicy: string }).approvalPolicy, "never");
+});
+
 test("parses Claude harness mode", () => {
   assert.deepEqual(parseHarnessCliArgs(["--claude", "--claude-command", "claude-dev"], "/repo"), {
     backendMode: "claude",
@@ -585,6 +614,45 @@ test("pass-through queues simultaneous native approvals and advances one at a ti
   await harness.processLine("허용");
 
   assert.deepEqual(backend.permissions.map((permission) => permission.requestId), ["approval_1", "approval_2"]);
+});
+
+test("pass-through speaks network approvals distinctly and maps host policy speech", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge);
+  const request = backend.createPermissionRequest("git push", "sess_1", "approval_1");
+  request.action = "network_access";
+  request.rawText = "Codex requests network access to github.com.";
+  request.native = {
+    backend: "codex",
+    requestMethod: "item/commandExecution/requestApproval",
+    networkApprovalContext: {
+      host: "github.com",
+      protocol: "https"
+    },
+    proposedNetworkPolicyAmendments: [
+      {
+        host: "github.com",
+        action: "allow"
+      }
+    ],
+    availableDecisions: ["accept", { applyNetworkPolicyAmendment: { network_policy_amendment: { host: "github.com", action: "allow" } } }, "cancel"]
+  };
+
+  await harness.start();
+  backend.emitPermissionRequest(request);
+  await flushAsync();
+
+  assert.equal(harness.voiceOutput.messages.at(-1)?.text, "네트워크 권한이 필요해. 허용할까?");
+  const approval = visualBridge.events.findLast((event) => event.type === "approval");
+  assert.match(approval?.text ?? "", /대상: github\.com/u);
+  assert.match(approval?.text ?? "", /Codex requests network access to github\.com/u);
+  assert.match(approval?.text ?? "", /Codex 선택지: accept, applyNetworkPolicyAmendment, cancel/u);
+
+  await harness.processLine("같은 네트워크 계속 허용");
+
+  assert.equal(backend.permissions.length, 1);
+  assert.equal(backend.permissions[0].scope, "network");
 });
 
 test("pass-through mode does not parse agent text into fake approval requests", async () => {

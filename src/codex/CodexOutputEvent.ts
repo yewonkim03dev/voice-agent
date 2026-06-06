@@ -5,6 +5,7 @@ export interface CodexOutputEvent {
     | "stderr"
     | "tool_call"
     | "permission_request"
+    | "approval_resolved"
     | "task_complete"
     | "error";
   text?: string;

@@ -11,6 +11,8 @@ test("interprets one-shot approval phrases", () => {
 test("interprets session and policy approval phrases before generic allow", () => {
   assert.equal(interpretApprovalSpeech("이번 세션 동안 허용").intent, "approve_session");
   assert.equal(interpretApprovalSpeech("같은 명령 계속 허용").intent, "approve_policy");
+  assert.equal(interpretApprovalSpeech("같은 네트워크 계속 허용").intent, "approve_network_policy");
+  assert.equal(interpretApprovalSpeech("allow this host").intent, "approve_network_policy");
 });
 
 test("interprets denial phrases and treats mixed speech as unknown", () => {

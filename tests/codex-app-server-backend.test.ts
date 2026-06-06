@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 
 import { TerminalHarness } from "../src/app/harness.ts";
-import { CodexAppServerBackend } from "../src/codex/CodexAppServerBackend.ts";
+import { CodexAppServerBackend, type CodexApprovalPolicy } from "../src/codex/CodexAppServerBackend.ts";
 import type { CodexStatus } from "../src/codex/CodexOutputEvent.ts";
 import type { PermissionDecision } from "../src/permission/PermissionDecision.ts";
 import type { PermissionRequest } from "../src/permission/PermissionRequest.ts";
@@ -40,6 +40,7 @@ test("starts Codex app-server, initializes, and opens a thread", async () => {
   assert.equal(socket.sent[0].method, "initialize");
   assert.equal(socket.sent[1].method, "thread/start");
   assert.equal(socket.sent[1].params.cwd, "/repo");
+  assert.equal(socket.sent[1].params.approvalPolicy, "on-request");
   assert.equal(statuses.at(-1)?.process, "running");
   assert.equal(statuses.at(-1)?.threadId, "thread_1");
 });
@@ -71,7 +72,30 @@ test("resumes a stored Codex app-server thread when available", async () => {
   assert.equal(socket.sent[1].method, "thread/resume");
   assert.equal(socket.sent[1].params.threadId, "thread_saved");
   assert.equal(socket.sent[1].params.cwd, "/repo");
+  assert.equal(socket.sent[1].params.approvalPolicy, "on-request");
   assert.deepEqual(saved, ["thread_saved"]);
+});
+
+test("applies configured Codex approval policy to threads and turns", async () => {
+  const { backend, child, socket } = createStartedBackend({
+    approvalPolicy: "on-failure"
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  await backend.sendPrompt({
+    sessionId: "sess_1",
+    text: "git push 해줘",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+
+  assert.equal(socket.sent.find((message) => message.method === "thread/start")?.params.approvalPolicy, "on-failure");
+  assert.equal(socket.sent.find((message) => message.method === "turn/start")?.params.approvalPolicy, "on-failure");
 });
 
 test("starts a new Codex app-server thread when stored resume fails", async () => {
@@ -298,6 +322,173 @@ test("maps persistent command approval through Codex exec policy amendments", as
   });
 });
 
+test("maps persistent network approval through Codex network policy amendments", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const amendment = {
+    host: "github.com",
+    action: "allow"
+  };
+  const requests: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => requests.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  socket.receive({
+    id: "approval_network",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      command: "git push",
+      reason: "Network access is required to reach GitHub.",
+      networkApprovalContext: {
+        host: "github.com",
+        protocol: "https"
+      },
+      availableDecisions: ["accept", { applyNetworkPolicyAmendment: { network_policy_amendment: amendment } }, "cancel"],
+      proposedNetworkPolicyAmendments: [amendment]
+    }
+  });
+  await backend.sendPermission(permission("approval_network", "allow", {
+    remember: true,
+    scope: "network"
+  }));
+
+  assert.equal(requests[0].action, "network_access");
+  assert.deepEqual(requests[0].native?.networkApprovalContext, {
+    host: "github.com",
+    protocol: "https"
+  });
+  assert.deepEqual(requests[0].native?.proposedNetworkPolicyAmendments, [amendment]);
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "approval_network",
+    result: {
+      decision: {
+        applyNetworkPolicyAmendment: {
+          network_policy_amendment: amendment
+        }
+      }
+    }
+  });
+});
+
+test("responds to permissions approval requests with permissions and scope", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const requests: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => requests.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  socket.receive({
+    id: "permissions_1",
+    method: "item/permissions/requestApproval",
+    params: {
+      cwd: "/repo",
+      reason: "Network access is required to push to GitHub.",
+      permissions: {
+        network: {
+          enabled: true
+        },
+        fileSystem: null
+      }
+    }
+  });
+  await backend.sendPermission(permission("permissions_1", "allow"));
+
+  assert.equal(requests[0].action, "network_permissions");
+  assert.deepEqual(requests[0].native?.requestedPermissions, {
+    network: {
+      enabled: true
+    },
+    fileSystem: null
+  });
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "permissions_1",
+    result: {
+      permissions: {
+        network: {
+          enabled: true
+        }
+      },
+      scope: "turn"
+    }
+  });
+});
+
+test("maps session speech to session-scoped permissions approval", async () => {
+  const { backend, child, socket } = createStartedBackend();
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  socket.receive({
+    id: "permissions_session",
+    method: "item/permissions/requestApproval",
+    params: {
+      cwd: "/repo",
+      reason: "Network access is required.",
+      permissions: {
+        network: {
+          enabled: true
+        }
+      }
+    }
+  });
+  await backend.sendPermission(permission("permissions_session", "allow", {
+    remember: true,
+    scope: "session"
+  }));
+
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "permissions_session",
+    result: {
+      permissions: {
+        network: {
+          enabled: true
+        }
+      },
+      scope: "session"
+    }
+  });
+});
+
+test("denies permissions approval requests with an empty turn grant", async () => {
+  const { backend, child, socket } = createStartedBackend();
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  socket.receive({
+    id: "permissions_deny",
+    method: "item/permissions/requestApproval",
+    params: {
+      cwd: "/repo",
+      permissions: {
+        network: {
+          enabled: true
+        }
+      }
+    }
+  });
+  await backend.sendPermission(permission("permissions_deny", "deny"));
+
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "permissions_deny",
+    result: {
+      permissions: {},
+      scope: "turn"
+    }
+  });
+});
+
 test("maps deny approval to cancel when Codex offers cancel as the native decision", async () => {
   const { backend, child, socket } = createStartedBackend();
 
@@ -386,6 +577,39 @@ test("responds to unhandled Codex app-server requests instead of leaving the ser
       message: "Voice Agent does not handle Codex app-server request item/unknown/request."
     }
   });
+});
+
+test("serverRequest/resolved clears pending approval state", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const output: string[] = [];
+  backend.onOutput((event) => {
+    if (event.type === "approval_resolved") output.push(event.text ?? "");
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  socket.receive({
+    id: "approval_resolved",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      command: "git push"
+    }
+  });
+  socket.receive({
+    method: "serverRequest/resolved",
+    params: {
+      requestId: "approval_resolved"
+    }
+  });
+
+  await assert.rejects(
+    () => backend.sendPermission(permission("approval_resolved", "allow")),
+    /No pending Codex approval request/u
+  );
+  assert.deepEqual(output, ["approval_resolved"]);
 });
 
 test("terminal harness speaks app-server approvals and routes Korean allow decisions", async () => {
@@ -496,6 +720,7 @@ function createStartedBackend(options: {
   voiceAgentProtocol?: boolean;
   voiceAgentProtocolPrompt?: string;
   writeLine?: (line: string) => void;
+  approvalPolicy?: CodexApprovalPolicy;
 } = {}): {
   backend: CodexAppServerBackend;
   child: FakeAppServerProcess;
@@ -510,6 +735,7 @@ function createStartedBackend(options: {
       voiceAgentProtocol: options.voiceAgentProtocol,
       voiceAgentProtocolPrompt: options.voiceAgentProtocolPrompt,
       writeLine: options.writeLine,
+      approvalPolicy: options.approvalPolicy,
       spawnProcess: () => child,
       createWebSocket: () => socket
     }),

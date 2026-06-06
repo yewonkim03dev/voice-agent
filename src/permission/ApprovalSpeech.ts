@@ -2,6 +2,7 @@ export type ApprovalSpeechIntent =
   | "approve_once"
   | "approve_session"
   | "approve_policy"
+  | "approve_network_policy"
   | "deny"
   | "unknown";
 
@@ -16,6 +17,18 @@ export const policyApprovePhrases = [
   "이 명령 계속 허용",
   "항상 이 명령 허용",
   "remember this command"
+];
+
+export const networkPolicyApprovePhrases = [
+  "같은 네트워크 계속 허용",
+  "이 네트워크 계속 허용",
+  "이 호스트 허용",
+  "이 호스트 계속 허용",
+  "깃허브 계속 허용",
+  "github 계속 허용",
+  "allow this host",
+  "allow this network",
+  "remember this host"
 ];
 
 export const sessionApprovePhrases = [
@@ -67,10 +80,11 @@ export const denyPhrases = [
 export function interpretApprovalSpeech(text: string): ApprovalSpeechResult {
   const normalized = normalizeApprovalSpeech(text);
   const denies = containsAny(normalized, denyPhrases);
+  const approvesNetworkPolicy = containsAny(normalized, networkPolicyApprovePhrases);
   const approvesPolicy = containsAny(normalized, policyApprovePhrases);
   const approvesSession = containsAny(normalized, sessionApprovePhrases);
   const approvesOnce = containsAny(normalized, onceApprovePhrases);
-  const approves = approvesPolicy || approvesSession || approvesOnce;
+  const approves = approvesNetworkPolicy || approvesPolicy || approvesSession || approvesOnce;
 
   if (!normalized || (approves && denies)) {
     return {
@@ -82,6 +96,13 @@ export function interpretApprovalSpeech(text: string): ApprovalSpeechResult {
   if (denies) {
     return {
       intent: "deny",
+      text: normalized
+    };
+  }
+
+  if (approvesNetworkPolicy) {
+    return {
+      intent: "approve_network_policy",
       text: normalized
     };
   }

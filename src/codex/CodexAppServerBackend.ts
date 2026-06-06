@@ -9,6 +9,7 @@ import { voiceAgentProtocolPrompt } from "../voice/VoiceAgentEvent.ts";
 
 type RequestId = string | number;
 type WriteLine = (line: string) => void;
+export type CodexApprovalPolicy = "on-request" | "untrusted" | "on-failure" | "never";
 
 interface ProcessReadable {
   on(event: "data", callback: (chunk: Buffer | string) => void): unknown;
@@ -62,7 +63,11 @@ interface JsonRpcRequest {
 interface PendingCodexApproval {
   rpcId: RequestId;
   requestMethod: string;
+  responseKind: "decision" | "permissions";
   availableDecisions?: unknown[];
+  additionalPermissions?: unknown;
+  networkApprovalContext?: unknown;
+  requestedPermissions?: unknown;
   proposedExecpolicyAmendment?: unknown;
   proposedNetworkPolicyAmendments?: unknown[];
   raw: Record<string, unknown>;
@@ -87,6 +92,7 @@ export interface CodexAppServerBackendOptions {
   startupTimeoutMs?: number;
   threadId?: string;
   threadStore?: CodexThreadStore;
+  approvalPolicy?: CodexApprovalPolicy;
 }
 
 export class CodexAppServerBackend implements AgentBackend {
@@ -103,6 +109,7 @@ export class CodexAppServerBackend implements AgentBackend {
   private readonly startupTimeoutMs: number;
   private readonly configuredThreadId: string | undefined;
   private readonly threadStore: CodexThreadStore | undefined;
+  private readonly approvalPolicy: CodexApprovalPolicy;
   private readonly outputListeners: Array<(event: CodexOutputEvent) => void> = [];
   private readonly permissionListeners: Array<(request: PermissionRequest) => void> = [];
   private readonly statusListeners: Array<(status: CodexStatus) => void> = [];
@@ -139,6 +146,7 @@ export class CodexAppServerBackend implements AgentBackend {
     this.startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
     this.configuredThreadId = parseOptionalString(options.threadId);
     this.threadStore = options.threadStore;
+    this.approvalPolicy = options.approvalPolicy ?? "on-request";
   }
 
   async start(config?: CodexProcessConfig): Promise<void> {
@@ -165,6 +173,7 @@ export class CodexAppServerBackend implements AgentBackend {
       });
       this.child = child;
       this.writeLine(`[codex-app] started: ${command} ${args.join(" ")}`.trim());
+      this.writeLine(`[codex-app] config approvalPolicy=${this.approvalPolicy} sandbox=workspace-write reviewer=user`);
 
       const endpoint = await this.waitForEndpoint(child);
       await this.connect(endpoint);
@@ -220,7 +229,7 @@ export class CodexAppServerBackend implements AgentBackend {
       threadId: this.threadId,
       input: this.createTurnInput(prompt.text),
       cwd: this.cwd,
-      approvalPolicy: "untrusted",
+      approvalPolicy: this.approvalPolicy,
       approvalsReviewer: "user"
     });
     const turn = asRecord(result).turn;
@@ -234,13 +243,11 @@ export class CodexAppServerBackend implements AgentBackend {
       throw new Error(`No pending Codex approval request for ${decision.requestId}.`);
     }
 
-    const nativeDecision = this.resolveNativeDecision(decision, pending);
+    const nativeResult = this.resolveNativeResponse(decision, pending);
 
     this.pendingApprovals.delete(decision.requestId);
     this.writeLine(`[codex-app] approval ${decision.decision}: ${decision.requestId}`);
-    this.sendResponse(pending.rpcId, {
-      decision: nativeDecision
-    });
+    this.sendResponse(pending.rpcId, nativeResult);
     this.publishStatus({
       ...this.status,
       task: "thinking"
@@ -362,7 +369,7 @@ export class CodexAppServerBackend implements AgentBackend {
     const result = await this.sendRequest("thread/resume", {
       threadId,
       cwd,
-      approvalPolicy: "untrusted",
+      approvalPolicy: this.approvalPolicy,
       approvalsReviewer: "user",
       sandbox: "workspace-write",
       persistExtendedHistory: true
@@ -374,7 +381,7 @@ export class CodexAppServerBackend implements AgentBackend {
   private async startThread(cwd: string): Promise<void> {
     const result = await this.sendRequest("thread/start", {
       cwd,
-      approvalPolicy: "untrusted",
+      approvalPolicy: this.approvalPolicy,
       approvalsReviewer: "user",
       sandbox: "workspace-write",
       experimentalRawEvents: false,
@@ -508,6 +515,9 @@ export class CodexAppServerBackend implements AgentBackend {
       case "item/commandExecution/requestApproval":
         this.handleCommandApprovalRequest(message);
         return;
+      case "item/permissions/requestApproval":
+        this.handlePermissionsApprovalRequest(message);
+        return;
       case "item/agentMessage/delta":
       case "item/commandExecution/outputDelta":
         this.emitOutput("stdout", String(message.params?.delta ?? ""));
@@ -531,6 +541,9 @@ export class CodexAppServerBackend implements AgentBackend {
           task: this.status.task
         });
         return;
+      case "serverRequest/resolved":
+        this.handleServerRequestResolved(message);
+        return;
     }
 
     if (this.isApprovalRequest(message)) {
@@ -549,28 +562,63 @@ export class CodexAppServerBackend implements AgentBackend {
     if (message.id === undefined) return;
 
     const params = asRecord(message.params);
-    const requestId = String(message.id);
     const command = typeof params.command === "string" ? params.command : undefined;
     const availableDecisions = optionalUnknownArray(params.availableDecisions ?? params.available_decisions);
+    const additionalPermissions = params.additionalPermissions ?? params.additional_permissions;
+    const networkApprovalContext = params.networkApprovalContext ?? params.network_approval_context;
     const proposedExecpolicyAmendment =
       params.proposedExecpolicyAmendment ?? params.proposed_execpolicy_amendment;
     const proposedNetworkPolicyAmendments = optionalUnknownArray(
       params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments
     );
+    const networkApproval = isNetworkApprovalParams(params);
     const request = this.createApprovalRequest(message, {
       tool: "shell",
-      action: "run_command",
+      action: networkApproval ? "network_access" : "run_command",
       command,
-      rawText: command ? `Run command: ${command} ?` : String(params.reason ?? "Codex requests command approval."),
+      rawText: approvalRawText(params, command, networkApproval),
       riskLevel: "medium"
     });
 
     this.publishApprovalRequest(message, request, {
+      responseKind: "decision",
       availableDecisions,
+      additionalPermissions,
+      networkApprovalContext,
       proposedExecpolicyAmendment,
       proposedNetworkPolicyAmendments,
       raw: params
     });
+  }
+
+  private handlePermissionsApprovalRequest(message: JsonRpcRequest): void {
+    if (message.id === undefined) return;
+
+    const params = asRecord(message.params);
+    const requestedPermissions = params.permissions ?? params.requestedPermissions ?? params.requested_permissions;
+    const networkApproval = hasEnabledNetworkPermission(requestedPermissions) || isNetworkReason(params.reason);
+    const request = this.createApprovalRequest(message, {
+      tool: "codex",
+      action: networkApproval ? "network_permissions" : "request_permissions",
+      rawText: approvalRawText(params, undefined, networkApproval),
+      riskLevel: "medium"
+    });
+
+    this.publishApprovalRequest(message, request, {
+      responseKind: "permissions",
+      requestedPermissions,
+      raw: params
+    });
+  }
+
+  private handleServerRequestResolved(message: JsonRpcRequest): void {
+    const params = asRecord(message.params);
+    const requestId = parseOptionalString(params.requestId ?? params.request_id);
+
+    if (!requestId) return;
+
+    this.pendingApprovals.delete(requestId);
+    this.emitOutput("approval_resolved", requestId);
   }
 
   private handleApprovalRequest(message: JsonRpcRequest): void {
@@ -590,7 +638,10 @@ export class CodexAppServerBackend implements AgentBackend {
     });
 
     this.publishApprovalRequest(message, request, {
+      responseKind: "decision",
       availableDecisions: optionalUnknownArray(params.availableDecisions ?? params.available_decisions),
+      additionalPermissions: params.additionalPermissions ?? params.additional_permissions,
+      networkApprovalContext: params.networkApprovalContext ?? params.network_approval_context,
       proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? params.proposed_execpolicy_amendment,
       proposedNetworkPolicyAmendments: optionalUnknownArray(
         params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments
@@ -623,6 +674,9 @@ export class CodexAppServerBackend implements AgentBackend {
         backend: "codex",
         requestMethod: message.method,
         availableDecisions: optionalUnknownArray(params.availableDecisions ?? params.available_decisions),
+        additionalPermissions: params.additionalPermissions ?? params.additional_permissions,
+        networkApprovalContext: params.networkApprovalContext ?? params.network_approval_context,
+        requestedPermissions: params.permissions ?? params.requestedPermissions ?? params.requested_permissions,
         proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? params.proposed_execpolicy_amendment,
         proposedNetworkPolicyAmendments: optionalUnknownArray(
           params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments
@@ -705,9 +759,47 @@ export class CodexAppServerBackend implements AgentBackend {
     return this.socket;
   }
 
+  private resolveNativeResponse(decision: PermissionDecision, pending: PendingCodexApproval): Record<string, unknown> {
+    if (pending.responseKind === "permissions") {
+      return this.resolvePermissionsResponse(decision, pending);
+    }
+
+    return {
+      decision: this.resolveNativeDecision(decision, pending)
+    };
+  }
+
+  private resolvePermissionsResponse(decision: PermissionDecision, pending: PendingCodexApproval): Record<string, unknown> {
+    if (decision.decision === "deny") {
+      return {
+        permissions: {},
+        scope: "turn"
+      };
+    }
+
+    return {
+      permissions: grantedPermissions(pending.requestedPermissions, pending.raw),
+      scope: decision.scope === "session" || decision.scope === "network" ? "session" : "turn"
+    };
+  }
+
   private resolveNativeDecision(decision: PermissionDecision, pending: PendingCodexApproval): unknown {
     if (decision.decision === "deny") {
       return this.requireAvailableDecision(pending, ["decline", "reject", "deny", "cancel"]);
+    }
+
+    if (decision.scope === "network") {
+      const amendment = selectNetworkPolicyAmendment(pending.proposedNetworkPolicyAmendments);
+
+      if (amendment !== undefined && supportsDecision(pending.availableDecisions, "applyNetworkPolicyAmendment")) {
+        return {
+          applyNetworkPolicyAmendment: {
+            network_policy_amendment: amendment
+          }
+        };
+      }
+
+      throw new Error("Codex approval does not offer a persistent network-policy decision for this request.");
     }
 
     if (decision.scope === "tool" || decision.scope === "project") {
@@ -761,6 +853,76 @@ function optionalUnknownArray(value: unknown): unknown[] | undefined {
 
 function parseOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function approvalRawText(params: Record<string, unknown>, command: string | undefined, networkApproval: boolean): string {
+  const reason = parseOptionalString(params.reason);
+  const networkContext = asRecord(params.networkApprovalContext ?? params.network_approval_context);
+  const host = parseOptionalString(networkContext.host);
+
+  if (networkApproval) {
+    const parts = ["Codex requests network access"];
+    if (host) parts.push(`to ${host}`);
+    if (command) parts.push(`for: ${command}`);
+    if (reason) parts.push(`Reason: ${reason}`);
+    return parts.join(". ");
+  }
+
+  if (command) return `Run command: ${command} ?`;
+  return reason ?? "Codex requests approval.";
+}
+
+function isNetworkApprovalParams(params: Record<string, unknown>): boolean {
+  return (
+    hasEnabledNetworkPermission(params.additionalPermissions ?? params.additional_permissions) ||
+    Object.keys(asRecord(params.networkApprovalContext ?? params.network_approval_context)).length > 0 ||
+    optionalUnknownArray(params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments) !== undefined ||
+    isNetworkReason(params.reason)
+  );
+}
+
+function hasEnabledNetworkPermission(value: unknown): boolean {
+  const permissions = asRecord(value);
+  const network = asRecord(permissions.network);
+  return network.enabled === true;
+}
+
+function isNetworkReason(value: unknown): boolean {
+  const reason = parseOptionalString(value);
+  return reason ? /\b(network|dns|host|github|connection|connect|internet)\b|네트워크|디엔에스|깃허브|호스트|접속|연결/iu.test(reason) : false;
+}
+
+function grantedPermissions(requestedPermissions: unknown, raw: Record<string, unknown>): Record<string, unknown> {
+  const requested = asRecord(requestedPermissions);
+  const permissions: Record<string, unknown> = {};
+
+  if (hasEnabledNetworkPermission(requested)) {
+    permissions.network = {
+      enabled: true
+    };
+  }
+
+  if (requested.fileSystem !== undefined || requested.file_system !== undefined) {
+    permissions.fileSystem = requested.fileSystem ?? requested.file_system;
+  }
+
+  if (Object.keys(permissions).length > 0) return permissions;
+
+  if (isNetworkReason(raw.reason)) {
+    return {
+      network: {
+        enabled: true
+      }
+    };
+  }
+
+  return {};
+}
+
+function selectNetworkPolicyAmendment(amendments: unknown[] | undefined): unknown {
+  if (!amendments || amendments.length === 0) return undefined;
+
+  return amendments.find((amendment) => asRecord(amendment).action === "allow") ?? amendments[0];
 }
 
 function supportsDecision(availableDecisions: unknown[] | undefined, name: string): boolean {

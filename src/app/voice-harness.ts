@@ -840,6 +840,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (/^\[voice:(ack|permission|completion|speech|status|error|warning)\]/u.test(visible)) return true;
   if (visible.startsWith("[voice:context]")) return true;
   if (visible.startsWith("[voice:capability]")) return true;
+  if (visible.startsWith("[codex-app] config ")) return true;
   if (visible.startsWith("[harness")) return true;
   if (visible.startsWith("[status]")) return true;
   if (visible.startsWith("[tts]")) return true;

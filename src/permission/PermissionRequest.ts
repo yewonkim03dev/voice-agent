@@ -6,6 +6,9 @@ export interface NativePermissionMetadata {
   backend: NativePermissionBackend;
   requestMethod?: string;
   availableDecisions?: unknown[];
+  additionalPermissions?: unknown;
+  networkApprovalContext?: unknown;
+  requestedPermissions?: unknown;
   proposedExecpolicyAmendment?: unknown;
   proposedNetworkPolicyAmendments?: unknown[];
   raw?: Record<string, unknown>;
