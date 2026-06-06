@@ -688,7 +688,7 @@ final class VisualRootView: NSView {
         let bottomLimit = commandPanel.frame.maxY + 12
         let topLimit = bounds.height - inset
         let minimumClearance: CGFloat = 110
-        let visualCenterLift = max(112, min(256, bounds.height * 0.24))
+        let visualCenterLift = max(96, min(220, bounds.height * 0.20))
         let targetCenterY = bounds.midY + visualCenterLift
         let centerY: CGFloat
         if topLimit - bottomLimit >= minimumClearance * 2 {
@@ -708,10 +708,11 @@ final class VisualRootView: NSView {
                 maxCircle
             )
         )
+        let circleViewWidth = min(contentWidth, max(circleSize, circleSize + 120))
         circleView.frame = NSRect(
-            x: center.x - circleSize / 2,
+            x: center.x - circleViewWidth / 2,
             y: center.y - circleSize / 2,
-            width: circleSize,
+            width: circleViewWidth,
             height: circleSize
         )
     }

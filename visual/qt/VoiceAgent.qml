@@ -23,7 +23,7 @@ ApplicationWindow {
     property int controlsHeight: 38
     property int commandPanelHeight: Math.round(Math.max(132, Math.min(expandedLayout ? 220 : 172, height * (expandedLayout ? 0.22 : 0.25))))
     property int visualDiameter: Math.round(Math.max(220, Math.min(width * (expandedLayout ? 0.78 : 0.84), height * (expandedLayout ? 0.60 : 0.48), height - commandPanelHeight - controlsHeight - 92, expandedLayout ? 720 : 360)))
-    property int visualCenterYOffset: -Math.round(Math.max(112, Math.min(256, height * 0.24)))
+    property int visualCenterYOffset: -Math.round(Math.max(96, Math.min(220, height * 0.20)))
     property var commands: []
     property var contextEntries: []
     property bool settingsOpen: false
@@ -702,7 +702,7 @@ ApplicationWindow {
         Rectangle {
             id: statusBackdrop
             anchors.centerIn: statusLabel
-            width: parent.width
+            width: Math.min(root.width - 16, parent.width + 32)
             height: statusLabel.height + (root.uiState === "approval_pending" ? 28 : (root.uiState === "speaking" || root.uiState === "wake_rejected") ? 24 : 20)
             radius: root.uiState === "approval_pending" ? 14 : 12
             color: "#05080c"
@@ -718,7 +718,7 @@ ApplicationWindow {
             y: root.uiState === "speaking" || root.uiState === "approval_pending" || root.uiState === "wake_rejected"
                 ? Math.max(0, commandPanel.y - height - 10)
                 : Math.max(0, Math.min(waveform.y + waveform.height + 10, commandPanel.y - height - 10))
-            width: parent.width
+            width: Math.min(root.width - 16, parent.width + 32)
             height: root.statusBandHeight()
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
