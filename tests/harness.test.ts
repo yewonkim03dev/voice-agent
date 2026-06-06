@@ -188,7 +188,8 @@ test("visual settings apply persists TTS and visual overrides", async () => {
     thinkingVolume: 0.48,
     responseLanguage: "en",
     chatHistoryEnabled: false,
-    hudEnabled: false
+    hudEnabled: false,
+    speakWakeRejectedWarnings: false
   });
   await flushAsync();
 
@@ -209,7 +210,8 @@ test("visual settings apply persists TTS and visual overrides", async () => {
         thinkingVolume: 0.48,
         responseLanguage: "en",
         chatHistoryEnabled: false,
-        hudEnabled: false
+        hudEnabled: false,
+        speakWakeRejectedWarnings: false
       }
     }
   ]);
@@ -308,7 +310,8 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
       thinkingVolume: 0.32,
       responseLanguage: "auto",
       chatHistoryEnabled: true,
-      hudEnabled: true
+      hudEnabled: true,
+      speakWakeRejectedWarnings: true
     }
   });
 });
@@ -345,7 +348,8 @@ test("visual reset_settings clears persisted overrides", async () => {
       thinkingVolume: 0.32,
       responseLanguage: "auto",
       chatHistoryEnabled: true,
-      hudEnabled: true
+      hudEnabled: true,
+      speakWakeRejectedWarnings: true
     }
   });
 });

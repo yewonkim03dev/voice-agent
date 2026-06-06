@@ -22,6 +22,7 @@ export type VoiceVisualFileConfig = Partial<{
   responseLanguage: "auto" | "ko" | "en";
   chatHistoryEnabled: boolean;
   hudEnabled: boolean;
+  speakWakeRejectedWarnings: boolean;
 }>;
 
 export interface VoiceLocalSettingsOverride {
@@ -278,6 +279,7 @@ export async function resetVoiceLocalSettings(options: {
   delete visual.responseLanguage;
   delete visual.chatHistoryEnabled;
   delete visual.hudEnabled;
+  delete visual.speakWakeRejectedWarnings;
 
   if (Object.keys(visual).length > 0) {
     next.visual = visual;
@@ -466,7 +468,10 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
       ? { responseLanguage: parseVisualResponseLanguage(record.responseLanguage) }
       : {}),
     ...(typeof record.chatHistoryEnabled === "boolean" ? { chatHistoryEnabled: record.chatHistoryEnabled } : {}),
-    ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {})
+    ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
+    ...(typeof record.speakWakeRejectedWarnings === "boolean"
+      ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
+      : {})
   };
 }
 

@@ -44,6 +44,7 @@ ApplicationWindow {
     property real ttsVolume: 1.0
     property real thinkingVolume: 0.32
     property string responseLanguage: "auto"
+    property bool speakWakeRejectedWarnings: true
     property var wakePhrases: []
     property string codexThreadId: ""
     property string voiceGuideText: "한국어\n1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\nEnglish\n1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn."
@@ -110,7 +111,8 @@ ApplicationWindow {
                 visual: {
                     thinkingVolume: root.thinkingVolume,
                     responseLanguage: languageBox.currentText,
-                    chatHistoryEnabled: chatHistoryCheck.checked
+                    chatHistoryEnabled: chatHistoryCheck.checked,
+                    speakWakeRejectedWarnings: wakeWarningCheck.checked
                 }
             }))
         }
@@ -120,9 +122,11 @@ ApplicationWindow {
     function resetSettings() {
         root.thinkingVolume = 0.32
         root.chatHistoryEnabled = true
+        root.speakWakeRejectedWarnings = true
         root.chatPanelOpen = true
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (chatHistoryCheck) chatHistoryCheck.checked = true
+        if (wakeWarningCheck) wakeWarningCheck.checked = true
         if (socket.status === WebSocket.Open) {
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
@@ -170,9 +174,11 @@ ApplicationWindow {
         root.thinkingVolume = settings.thinkingVolume === undefined ? 0.32 : Math.max(0, Math.min(0.8, settings.thinkingVolume))
         root.responseLanguage = settings.responseLanguage || "auto"
         root.chatHistoryEnabled = settings.chatHistoryEnabled === undefined ? true : !!settings.chatHistoryEnabled
+        root.speakWakeRejectedWarnings = settings.speakWakeRejectedWarnings === undefined ? true : !!settings.speakWakeRejectedWarnings
         if (root.chatHistoryEnabled && !root.chatPanelOpen) root.chatPanelOpen = true
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (chatHistoryCheck) chatHistoryCheck.checked = root.chatHistoryEnabled
+        if (wakeWarningCheck) wakeWarningCheck.checked = root.speakWakeRejectedWarnings
         if (languageBox) languageBox.currentIndex = root.indexOfValue(["auto", "ko", "en"], root.responseLanguage)
     }
 
@@ -1212,6 +1218,13 @@ ApplicationWindow {
                     text: "Show Recent Q/A panel"
                     checked: root.chatHistoryEnabled
                     onCheckedChanged: root.chatHistoryEnabled = checked
+                }
+
+                CheckBox {
+                    id: wakeWarningCheck
+                    text: "Speak wake warning"
+                    checked: root.speakWakeRejectedWarnings
+                    onCheckedChanged: root.speakWakeRejectedWarnings = checked
                 }
 
                 Text {

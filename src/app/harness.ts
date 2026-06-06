@@ -472,6 +472,12 @@ export class TerminalHarness {
   }
 
   async speakWakeRejected(text: string, visualText: string): Promise<void> {
+    if (this.visualSettings.speakWakeRejectedWarnings === false) {
+      this.writeLine(`[voice:warning] ${text}`);
+      this.sendVisualState("wake_rejected", visualText);
+      return;
+    }
+
     await this.speak(text, "warning", {
       visualState: "wake_rejected",
       visualText
@@ -1463,7 +1469,8 @@ export class TerminalHarness {
       thinkingVolume: this.visualSettings.thinkingVolume ?? defaultVisualThinkingVolume,
       responseLanguage: this.visualSettings.responseLanguage ?? "auto",
       chatHistoryEnabled: this.visualSettings.chatHistoryEnabled ?? true,
-      hudEnabled: this.visualSettings.hudEnabled ?? true
+      hudEnabled: this.visualSettings.hudEnabled ?? true,
+      speakWakeRejectedWarnings: this.visualSettings.speakWakeRejectedWarnings ?? true
     };
   }
 
@@ -1954,7 +1961,8 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
     thinkingVolume: defaultVisualThinkingVolume,
     responseLanguage: "auto",
     chatHistoryEnabled: true,
-    hudEnabled: true
+    hudEnabled: true,
+    speakWakeRejectedWarnings: true
   };
 }
 
@@ -1974,7 +1982,10 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
     thinkingVolume: parsePersistedNumber(settings?.thinkingVolume),
     responseLanguage: parseVisualResponseLanguage(settings?.responseLanguage),
     chatHistoryEnabled: typeof settings?.chatHistoryEnabled === "boolean" ? settings.chatHistoryEnabled : undefined,
-    hudEnabled: typeof settings?.hudEnabled === "boolean" ? settings.hudEnabled : undefined
+    hudEnabled: typeof settings?.hudEnabled === "boolean" ? settings.hudEnabled : undefined,
+    speakWakeRejectedWarnings: typeof settings?.speakWakeRejectedWarnings === "boolean"
+      ? settings.speakWakeRejectedWarnings
+      : undefined
   }, defaultVisualRuntimeSettings());
 }
 
@@ -1988,7 +1999,8 @@ function sanitizeVisualRuntimeSettings(
       : clamp(settings.thinkingVolume, 0, 0.8),
     responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto",
     chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true,
-    hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true
+    hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true,
+    speakWakeRejectedWarnings: settings.speakWakeRejectedWarnings ?? fallback.speakWakeRejectedWarnings ?? true
   };
 }
 

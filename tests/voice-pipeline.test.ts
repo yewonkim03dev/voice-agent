@@ -31,7 +31,7 @@ import { normalizeTranscriptText, type Language, type Transcript } from "../src/
 import { EchoGuard } from "../src/voice/EchoGuard.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
 import type { VoiceOutput } from "../src/voice/VoiceOutput.ts";
-import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
+import type { VisualBridgeLike, VisualControlEvent, VisualEvent, VisualRuntimeSettings } from "../src/visual/VisualBridge.ts";
 import { defaultWakePhrases } from "../src/wake/WakePhraseRouter.ts";
 
 test("ManualRecordingGate opens and closes through toggle", async () => {
@@ -264,6 +264,37 @@ test("always-on voice runner discards candidate speech without a wake phrase", a
   assert.match(rejected?.text ?? "", /wake 명령어를 확인해 주세요/u);
   assert.match(rejected?.text ?? "", /코덱스/u);
   assert.match(rejected?.text ?? "", /hey jarvis/u);
+});
+
+test("always-on voice runner can disable wake rejected TTS while keeping visual feedback", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new AutoFinishVoiceOutput();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "그냥 배경 발화",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge,
+      voiceOutput
+    }
+  );
+
+  await runner.start();
+  visualBridge.emitVisualControl({
+    speakWakeRejectedWarnings: false
+  });
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(voiceOutput.messages.some((message) => message.text === "wake 명령어를 확인해 주세요."), false);
+  const rejected = visualBridge.events.find((event) => event.type === "state" && event.state === "wake_rejected");
+  assert.match(rejected?.text ?? "", /wake 명령어를 확인해 주세요/u);
 });
 
 test("always-on voice runner routes a configured custom wake phrase", async () => {
@@ -1231,7 +1262,8 @@ test("voice local settings store persists overrides and reset restores factory d
       visual: {
         thinkingVolume: 0.47,
         chatHistoryEnabled: false,
-        hudEnabled: false
+        hudEnabled: false,
+        speakWakeRejectedWarnings: false
       },
       codexThreadId: "thread_456"
     });
@@ -1257,7 +1289,8 @@ test("voice local settings store persists overrides and reset restores factory d
       provider: "qtqml",
       thinkingVolume: 0.47,
       chatHistoryEnabled: false,
-      hudEnabled: false
+      hudEnabled: false,
+      speakWakeRejectedWarnings: false
     });
 
     await store.resetAll();
@@ -1773,6 +1806,17 @@ class FakeVisualBridge implements VisualBridgeLike {
         action,
         ...(text ? { text } : {}),
         ...(wakePhrases ? { wakePhrases } : {})
+      })
+    );
+  }
+
+  emitVisualControl(visual: VisualRuntimeSettings): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action: "update_visual_settings",
+        visual
       })
     );
   }

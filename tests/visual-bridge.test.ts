@@ -111,7 +111,7 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false,"speakWakeRejectedWarnings":false}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
@@ -119,7 +119,8 @@ test("visual bridge parses allowed control events only", () => {
       thinkingVolume: 0.8,
       responseLanguage: "en",
       chatHistoryEnabled: false,
-      hudEnabled: false
+      hudEnabled: false,
+      speakWakeRejectedWarnings: false
     }
   });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
@@ -371,6 +372,7 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /update_visual_settings/u);
   assert.match(qml, /reset_settings/u);
   assert.match(qml, /Restore Defaults/u);
+  assert.match(qml, /Speak wake warning/u);
   assert.match(qml, /Wake phrases/u);
   assert.match(qml, /Codex thread id \(applies after restart\)/u);
   assert.match(qml, /id: codexThreadField/u);
@@ -445,8 +447,10 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /items\.removeFirst\(items\.count - 10\)/u);
   assert.match(swift, /Recent Q\/A/u);
   assert.match(swift, /Show Recent Q\/A panel/u);
+  assert.match(swift, /Speak wake warning/u);
   assert.match(swift, /"chatHistoryEnabled": chatHistoryEnabled/u);
   assert.match(swift, /"hudEnabled": hudEnabled/u);
+  assert.match(swift, /"speakWakeRejectedWarnings": speakWakeRejectedWarnings/u);
   assert.match(swift, /case "question":/u);
   assert.match(swift, /pushChat\(role: "user", kind: "question"/u);
   assert.match(swift, /pushChat\(role: "assistant", kind: "speech"/u);

@@ -1564,6 +1564,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let settingsThinkingVolumeField = NSTextField(string: "0.32")
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
     private let settingsHudCheckbox = NSButton(checkboxWithTitle: "Show floating HUD", target: nil, action: nil)
+    private let settingsWakeRejectedWarningCheckbox = NSButton(checkboxWithTitle: "Speak wake warning", target: nil, action: nil)
     private let settingsCodexThreadField = NSTextField(string: "")
     private let settingsWakePhrasesView = NSTextView(frame: .zero)
     private var ttsLanguage = "auto"
@@ -1576,6 +1577,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private var responseLanguage = "auto"
     private var chatHistoryEnabled = true
     private var hudEnabled = true
+    private var speakWakeRejectedWarnings = true
     private var wakePhrases: [String] = []
     private var codexThreadId = ""
 
@@ -1864,6 +1866,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         responseLanguage = ttsLanguage
         chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
         hudEnabled = settingsHudCheckbox.state == .on
+        speakWakeRejectedWarnings = settingsWakeRejectedWarningCheckbox.state == .on
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: chatHistoryEnabled)
         menuBarCompanion.setHudEnabled(hudEnabled)
@@ -1879,6 +1882,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         thinkingVolume = 0.32
         chatHistoryEnabled = true
         hudEnabled = true
+        speakWakeRejectedWarnings = true
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: true)
         menuBarCompanion.setHudEnabled(true)
@@ -1933,6 +1937,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             hudEnabled = value
             menuBarCompanion.setHudEnabled(value)
         }
+        if let value = settings["speakWakeRejectedWarnings"] as? Bool {
+            speakWakeRejectedWarnings = value
+        }
         thinkingPulseSound.volume = Float(thinkingVolume)
         syncSettingsControls()
     }
@@ -1976,13 +1983,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         view.addSubview(settingsChatHistoryCheckbox)
         settingsHudCheckbox.frame = NSRect(x: 132, y: 150, width: 216, height: 22)
         view.addSubview(settingsHudCheckbox)
+        settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 128, width: 216, height: 22)
+        view.addSubview(settingsWakeRejectedWarningCheckbox)
 
         let wakeLabel = NSTextField(labelWithString: "Wake")
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        wakeLabel.frame = NSRect(x: 26, y: 120, width: 96, height: 20)
+        wakeLabel.frame = NSRect(x: 26, y: 100, width: 96, height: 20)
         view.addSubview(wakeLabel)
 
-        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 70, width: 216, height: 72))
+        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 50, width: 216, height: 72))
         wakeScroll.borderType = .bezelBorder
         wakeScroll.hasVerticalScroller = true
         settingsWakePhrasesView.isVerticallyResizable = true
@@ -2023,6 +2032,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
         settingsHudCheckbox.state = hudEnabled ? .on : .off
+        settingsWakeRejectedWarningCheckbox.state = speakWakeRejectedWarnings ? .on : .off
         settingsCodexThreadField.stringValue = codexThreadId
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
     }
@@ -2049,7 +2059,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
                 "thinkingVolume": thinkingVolume,
                 "responseLanguage": responseLanguage,
                 "chatHistoryEnabled": chatHistoryEnabled,
-                "hudEnabled": hudEnabled
+                "hudEnabled": hudEnabled,
+                "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])
     }
