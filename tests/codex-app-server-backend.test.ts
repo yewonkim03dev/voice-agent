@@ -98,6 +98,41 @@ test("applies configured Codex approval policy to threads and turns", async () =
   assert.equal(socket.sent.find((message) => message.method === "turn/start")?.params.approvalPolicy, "on-failure");
 });
 
+test("reads and publishes Codex app-server rate limits", async () => {
+  const { backend, child, socket } = createStartedBackend({
+    now: () => 1_700_000_000_000
+  });
+  const statuses: CodexStatus[] = [];
+  backend.onStatus((status) => statuses.push(status));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  assert.equal(socket.sent.at(-1)?.method, "account/rateLimits/read");
+  assert.equal(statuses.at(-1)?.rateLimits?.selected?.text, "5h 75% left, reset 1h 0m · 1w 88% left, reset 7d 0h");
+  assert.equal(statuses.at(-1)?.rateLimits?.selected?.primary?.label, "5h");
+  assert.equal(statuses.at(-1)?.rateLimits?.selected?.secondary?.label, "1w");
+
+  socket.receive({
+    method: "account/rateLimits/updated",
+    params: {
+      rateLimits: {
+        limitId: "codex",
+        primary: {
+          usedPercent: 40,
+          windowDurationMins: 300,
+          resetsAt: 1_700_003_600
+        }
+      }
+    }
+  });
+
+  assert.equal(statuses.at(-1)?.rateLimits?.selected?.text, "5h 60% left, reset 1h 0m · 1w 88% left, reset 7d 0h");
+});
+
 test("starts a new Codex app-server thread when stored resume fails", async () => {
   const child = new FakeAppServerProcess();
   const socket = new FakeWebSocket();
@@ -784,8 +819,10 @@ test("terminal harness speaks app-server approvals and routes Korean allow decis
   });
 });
 
-test("terminal harness updates visual settings when Codex returns a thread id", async () => {
-  const { backend, child, socket } = createStartedBackend();
+test("terminal harness updates visual settings and usage when Codex returns app-server metadata", async () => {
+  const { backend, child, socket } = createStartedBackend({
+    now: () => 1_700_000_000_000
+  });
   const visualBridge = new FakeVisualBridge();
   const harness = new TerminalHarness({
     backend,
@@ -804,6 +841,10 @@ test("terminal harness updates visual settings when Codex returns a thread id", 
   assert.equal(
     visualBridge.events.findLast((event) => event.type === "settings")?.codexThreadId,
     "thread_1"
+  );
+  assert.equal(
+    visualBridge.events.findLast((event) => event.type === "usage")?.text,
+    "5h 75% left, reset 1h 0m · 1w 88% left, reset 7d 0h"
   );
 });
 
@@ -855,6 +896,7 @@ function createStartedBackend(options: {
   voiceAgentProtocolPrompt?: string;
   writeLine?: (line: string) => void;
   approvalPolicy?: CodexApprovalPolicy;
+  now?: () => number;
 } = {}): {
   backend: CodexAppServerBackend;
   child: FakeAppServerProcess;
@@ -870,6 +912,7 @@ function createStartedBackend(options: {
       voiceAgentProtocolPrompt: options.voiceAgentProtocolPrompt,
       writeLine: options.writeLine,
       approvalPolicy: options.approvalPolicy,
+      now: options.now,
       spawnProcess: () => child,
       createWebSocket: () => socket
     }),
@@ -1011,6 +1054,44 @@ class FakeWebSocket {
       this.receive({
         id: message.id,
         result: {}
+      });
+    }
+
+    if (message.method === "account/rateLimits/read") {
+      this.receive({
+        id: message.id,
+        result: {
+          rateLimits: {
+            limitId: "codex",
+            primary: {
+              usedPercent: 25,
+              windowDurationMins: 300,
+              resetsAt: 1_700_003_600
+            },
+            secondary: {
+              usedPercent: 12,
+              windowDurationMins: 10080,
+              resetsAt: 1_700_604_800
+            },
+            planType: "plus"
+          },
+          rateLimitsByLimitId: {
+            codex: {
+              limitId: "codex",
+              primary: {
+                usedPercent: 25,
+                windowDurationMins: 300,
+                resetsAt: 1_700_003_600
+              },
+              secondary: {
+                usedPercent: 12,
+                windowDurationMins: 10080,
+                resetsAt: 1_700_604_800
+              },
+              planType: "plus"
+            }
+          }
+        }
       });
     }
 

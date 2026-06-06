@@ -486,6 +486,7 @@ final class VisualRootView: NSView {
     private let commandScroll = NSScrollView(frame: .zero)
     private let guideButton = NSButton(title: "?", target: nil, action: nil)
     private let sessionLabel = NSTextField(labelWithString: "session: new")
+    private let usageLabel = NSTextField(labelWithString: "")
     private let questionView = QuestionLabelView(frame: .zero)
     private let chatView = ChatHistoryView(frame: .zero)
     private let chatToggleButton = NSButton(title: "Q/A", target: nil, action: nil)
@@ -532,6 +533,12 @@ final class VisualRootView: NSView {
         sessionLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         sessionLabel.lineBreakMode = .byTruncatingMiddle
         addSubview(sessionLabel)
+
+        usageLabel.textColor = NSColor(calibratedRed: 0.72, green: 0.82, blue: 0.94, alpha: 1)
+        usageLabel.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
+        usageLabel.alignment = .left
+        usageLabel.lineBreakMode = .byTruncatingTail
+        addSubview(usageLabel)
 
         guideButton.bezelStyle = .helpButton
         guideButton.toolTip = "Voice Agent guide"
@@ -688,6 +695,12 @@ final class VisualRootView: NSView {
             width: max(80, min(360, guideButton.frame.minX - inset - 12)),
             height: 28
         )
+        usageLabel.frame = NSRect(
+            x: inset,
+            y: sessionLabel.frame.minY - 18,
+            width: max(120, min(520, guideButton.frame.minX - inset - 12)),
+            height: 18
+        )
         referenceHelpButton.frame = NSRect(
             x: commandPanel.bounds.width - panelInset - 24,
             y: topY - 2,
@@ -797,6 +810,11 @@ final class VisualRootView: NSView {
     func updateSessionId(_ sessionId: String) {
         let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
         sessionLabel.stringValue = trimmed.isEmpty ? "session: new" : "session: \(trimmed)"
+    }
+
+    func updateUsage(_ usage: String) {
+        let trimmed = usage.trimmingCharacters(in: .whitespacesAndNewlines)
+        usageLabel.stringValue = trimmed.isEmpty ? "" : "usage: \(trimmed)"
     }
 
     func updateQuestion(_ question: String) {
@@ -1264,10 +1282,12 @@ final class MenuBarCompanion {
     private let stateLabel = NSTextField(labelWithString: "idle")
     private let detailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
     private let questionLabel = NSTextField(wrappingLabelWithString: "Q: none")
+    private let usageLabel = NSTextField(labelWithString: "")
     private let hudCircle = AgentCircleView(frame: .zero)
     private let hudStateLabel = NSTextField(labelWithString: "idle")
     private let hudDetailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
     private let hudQuestionLabel = NSTextField(wrappingLabelWithString: "")
+    private let hudUsageLabel = NSTextField(labelWithString: "")
     private let hudContextField = NSTextField(string: "")
     private let hudContextSummary = NSTextField(labelWithString: "No references queued")
     private var onStop: (() -> Void)?
@@ -1327,6 +1347,13 @@ final class MenuBarCompanion {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         questionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
         hudQuestionLabel.stringValue = trimmed.isEmpty ? "" : "Q: \(trimmed)"
+    }
+
+    func updateUsage(_ usage: String) {
+        let trimmed = usage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = trimmed.isEmpty ? "" : "usage: \(trimmed)"
+        usageLabel.stringValue = value
+        hudUsageLabel.stringValue = Self.formatHudUsage(trimmed)
     }
 
     func updateContext(_ entries: [String]) {
@@ -1391,7 +1418,7 @@ final class MenuBarCompanion {
         guard hudEnabled else { return }
 
         if hudPanel == nil {
-            let size = NSSize(width: 326, height: 224)
+            let size = NSSize(width: 326, height: 264)
             let panel = FloatingHudPanel(
                 contentRect: NSRect(origin: .zero, size: size),
                 styleMask: [.borderless, .nonactivatingPanel],
@@ -1441,30 +1468,35 @@ final class MenuBarCompanion {
     }
 
     private func makePopoverView() -> NSView {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 188))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 204))
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 1).cgColor
 
         let title = NSTextField(labelWithString: "Voice Agent")
         title.font = NSFont.systemFont(ofSize: 16, weight: .bold)
         title.textColor = NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1)
-        title.frame = NSRect(x: 16, y: 150, width: 288, height: 22)
+        title.frame = NSRect(x: 16, y: 166, width: 288, height: 22)
         view.addSubview(title)
 
         stateLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
         stateLabel.textColor = NSColor(calibratedRed: 0.53, green: 0.78, blue: 1.0, alpha: 1)
-        stateLabel.frame = NSRect(x: 16, y: 126, width: 288, height: 18)
+        stateLabel.frame = NSRect(x: 16, y: 142, width: 288, height: 18)
         view.addSubview(stateLabel)
 
         detailLabel.font = NSFont.systemFont(ofSize: 12)
         detailLabel.textColor = NSColor(calibratedRed: 0.82, green: 0.87, blue: 0.94, alpha: 1)
-        detailLabel.frame = NSRect(x: 16, y: 78, width: 288, height: 44)
+        detailLabel.frame = NSRect(x: 16, y: 94, width: 288, height: 44)
         view.addSubview(detailLabel)
 
         questionLabel.font = NSFont.systemFont(ofSize: 12)
         questionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
-        questionLabel.frame = NSRect(x: 16, y: 50, width: 288, height: 24)
+        questionLabel.frame = NSRect(x: 16, y: 66, width: 288, height: 24)
         view.addSubview(questionLabel)
+
+        usageLabel.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+        usageLabel.textColor = NSColor(calibratedRed: 0.72, green: 0.82, blue: 0.94, alpha: 1)
+        usageLabel.frame = NSRect(x: 16, y: 48, width: 288, height: 14)
+        view.addSubview(usageLabel)
 
         let stop = NSButton(title: "STOP", target: self, action: #selector(stopAgent))
         stop.frame = NSRect(x: 16, y: 14, width: 76, height: 28)
@@ -1482,7 +1514,7 @@ final class MenuBarCompanion {
     }
 
     private func makeHudView() -> NSView {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 326, height: 224))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 326, height: 264))
         view.wantsLayer = true
         view.layer?.cornerRadius = 16
         view.layer?.borderWidth = 1
@@ -1490,27 +1522,36 @@ final class MenuBarCompanion {
         view.layer?.backgroundColor = NSColor(calibratedRed: 0.03, green: 0.05, blue: 0.08, alpha: 0.88).cgColor
 
         hudCircle.compactStatusStyle = true
-        hudCircle.frame = NSRect(x: 14, y: 92, width: 110, height: 110)
+        hudCircle.frame = NSRect(x: 14, y: 132, width: 110, height: 110)
         view.addSubview(hudCircle)
 
         hudStateLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
         hudStateLabel.textColor = NSColor(calibratedRed: 0.53, green: 0.78, blue: 1.0, alpha: 1)
-        hudStateLabel.frame = NSRect(x: 140, y: 180, width: 168, height: 18)
+        hudStateLabel.frame = NSRect(x: 140, y: 220, width: 168, height: 18)
         view.addSubview(hudStateLabel)
 
         hudDetailLabel.font = NSFont.systemFont(ofSize: 12)
         hudDetailLabel.textColor = NSColor(calibratedRed: 0.86, green: 0.90, blue: 0.96, alpha: 1)
-        hudDetailLabel.frame = NSRect(x: 140, y: 126, width: 168, height: 50)
+        hudDetailLabel.frame = NSRect(x: 140, y: 166, width: 168, height: 50)
         view.addSubview(hudDetailLabel)
 
         hudQuestionLabel.font = NSFont.systemFont(ofSize: 11)
         hudQuestionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
-        hudQuestionLabel.frame = NSRect(x: 140, y: 96, width: 168, height: 26)
+        hudQuestionLabel.frame = NSRect(x: 140, y: 136, width: 168, height: 26)
         view.addSubview(hudQuestionLabel)
+
+        hudUsageLabel.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+        hudUsageLabel.textColor = NSColor(calibratedRed: 0.72, green: 0.82, blue: 0.94, alpha: 1)
+        hudUsageLabel.lineBreakMode = .byWordWrapping
+        hudUsageLabel.maximumNumberOfLines = 2
+        hudUsageLabel.cell?.wraps = true
+        hudUsageLabel.cell?.isScrollable = false
+        hudUsageLabel.frame = NSRect(x: 14, y: 8, width: 298, height: 32)
+        view.addSubview(hudUsageLabel)
 
         hudContextSummary.font = NSFont.systemFont(ofSize: 10)
         hudContextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
-        hudContextSummary.frame = NSRect(x: 14, y: 66, width: 298, height: 16)
+        hudContextSummary.frame = NSRect(x: 14, y: 106, width: 298, height: 16)
         view.addSubview(hudContextSummary)
 
         hudContextField.placeholderString = "reference text"
@@ -1519,27 +1560,27 @@ final class MenuBarCompanion {
         hudContextField.isSelectable = true
         hudContextField.target = self
         hudContextField.action = #selector(addContext)
-        hudContextField.frame = NSRect(x: 14, y: 40, width: 188, height: 22)
+        hudContextField.frame = NSRect(x: 14, y: 80, width: 188, height: 22)
         view.addSubview(hudContextField)
 
         let addReference = NSButton(title: "Add", target: self, action: #selector(addContext))
-        addReference.frame = NSRect(x: 210, y: 38, width: 48, height: 26)
+        addReference.frame = NSRect(x: 210, y: 78, width: 48, height: 26)
         view.addSubview(addReference)
 
         let clearReference = NSButton(title: "Clear", target: self, action: #selector(clearContext))
-        clearReference.frame = NSRect(x: 264, y: 38, width: 48, height: 26)
+        clearReference.frame = NSRect(x: 264, y: 78, width: 48, height: 26)
         view.addSubview(clearReference)
 
         let stop = NSButton(title: "STOP", target: self, action: #selector(stopAgent))
-        stop.frame = NSRect(x: 14, y: 10, width: 72, height: 26)
+        stop.frame = NSRect(x: 14, y: 48, width: 72, height: 26)
         view.addSubview(stop)
 
         let ttsStop = NSButton(title: "TTS", target: self, action: #selector(stopTts))
-        ttsStop.frame = NSRect(x: 94, y: 10, width: 62, height: 26)
+        ttsStop.frame = NSRect(x: 94, y: 48, width: 62, height: 26)
         view.addSubview(ttsStop)
 
         let show = NSButton(title: "Show", target: self, action: #selector(showWindow))
-        show.frame = NSRect(x: 164, y: 10, width: 68, height: 26)
+        show.frame = NSRect(x: 164, y: 48, width: 68, height: 26)
         view.addSubview(show)
 
         return view
@@ -1553,6 +1594,19 @@ final class MenuBarCompanion {
         case "wake_matched": return "wake"
         default: return state
         }
+    }
+
+    private static func formatHudUsage(_ usage: String) -> String {
+        let trimmed = usage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let parts = trimmed
+            .components(separatedBy: " · ")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !parts.isEmpty else { return trimmed }
+
+        return parts.joined(separator: "\n")
     }
 }
 
@@ -1801,6 +1855,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             circleView.statusText = approval
             rootView?.pushChat(role: "assistant", kind: "status", text: approval)
             menuBarCompanion.update(state: "approval_pending", text: approval)
+        case "usage":
+            let usage = event["text"] as? String ?? ""
+            rootView?.updateUsage(usage)
+            menuBarCompanion.updateUsage(usage)
         case "context":
             updateContext(event["entries"] as? [String] ?? [])
         case "settings":

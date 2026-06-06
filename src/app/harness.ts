@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { ClaudeCodeBackend } from "../claude/ClaudeCodeBackend.ts";
 import type { AgentBackend, CodexProcessConfig } from "../codex/CodexBridge.ts";
 import { CodexAppServerBackend, type CodexApprovalPolicy } from "../codex/CodexAppServerBackend.ts";
-import { initialCodexStatus, type CodexOutputEvent, type CodexStatus } from "../codex/CodexOutputEvent.ts";
+import {
+  initialCodexStatus,
+  type CodexOutputEvent,
+  type CodexRateLimitWindow,
+  type CodexRateLimits,
+  type CodexStatus
+} from "../codex/CodexOutputEvent.ts";
 import type { CodexPrompt } from "../codex/CodexPrompt.ts";
 import {
   denyPhrases,
@@ -258,6 +264,7 @@ export class TerminalHarness {
   private pendingPermission: PermissionRequest | undefined;
   private readonly pendingPermissionQueue: PermissionRequest[] = [];
   private lastSpokenText: string | undefined;
+  private lastVisualUsageText: string | undefined;
   private readonly passthroughOutputBuffers = new Map<string, string>();
   private readonly passthroughStructuredSpeechSessions = new Set<string>();
   private readonly interruptedPassthroughSessions = new Set<string>();
@@ -511,6 +518,9 @@ export class TerminalHarness {
     });
     this.backend.onStatus((status) => {
       this.codexStatus = status;
+      if (status.rateLimits) {
+        this.sendVisualUsage(status.rateLimits);
+      }
       if (status.threadId && status.threadId !== this.codexThreadId) {
         this.codexThreadId = status.threadId;
         this.sendVisualTtsSettings();
@@ -1412,6 +1422,22 @@ export class TerminalHarness {
     });
   }
 
+  private sendVisualUsage(rateLimits: CodexRateLimits): void {
+    const selected = rateLimits.selected;
+    const text = selected?.text ?? "";
+    if (!text || text === this.lastVisualUsageText) return;
+
+    this.lastVisualUsageText = text;
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "usage",
+      text,
+      ...(selected?.primary ? { primaryText: formatVisualRateLimitWindow(selected.primary) } : {}),
+      ...(selected?.secondary ? { secondaryText: formatVisualRateLimitWindow(selected.secondary) } : {}),
+      updatedAt: rateLimits.updatedAt
+    });
+  }
+
   private async updateTtsSettings(settings: VisualTtsSettings): Promise<void> {
     const sanitized = sanitizeVisualTtsSettings(settings);
     const applied = this.voiceOutput.updateSettings?.(sanitized) ?? sanitized;
@@ -2132,6 +2158,15 @@ function statusToVisualState(task: CodexStatus["task"]): VisualUiState {
     default:
       return "idle";
   }
+}
+
+function formatVisualRateLimitWindow(window: CodexRateLimitWindow): string {
+  const reset = window.resetIn ? `, reset ${window.resetIn}` : "";
+  return `${window.label} ${formatVisualPercent(window.remainingPercent)}% left${reset}`;
+}
+
+function formatVisualPercent(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/u, "");
 }
 
 function approvalVisualText(permissionTarget: string, request?: PermissionRequest): string {

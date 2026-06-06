@@ -98,6 +98,14 @@ export type VisualEvent =
     }
   | {
       op: "voice-agent-ui";
+      type: "usage";
+      text: string;
+      primaryText?: string;
+      secondaryText?: string;
+      updatedAt?: number;
+    }
+  | {
+      op: "voice-agent-ui";
       type: "context";
       entries: string[];
     }
@@ -139,6 +147,7 @@ export class VisualBridge implements VisualBridgeLike {
   private readonly clients = new Set<WebSocketClient>();
   private readonly controlListeners: Array<(event: VisualControlEvent) => void> = [];
   private latestSettings: Extract<VisualEvent, { type: "settings" }> | undefined;
+  private latestUsage: Extract<VisualEvent, { type: "usage" }> | undefined;
   private server: Server | undefined;
   private bridgeUrl: string | undefined;
 
@@ -167,6 +176,9 @@ export class VisualBridge implements VisualBridgeLike {
           });
           if (this.latestSettings) {
             readyClient.send(this.latestSettings);
+          }
+          if (this.latestUsage) {
+            readyClient.send(this.latestUsage);
           }
         },
         onControl: (event) => this.handleControl(event),
@@ -210,6 +222,7 @@ export class VisualBridge implements VisualBridgeLike {
 
   send(event: VisualEvent): void {
     this.rememberSettings(event);
+    this.rememberUsage(event);
     const payload = serializeVisualEvent(event);
     for (const client of this.clients) {
       client.sendRaw(payload);
@@ -239,6 +252,19 @@ export class VisualBridge implements VisualBridgeLike {
       ...(event.visual !== undefined ? { visual: { ...event.visual } } : {}),
       ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {}),
       ...(event.codexThreadId !== undefined ? { codexThreadId: event.codexThreadId } : {})
+    };
+  }
+
+  private rememberUsage(event: VisualEvent): void {
+    if (event.type !== "usage") return;
+
+    this.latestUsage = {
+      op: "voice-agent-ui",
+      type: "usage",
+      text: event.text,
+      ...(event.primaryText !== undefined ? { primaryText: event.primaryText } : {}),
+      ...(event.secondaryText !== undefined ? { secondaryText: event.secondaryText } : {}),
+      ...(event.updatedAt !== undefined ? { updatedAt: event.updatedAt } : {})
     };
   }
 }

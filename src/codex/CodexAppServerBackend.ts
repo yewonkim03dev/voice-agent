@@ -3,7 +3,13 @@ import { spawn, type SpawnOptionsWithoutStdio } from "node:child_process";
 import type { PermissionDecision } from "../permission/PermissionDecision.ts";
 import type { PermissionRequest } from "../permission/PermissionRequest.ts";
 import type { AgentBackend, CodexProcessConfig } from "./CodexBridge.ts";
-import type { CodexOutputEvent, CodexStatus } from "./CodexOutputEvent.ts";
+import type {
+  CodexOutputEvent,
+  CodexRateLimitSnapshot,
+  CodexRateLimitWindow,
+  CodexRateLimits,
+  CodexStatus
+} from "./CodexOutputEvent.ts";
 import type { CodexPrompt } from "./CodexPrompt.ts";
 import { voiceAgentProtocolPrompt } from "../voice/VoiceAgentEvent.ts";
 
@@ -128,6 +134,7 @@ export class CodexAppServerBackend implements AgentBackend {
   private readonly turnSessionOrder: string[] = [];
   private threadId: string | undefined;
   private turnId: string | undefined;
+  private rateLimits: CodexRateLimits | undefined;
   private status: CodexStatus = {
     process: "not_started",
     task: "idle"
@@ -190,6 +197,7 @@ export class CodexAppServerBackend implements AgentBackend {
         currentWorkingDirectory: cwd,
         ...(this.threadId ? { threadId: this.threadId } : {})
       });
+      await this.refreshRateLimits();
     } catch (error) {
       this.socket?.close();
       this.socket = undefined;
@@ -436,17 +444,37 @@ export class CodexAppServerBackend implements AgentBackend {
     }
   }
 
-  private sendRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
+  private sendRequest(method: string, params?: Record<string, unknown>, options: { timeoutMs?: number } = {}): Promise<unknown> {
     const socket = this.requireSocket();
     const id = `voice_${++this.rpcSequence}`;
     const message = {
       id,
       method,
-      params
+      ...(params !== undefined ? { params } : {})
     };
 
     return new Promise((resolve, reject) => {
-      this.pendingResponses.set(id, { resolve, reject });
+      let timer: NodeJS.Timeout | undefined;
+      const clearTimer = (): void => {
+        if (timer) clearTimeout(timer);
+      };
+
+      this.pendingResponses.set(id, {
+        resolve: (value) => {
+          clearTimer();
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimer();
+          reject(error);
+        }
+      });
+      if (options.timeoutMs !== undefined) {
+        timer = setTimeout(() => {
+          this.pendingResponses.delete(id);
+          reject(new Error(`Timed out waiting for Codex app-server response to ${method}.`));
+        }, options.timeoutMs);
+      }
       socket.send(JSON.stringify(message));
     });
   }
@@ -562,6 +590,9 @@ export class CodexAppServerBackend implements AgentBackend {
       case "serverRequest/resolved":
         this.handleServerRequestResolved(message);
         return;
+      case "account/rateLimits/updated":
+        this.handleAccountRateLimitsUpdated(message);
+        return;
     }
 
     if (this.isApprovalRequest(message)) {
@@ -637,6 +668,58 @@ export class CodexAppServerBackend implements AgentBackend {
 
     this.pendingApprovals.delete(requestId);
     this.emitOutputForMessage(message, "approval_resolved", requestId);
+  }
+
+  private async refreshRateLimits(): Promise<void> {
+    try {
+      const result = await this.sendRequest("account/rateLimits/read", undefined, { timeoutMs: 1500 });
+      this.updateRateLimitsFromRead(result);
+    } catch (error) {
+      this.writeLine(`[codex-app] rate limits unavailable: ${formatError(error)}`);
+    }
+  }
+
+  private handleAccountRateLimitsUpdated(message: JsonRpcRequest): void {
+    const snapshot = parseRateLimitSnapshot(asRecord(message.params).rateLimits, this.now());
+    if (!snapshot) return;
+
+    const byLimitId = { ...(this.rateLimits?.byLimitId ?? {}) };
+    if (snapshot.limitId) {
+      byLimitId[snapshot.limitId] = mergeRateLimitSnapshot(byLimitId[snapshot.limitId], snapshot);
+    }
+
+    const selected = selectRateLimitSnapshot(byLimitId, snapshot);
+    this.rateLimits = {
+      selected,
+      ...(Object.keys(byLimitId).length > 0 ? { byLimitId } : {}),
+      updatedAt: this.now()
+    };
+    this.publishStatus(this.status);
+  }
+
+  private updateRateLimitsFromRead(result: unknown): void {
+    const record = asRecord(result);
+    const byLimitId: Record<string, CodexRateLimitSnapshot> = {};
+    const rawByLimitId = asRecord(record.rateLimitsByLimitId ?? record.rate_limits_by_limit_id);
+
+    for (const [limitId, value] of Object.entries(rawByLimitId)) {
+      const snapshot = parseRateLimitSnapshot(value, this.now(), limitId);
+      if (snapshot) byLimitId[limitId] = snapshot;
+    }
+
+    const fallback = parseRateLimitSnapshot(record.rateLimits ?? record.rate_limits, this.now());
+    if (fallback?.limitId && byLimitId[fallback.limitId] === undefined) {
+      byLimitId[fallback.limitId] = fallback;
+    }
+    const selected = selectRateLimitSnapshot(byLimitId, fallback);
+    if (!selected) return;
+
+    this.rateLimits = {
+      selected,
+      ...(Object.keys(byLimitId).length > 0 ? { byLimitId } : {}),
+      updatedAt: this.now()
+    };
+    this.publishStatus(this.status);
   }
 
   private handleApprovalRequest(message: JsonRpcRequest): void {
@@ -814,8 +897,11 @@ export class CodexAppServerBackend implements AgentBackend {
   }
 
   private publishStatus(status: CodexStatus): void {
-    this.status = status;
-    this.statusListeners.forEach((listener) => listener(status));
+    this.status = {
+      ...status,
+      ...(this.rateLimits ? { rateLimits: this.rateLimits } : {})
+    };
+    this.statusListeners.forEach((listener) => listener(this.status));
   }
 
   private writeVisibleProcessOutput(type: "stdout" | "stderr", text: string): void {
@@ -922,6 +1008,124 @@ function parseMessage(data: unknown): Record<string, unknown> {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function parseRateLimitSnapshot(value: unknown, now: number, fallbackLimitId?: string): CodexRateLimitSnapshot | undefined {
+  const record = asRecord(value);
+  const primary = parseRateLimitWindow(record.primary, now);
+  const secondary = parseRateLimitWindow(record.secondary, now);
+  if (!primary && !secondary) return undefined;
+
+  const limitId = parseOptionalString(record.limitId ?? record.limit_id) ?? fallbackLimitId;
+  const limitName = parseOptionalString(record.limitName ?? record.limit_name);
+  const planType = parseOptionalString(record.planType ?? record.plan_type);
+
+  return {
+    ...(limitId ? { limitId } : {}),
+    ...(limitName ? { limitName } : {}),
+    ...(planType ? { planType } : {}),
+    ...(primary ? { primary } : {}),
+    ...(secondary ? { secondary } : {}),
+    text: formatRateLimitText(primary, secondary)
+  };
+}
+
+function parseRateLimitWindow(value: unknown, now: number): CodexRateLimitWindow | undefined {
+  const record = asRecord(value);
+  const usedPercent = parseFiniteNumber(record.usedPercent ?? record.used_percent);
+  if (usedPercent === undefined) return undefined;
+
+  const windowDurationMins = parseFiniteNumber(record.windowDurationMins ?? record.window_duration_mins);
+  const resetsAt = parseFiniteNumber(record.resetsAt ?? record.resets_at);
+  const clampedUsedPercent = clampNumber(usedPercent, 0, 100);
+
+  return {
+    label: formatRateLimitWindowLabel(windowDurationMins),
+    usedPercent: roundOne(clampedUsedPercent),
+    remainingPercent: roundOne(100 - clampedUsedPercent),
+    ...(windowDurationMins !== undefined ? { windowDurationMins } : {}),
+    ...(resetsAt !== undefined ? { resetsAt } : {}),
+    ...(resetsAt !== undefined ? { resetIn: formatResetIn(resetsAt, now) } : {})
+  };
+}
+
+function mergeRateLimitSnapshot(
+  previous: CodexRateLimitSnapshot | undefined,
+  next: CodexRateLimitSnapshot
+): CodexRateLimitSnapshot {
+  const merged = {
+    ...(previous ?? {}),
+    ...next,
+    ...(next.primary ? { primary: next.primary } : previous?.primary ? { primary: previous.primary } : {}),
+    ...(next.secondary ? { secondary: next.secondary } : previous?.secondary ? { secondary: previous.secondary } : {})
+  };
+
+  return {
+    ...merged,
+    text: formatRateLimitText(merged.primary, merged.secondary)
+  };
+}
+
+function selectRateLimitSnapshot(
+  byLimitId: Record<string, CodexRateLimitSnapshot>,
+  fallback: CodexRateLimitSnapshot | undefined
+): CodexRateLimitSnapshot | undefined {
+  return byLimitId.codex ?? byLimitId["codex-gpt-5"] ?? byLimitId["codex_gpt_5"] ?? fallback ?? Object.values(byLimitId)[0];
+}
+
+function formatRateLimitText(
+  primary: CodexRateLimitWindow | undefined,
+  secondary: CodexRateLimitWindow | undefined
+): string {
+  return [primary, secondary]
+    .filter((window): window is CodexRateLimitWindow => Boolean(window))
+    .map((window) => {
+      const reset = window.resetIn ? `, reset ${window.resetIn}` : "";
+      return `${window.label} ${formatPercent(window.remainingPercent)}% left${reset}`;
+    })
+    .join(" · ");
+}
+
+function formatRateLimitWindowLabel(durationMins: number | undefined): string {
+  if (durationMins === undefined) return "usage";
+  if (durationMins === 300) return "5h";
+  if (durationMins === 10080) return "1w";
+  if (durationMins % 10080 === 0) return `${durationMins / 10080}w`;
+  if (durationMins % 1440 === 0) return `${durationMins / 1440}d`;
+  if (durationMins % 60 === 0) return `${durationMins / 60}h`;
+  return `${durationMins}m`;
+}
+
+function formatResetIn(resetsAt: number, now: number): string {
+  const resetMs = resetsAt > 1_000_000_000_000 ? resetsAt : resetsAt * 1000;
+  const remainingMs = Math.max(0, resetMs - now);
+  const totalMins = Math.ceil(remainingMs / 60_000);
+  if (totalMins <= 0) return "now";
+
+  const days = Math.floor(totalMins / 1440);
+  const hours = Math.floor((totalMins % 1440) / 60);
+  const mins = totalMins % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function formatPercent(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/u, "");
+}
+
+function parseFiniteNumber(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roundOne(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 function optionalUnknownArray(value: unknown): unknown[] | undefined {

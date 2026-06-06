@@ -15,6 +15,7 @@ ApplicationWindow {
     property string bridgeUrl: argumentValue("--url", "")
     property string uiState: "idle"
     property string statusText: bridgeUrl.length > 0 ? "connecting" : "waiting for bridge"
+    property string usageText: ""
     property string currentQuestion: ""
     property var chatItems: []
     property real rms: 0.0
@@ -364,6 +365,8 @@ ApplicationWindow {
                 root.uiState = "approval_pending"
                 root.statusText = event.text
                 root.pushChat("assistant", "status", event.text)
+            } else if (event.type === "usage") {
+                root.usageText = event.text || ""
             } else if (event.type === "context") {
                 root.contextEntries = event.entries || []
                 if (root.contextEntries.length === 0) contextInput.text = ""
@@ -468,6 +471,29 @@ ApplicationWindow {
             color: "#9fb0c7"
             font.pixelSize: 12
             elide: Text.ElideMiddle
+        }
+    }
+
+    Item {
+        id: usageBadge
+        anchors.top: sessionBadge.bottom
+        anchors.left: parent.left
+        anchors.leftMargin: 16
+        anchors.topMargin: 2
+        width: Math.min(root.width - guideButton.width - 56, 520)
+        height: 18
+        visible: root.usageText.length > 0
+        z: 12
+
+        Text {
+            anchors.fill: parent
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: Text.AlignLeft
+            text: root.usageText.length > 0 ? "usage: " + root.usageText : ""
+            color: "#b8ccec"
+            font.pixelSize: 11
+            font.family: "Menlo"
+            elide: Text.ElideRight
         }
     }
 

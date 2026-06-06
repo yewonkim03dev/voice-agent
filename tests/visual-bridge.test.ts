@@ -56,6 +56,14 @@ test("visual bridge serializes UI events as JSON", () => {
     },
     {
       op: "voice-agent-ui",
+      type: "usage",
+      text: "5h 63% left · 1w 88% left",
+      primaryText: "5h 63% left",
+      secondaryText: "1w 88% left",
+      updatedAt: 1000
+    },
+    {
+      op: "voice-agent-ui",
       type: "context",
       entries: ["참고자료"]
     }
@@ -132,8 +140,11 @@ test("visual bridge replays latest settings to late visual clients", async () =>
   const source = await readFile("src/visual/VisualBridge.ts", "utf8");
 
   assert.match(source, /private latestSettings/u);
+  assert.match(source, /private latestUsage/u);
   assert.match(source, /this\.rememberSettings\(event\)/u);
+  assert.match(source, /this\.rememberUsage\(event\)/u);
   assert.match(source, /readyClient\.send\(this\.latestSettings\)/u);
+  assert.match(source, /readyClient\.send\(this\.latestUsage\)/u);
   assert.match(source, /event\.wakePhrases !== undefined/u);
   assert.match(source, /event\.tts !== undefined/u);
   assert.match(source, /event\.visual !== undefined/u);
@@ -388,6 +399,10 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /id: guideButton/u);
   assert.match(qml, /id: guidePopup/u);
   assert.match(qml, /id: referenceHelpPopup/u);
+  assert.match(qml, /property string usageText/u);
+  assert.match(qml, /event\.type === "usage"/u);
+  assert.match(qml, /id: usageBadge/u);
+  assert.match(qml, /"usage: " \+ root\.usageText/u);
   assert.match(qml, /onHoveredChanged/u);
   assert.match(qml, /Thinking sound/u);
   assert.match(qml, /thinkingVolumeSlider/u);
@@ -440,6 +455,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /let visualCenterLift = max\(96, min\(220, bounds\.height \* 0\.20\)\)/u);
   assert.match(swift, /let center = CGPoint\(x: bounds\.midX, y: centerY\)/u);
   assert.match(swift, /func updateSessionId\(_ sessionId: String\)/u);
+  assert.match(swift, /func updateUsage\(_ usage: String\)/u);
   assert.match(swift, /final class QuestionLabelView: NSView/u);
   assert.match(swift, /private let questionView = QuestionLabelView\(frame: \.zero\)/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
@@ -459,6 +475,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /"hudEnabled": hudEnabled/u);
   assert.match(swift, /"speakWakeRejectedWarnings": speakWakeRejectedWarnings/u);
   assert.match(swift, /case "question":/u);
+  assert.match(swift, /case "usage":/u);
   assert.match(swift, /pushChat\(role: "user", kind: "question"/u);
   assert.match(swift, /pushChat\(role: "assistant", kind: "speech"/u);
   assert.match(swift, /pushChat\(role: "assistant", kind: "command"/u);
@@ -524,6 +541,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /NSStatusBar\.system\.statusItem/u);
   assert.match(swift, /item\.button\?\.title = "VA idle"/u);
   assert.match(swift, /private var hudPanel: NSPanel\?/u);
+  assert.match(swift, /private let hudUsageLabel = NSTextField/u);
+  assert.match(swift, /menuBarCompanion\.updateUsage\(usage\)/u);
   assert.match(swift, /FloatingHudPanel\(/u);
   assert.match(swift, /styleMask: \[\.borderless, \.nonactivatingPanel\]/u);
   assert.match(swift, /func configureHudPanel\(\)/u);
