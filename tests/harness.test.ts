@@ -533,6 +533,18 @@ test("pass-through permission prompt keeps raw commands out of TTS", async () =>
   });
 });
 
+test("pass-through permission prompt plays a ready cue after TTS finishes", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines);
+
+  await harness.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+
+  assert.equal(lines.includes("[voice:cue] approval ready \u0007"), true);
+});
+
 test("pass-through permission prompt waits for queued speech instead of cutting it off", async () => {
   const backend = new InMemoryAgentBackend();
   const provider = new BlockingTtsProvider();

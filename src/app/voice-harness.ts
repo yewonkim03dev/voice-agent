@@ -869,7 +869,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 
   if (visible.startsWith("[agent:")) return true;
   if (/^\[stt:(ko|en|mixed|unknown)\]/u.test(visible)) return true;
-  if (/^\[voice:(ack|permission|completion|speech|status|error|warning)\]/u.test(visible)) return true;
+  if (/^\[voice:(ack|permission|completion|speech|status|error|warning|cue)\]/u.test(visible)) return true;
   if (visible.startsWith("[voice:context]")) return true;
   if (visible.startsWith("[voice:capability]")) return true;
   if (visible.startsWith("[codex-app] config ")) return true;

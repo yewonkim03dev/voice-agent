@@ -265,6 +265,7 @@ export class TerminalHarness {
   private voiceQueue: Promise<void> = Promise.resolve();
   private voiceGeneration = 0;
   private progressVoiceGeneration = 0;
+  private readonly permissionCueMessageIds = new Set<string>();
 
   constructor(options: TerminalHarnessOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -306,6 +307,7 @@ export class TerminalHarness {
     this.voiceOutput.onFinished((id) => {
       this.ttsPlaybackState.recordFinished(id, this.now());
       this.restoreVisualStateAfterSpeech();
+      this.playPermissionReadyCue(id);
     });
     this.visualBridge?.onControl((event) => {
       void this.handleVisualControl(event);
@@ -962,6 +964,7 @@ export class TerminalHarness {
     if (message.priority === "urgent") {
       this.voiceGeneration += 1;
       this.voiceQueue = Promise.resolve();
+      this.permissionCueMessageIds.clear();
       this.ttsPlaybackState.recordStopped(this.now());
       await this.voiceOutput.stop();
       this.ttsPlaybackState.recordQueued(message, this.now());
@@ -983,6 +986,7 @@ export class TerminalHarness {
     this.voiceGeneration += 1;
     this.progressVoiceGeneration += 1;
     this.voiceQueue = Promise.resolve();
+    this.permissionCueMessageIds.clear();
     this.ttsPlaybackState.recordStopped(this.now());
     await this.voiceOutput.stop();
   }
@@ -1058,6 +1062,9 @@ export class TerminalHarness {
     if (generation !== this.voiceGeneration) return;
 
     this.lastSpokenText = message.text;
+    if (message.category === "permission") {
+      this.permissionCueMessageIds.add(message.id);
+    }
     this.ttsPlaybackState.recordStart(message, this.now());
     if (visualOptions.visualState) {
       this.sendVisualEvent({
@@ -1087,6 +1094,13 @@ export class TerminalHarness {
 
   private restoreVisualStateAfterSpeech(): void {
     this.restoreCurrentVisualState();
+  }
+
+  private playPermissionReadyCue(id: string): void {
+    if (!this.permissionCueMessageIds.delete(id)) return;
+    if (!this.hasPendingApproval()) return;
+
+    this.writeLine("[voice:cue] approval ready \u0007");
   }
 
   private scheduleSpeak(text: string, category: VoiceMessage["category"]): void {

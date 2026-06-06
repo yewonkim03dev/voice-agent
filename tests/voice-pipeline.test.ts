@@ -1133,12 +1133,18 @@ test("always-on voice runner prints hidden STT diagnostics with debug enabled", 
 });
 
 test("always-on voice runner keeps pending approval speech working during TTS", async () => {
-  const { backend, runner, audioInput } = createAlwaysOnRunner([
+  const voiceOutput = new InspectableTestVoiceOutput();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "허용",
+        language: "ko"
+      }
+    ],
     {
-      text: "허용",
-      language: "ko"
+      voiceOutput
     }
-  ]);
+  );
 
   await runner.start();
   emitAgentSpeech(backend, "명령 실행 권한 필요해. 허용할까?");
@@ -1150,6 +1156,44 @@ test("always-on voice runner keeps pending approval speech working during TTS", 
 
   assert.equal(backend.permissions.length, 1);
   assert.equal(backend.permissions[0].decision, "allow");
+  assert.equal(voiceOutput.stopCount, 0);
+});
+
+test("always-on voice runner accepts approval after an unclear retry during permission TTS", async () => {
+  const voiceOutput = new InspectableTestVoiceOutput();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "헐",
+        language: "ko"
+      },
+      {
+        text: "허용",
+        language: "ko"
+      }
+    ],
+    {
+      voiceOutput
+    }
+  );
+
+  await runner.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+
+  assert.equal(backend.permissions.length, 0);
+  assert.equal(voiceOutput.messages.at(-1)?.text, "허용인지 거부인지 다시 말해줘.");
+
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.permissions.length, 1);
+  assert.equal(backend.permissions[0].decision, "allow");
+  assert.equal(voiceOutput.stopCount, 0);
 });
 
 test("EchoGuard similarity checks stay bounded for long text", () => {
@@ -1493,6 +1537,7 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[agent:speech] 확인했어."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[stt:ko] 코덱스 날씨 확인해줘"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:permission] 명령 실행 권한 필요해."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:cue] approval ready \u0007"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  Wake: 코덱스 <명령>"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[codex-app] turn/start sess_1: 날씨 확인해줘"), false);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[wake:candidate] start preRollFrames=8 preRollBytes=32768"), false);
