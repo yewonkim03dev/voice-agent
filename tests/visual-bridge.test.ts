@@ -496,6 +496,10 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /func updateVolume\(rms: CGFloat, peak: CGFloat\)/u);
   assert.match(swift, /func update\(state: String, text: String\)/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
+  const hudUpdateMessage = swift.match(/func updateMessage\(_ text: String\) \{[\s\S]*?\n    \}/u);
+  assert.ok(hudUpdateMessage);
+  assert.match(hudUpdateMessage[0], /hudDetailLabel\.stringValue = trimmed/u);
+  assert.doesNotMatch(hudUpdateMessage[0], /hudCircle\.statusText\s*=/u);
   assert.match(swift, /private let menuBarCompanion = MenuBarCompanion\(\)/u);
   assert.match(swift, /menuBarCompanion\.install/u);
   assert.match(swift, /menuBarCompanion\.update\(state: circleView\.state, text: circleView\.statusText\)/u);

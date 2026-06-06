@@ -1291,7 +1291,6 @@ final class MenuBarCompanion {
         guard !trimmed.isEmpty else { return }
         detailLabel.stringValue = trimmed
         hudDetailLabel.stringValue = trimmed
-        hudCircle.statusText = trimmed
     }
 
     func updateVolume(rms: CGFloat, peak: CGFloat) {
