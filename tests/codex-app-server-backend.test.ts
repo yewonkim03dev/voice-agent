@@ -182,6 +182,100 @@ test("interrupts active Codex app-server turns with turn/interrupt", async () =>
   });
 });
 
+test("routes app-server output by turn id instead of the current session", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const outputs: Array<{ sessionId: string; type: string; text?: string; turnId?: string }> = [];
+  backend.onOutput((output) => outputs.push(output));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  await backend.sendPrompt({
+    sessionId: "sess_1",
+    text: "첫 작업",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+  await backend.sendPrompt({
+    sessionId: "sess_2",
+    text: "다음 작업",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+
+  socket.receive({
+    method: "item/agentMessage/delta",
+    params: {
+      turnId: "turn_1",
+      delta: "old turn output"
+    }
+  });
+  socket.receive({
+    method: "item/agentMessage/delta",
+    params: {
+      turnId: "turn_2",
+      delta: "new turn output"
+    }
+  });
+
+  assert.equal(outputs.find((output) => output.text === "old turn output")?.sessionId, "sess_1");
+  assert.equal(outputs.find((output) => output.text === "old turn output")?.turnId, "turn_1");
+  assert.equal(outputs.find((output) => output.text === "new turn output")?.sessionId, "sess_2");
+  assert.equal(outputs.find((output) => output.text === "new turn output")?.turnId, "turn_2");
+});
+
+test("late completed old turns do not idle the current app-server turn", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const statuses: CodexStatus[] = [];
+  const outputs: Array<{ sessionId: string; type: string; text?: string; turnId?: string }> = [];
+  backend.onStatus((status) => statuses.push(status));
+  backend.onOutput((output) => outputs.push(output));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+  await backend.sendPrompt({
+    sessionId: "sess_1",
+    text: "첫 작업",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+  await backend.sendPrompt({
+    sessionId: "sess_2",
+    text: "다음 작업",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+
+  socket.receive({
+    method: "turn/completed",
+    params: {
+      turn: {
+        id: "turn_1"
+      }
+    }
+  });
+  socket.receive({
+    method: "item/agentMessage/delta",
+    params: {
+      turnId: "turn_1",
+      delta: "late old output"
+    }
+  });
+
+  assert.equal(outputs.find((output) => output.type === "task_complete" && output.turnId === "turn_1")?.sessionId, "sess_1");
+  assert.equal(outputs.find((output) => output.text === "late old output")?.sessionId, "sess_1");
+  assert.equal(statuses.at(-1)?.task, "thinking");
+});
+
 test("can prepend the voice-agent protocol prompt to real turn/start requests", async () => {
   const { backend, child, socket } = createStartedBackend({
     voiceAgentProtocol: true,
@@ -842,6 +936,7 @@ class FakeWebSocket {
     error?: { code?: number; message: string };
   }> = [];
   flushed: Promise<void> = Promise.resolve();
+  private turnSequence = 0;
 
   open(): void {
     this.onopen?.();
@@ -901,11 +996,12 @@ class FakeWebSocket {
     }
 
     if (message.method === "turn/start") {
+      const turnId = `turn_${++this.turnSequence}`;
       this.receive({
         id: message.id,
         result: {
           turn: {
-            id: "turn_1"
+            id: turnId
           }
         }
       });

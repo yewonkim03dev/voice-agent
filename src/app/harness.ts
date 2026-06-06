@@ -245,6 +245,10 @@ export class TerminalHarness {
   private currentSessionId: string | undefined;
   private passthroughState: AgentState = "BOOTING";
   private codexStatus: CodexStatus = initialCodexStatus;
+  private passthroughGeneration = 0;
+  private activePassthroughGeneration: number | undefined;
+  private readonly sessionGenerations = new Map<string, number>();
+  private readonly interruptedPassthroughGenerations = new Set<number>();
   private pendingPermission: PermissionRequest | undefined;
   private readonly pendingPermissionQueue: PermissionRequest[] = [];
   private lastSpokenText: string | undefined;
@@ -538,6 +542,10 @@ export class TerminalHarness {
 
   private async sendPassthroughTranscript(transcript: Transcript): Promise<void> {
     this.startAgentTurn();
+    const generation = ++this.passthroughGeneration;
+    this.activePassthroughGeneration = generation;
+    this.currentSessionId = transcript.sessionId;
+    this.sessionGenerations.set(transcript.sessionId, generation);
     const prompt: CodexPrompt = {
       sessionId: transcript.sessionId,
       text: transcript.text,
@@ -603,6 +611,17 @@ export class TerminalHarness {
   }
 
   private async handlePassthroughPermissionRequest(request: PermissionRequest): Promise<void> {
+    const generation = this.sessionGenerations.get(request.sessionId);
+    if (this.isInterruptedPassthroughOutput(request.sessionId, generation) || this.isStaleForActivePassthroughTurn(request.sessionId, generation)) {
+      this.writeLine(`[agent:stale:permission] ${request.command ?? request.action}`);
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "command",
+        text: `[stale permission] ${request.command ?? request.action}`
+      });
+      return;
+    }
+
     await this.flushPassthroughOutputBuffers(request.sessionId);
 
     if (this.pendingPermission || this.pendingPermissionQueue.length > 0) {
@@ -657,23 +676,39 @@ export class TerminalHarness {
       return;
     }
 
+    const outputGeneration = this.sessionGenerations.get(output.sessionId);
+    const interrupted = this.isInterruptedPassthroughOutput(output.sessionId, outputGeneration);
+    const staleForActiveTurn = this.isStaleForActivePassthroughTurn(output.sessionId, outputGeneration);
+
     if (output.type === "task_complete") {
+      if (interrupted || staleForActiveTurn) {
+        await this.flushPassthroughOutputBuffers(output.sessionId, {
+          stale: true
+        });
+        this.clearInterruptedPassthroughOutput(output.sessionId, outputGeneration);
+        this.sessionGenerations.delete(output.sessionId);
+        return;
+      }
+
       await this.flushPassthroughOutputBuffers(output.sessionId);
-      this.clearPendingPermissions();
       this.codexStatus = {
         ...this.codexStatus,
         task: "idle"
       };
       this.passthroughState = "IDLE";
-      const interrupted = this.interruptedPassthroughSessions.delete(output.sessionId);
-      if (!interrupted && !this.passthroughStructuredSpeechSessions.has(output.sessionId)) {
+      this.clearPendingPermissions();
+      if (outputGeneration !== undefined && outputGeneration === this.activePassthroughGeneration) {
+        this.activePassthroughGeneration = undefined;
+      }
+      this.sessionGenerations.delete(output.sessionId);
+      if (!this.passthroughStructuredSpeechSessions.has(output.sessionId)) {
         await this.speak("끝났어.", "completion");
       }
       this.passthroughStructuredSpeechSessions.delete(output.sessionId);
       return;
     }
 
-    if (this.interruptedPassthroughSessions.has(output.sessionId)) {
+    if (interrupted || staleForActiveTurn) {
       if (text) {
         this.handleStalePassthroughOutput(output.type, text);
       }
@@ -698,7 +733,8 @@ export class TerminalHarness {
   }
 
   private async bufferPassthroughOutput(type: CodexOutputEvent["type"], sessionId: string, text: string): Promise<void> {
-    const buffered = `${this.passthroughOutputBuffers.get(type) ?? ""}${text}`;
+    const key = passthroughOutputBufferKey(sessionId, type);
+    const buffered = `${this.passthroughOutputBuffers.get(key) ?? ""}${text}`;
     const normalized = buffered.replace(/\r/g, "\n");
     const parts = normalized.split("\n");
     const completeLines = parts.slice(0, -1);
@@ -709,25 +745,25 @@ export class TerminalHarness {
         this.handlePassthroughOutputLine(type, sessionId, line);
       }
       if (this.tryHandleStructuredPassthroughOutput(type, sessionId, remainder) || !remainder) {
-        this.passthroughOutputBuffers.delete(type);
+        this.passthroughOutputBuffers.delete(key);
       } else {
-        this.passthroughOutputBuffers.set(type, remainder);
+        this.passthroughOutputBuffers.set(key, remainder);
       }
       return;
     }
 
     if (this.tryHandleStructuredPassthroughOutput(type, sessionId, remainder)) {
-      this.passthroughOutputBuffers.delete(type);
+      this.passthroughOutputBuffers.delete(key);
       return;
     }
 
     if (remainder.length >= 2_000) {
       this.handlePassthroughOutputLine(type, sessionId, remainder);
-      this.passthroughOutputBuffers.delete(type);
+      this.passthroughOutputBuffers.delete(key);
       return;
     }
 
-    this.passthroughOutputBuffers.set(type, remainder);
+    this.passthroughOutputBuffers.set(key, remainder);
   }
 
   private tryHandleStructuredPassthroughOutput(
@@ -752,14 +788,23 @@ export class TerminalHarness {
     return false;
   }
 
-  private async flushPassthroughOutputBuffers(sessionId = this.currentBackendSessionId()): Promise<void> {
-    for (const [type, text] of this.passthroughOutputBuffers) {
-      for (const line of text.replace(/\r/g, "\n").split("\n")) {
-        this.handlePassthroughOutputLine(type as CodexOutputEvent["type"], sessionId, line);
-      }
-    }
+  private async flushPassthroughOutputBuffers(
+    sessionId = this.currentBackendSessionId(),
+    options: { stale?: boolean } = {}
+  ): Promise<void> {
+    for (const [key, text] of [...this.passthroughOutputBuffers]) {
+      const parsed = parsePassthroughOutputBufferKey(key);
+      if (parsed.sessionId !== sessionId) continue;
 
-    this.passthroughOutputBuffers.clear();
+      for (const line of text.replace(/\r/g, "\n").split("\n")) {
+        if (options.stale) {
+          this.handleStalePassthroughOutput(parsed.type, line);
+        } else {
+          this.handlePassthroughOutputLine(parsed.type, sessionId, line);
+        }
+      }
+      this.passthroughOutputBuffers.delete(key);
+    }
   }
 
   private handlePassthroughOutputLine(type: CodexOutputEvent["type"], sessionId: string, line: string): void {
@@ -954,7 +999,37 @@ export class TerminalHarness {
 
   private markCurrentPassthroughSessionInterrupted(): void {
     if (this.runtime) return;
-    this.interruptedPassthroughSessions.add(this.currentBackendSessionId());
+    const sessionId = this.currentBackendSessionId();
+    const generation = this.sessionGenerations.get(sessionId);
+    this.interruptedPassthroughSessions.add(sessionId);
+    if (generation !== undefined) {
+      this.interruptedPassthroughGenerations.add(generation);
+      if (this.activePassthroughGeneration === generation) {
+        this.activePassthroughGeneration = undefined;
+      }
+    }
+  }
+
+  private isInterruptedPassthroughOutput(sessionId: string, generation: number | undefined): boolean {
+    return (
+      this.interruptedPassthroughSessions.has(sessionId) ||
+      (generation !== undefined && this.interruptedPassthroughGenerations.has(generation))
+    );
+  }
+
+  private isStaleForActivePassthroughTurn(sessionId: string, generation: number | undefined): boolean {
+    if (this.activePassthroughGeneration === undefined) return false;
+    if (generation === undefined) return false;
+    if (generation === this.activePassthroughGeneration) return false;
+    return this.sessionGenerations.has(sessionId);
+  }
+
+  private clearInterruptedPassthroughOutput(sessionId: string, generation: number | undefined): void {
+    this.interruptedPassthroughSessions.delete(sessionId);
+    if (generation !== undefined) {
+      this.interruptedPassthroughGenerations.delete(generation);
+    }
+    this.passthroughStructuredSpeechSessions.delete(sessionId);
   }
 
   private async speakQueuedMessage(
@@ -1132,7 +1207,16 @@ export class TerminalHarness {
 
   private currentTranscriptSessionId(): string {
     if (!this.runtime) {
-      this.currentSessionId = this.currentSessionId ?? this.createId("sess");
+      if (this.pendingPermission) {
+        this.currentSessionId = this.pendingPermission.sessionId;
+        return this.currentSessionId;
+      }
+
+      if (["EXECUTING", "WAITING_CODEX", "CONFIRMING"].includes(this.passthroughState) && this.currentSessionId) {
+        return this.currentSessionId;
+      }
+
+      this.currentSessionId = this.createId("sess");
       return this.currentSessionId;
     }
 
@@ -2036,6 +2120,25 @@ function hasEnabledNetworkPermission(value: unknown): boolean {
   const permissions = asRecord(value);
   const network = asRecord(permissions.network);
   return network.enabled === true;
+}
+
+function passthroughOutputBufferKey(sessionId: string, type: CodexOutputEvent["type"]): string {
+  return `${sessionId}\u0000${type}`;
+}
+
+function parsePassthroughOutputBufferKey(key: string): { sessionId: string; type: CodexOutputEvent["type"] } {
+  const separator = key.lastIndexOf("\u0000");
+  if (separator === -1) {
+    return {
+      sessionId: "",
+      type: key as CodexOutputEvent["type"]
+    };
+  }
+
+  return {
+    sessionId: key.slice(0, separator),
+    type: key.slice(separator + 1) as CodexOutputEvent["type"]
+  };
 }
 
 function parseNativeNetworkHost(request: PermissionRequest | undefined): string | undefined {

@@ -10,6 +10,7 @@ export interface CodexOutputEvent {
     | "error";
   text?: string;
   raw?: string;
+  turnId?: string;
   timestamp: number;
 }
 

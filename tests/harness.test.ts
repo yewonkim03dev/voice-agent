@@ -1224,6 +1224,57 @@ test("pass-through mode does not replay stale speech after interruption", async 
   );
 });
 
+test("pass-through STOP followed by a new command keeps old output stale", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, lines, visualBridge);
+
+  await harness.start();
+  await harness.processLine("코덱스 긴 작업 처리해줘");
+  const oldSessionId = backend.prompts[0].sessionId;
+  visualBridge.emitControl("emergency_stop");
+  await flushAsync();
+  await harness.processLine("코덱스 뭐 해");
+  const newSessionId = backend.prompts[1].sessionId;
+
+  assert.notEqual(newSessionId, oldSessionId);
+
+  backend.emitOutput({
+    sessionId: oldSessionId,
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","role":"final","text":"늦은 옛 답변"}\n',
+    timestamp: 1000
+  });
+  backend.emitOutput({
+    sessionId: oldSessionId,
+    type: "task_complete",
+    text: "Task complete",
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(lines.some((line) => line.includes("[agent:stale:speech] 늦은 옛 답변")), true);
+  assert.equal(harness.voiceOutput.messages.some((message) => message.text === "늦은 옛 답변"), false);
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
+
+  backend.emitOutput({
+    sessionId: newSessionId,
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"speech","role":"final","text":"새 답변입니다."}\n',
+    timestamp: 1000
+  });
+  backend.emitOutput({
+    sessionId: newSessionId,
+    type: "task_complete",
+    text: "Task complete",
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), ["정지했어.", "새 답변입니다."]);
+});
+
 function createHarness(): TerminalHarness {
   let id = 0;
 

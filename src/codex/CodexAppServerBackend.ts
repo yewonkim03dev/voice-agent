@@ -11,6 +11,8 @@ type RequestId = string | number;
 type WriteLine = (line: string) => void;
 export type CodexApprovalPolicy = "on-request" | "untrusted" | "on-failure" | "never";
 
+const MAX_TURN_SESSION_MAPPINGS = 200;
+
 interface ProcessReadable {
   on(event: "data", callback: (chunk: Buffer | string) => void): unknown;
 }
@@ -122,6 +124,8 @@ export class CodexAppServerBackend implements AgentBackend {
   private socket: WebSocketLike | undefined;
   private rpcSequence = 0;
   private currentSessionId = "codex_app_server";
+  private readonly turnSessions = new Map<string, string>();
+  private readonly turnSessionOrder: string[] = [];
   private threadId: string | undefined;
   private turnId: string | undefined;
   private status: CodexStatus = {
@@ -233,7 +237,11 @@ export class CodexAppServerBackend implements AgentBackend {
       approvalsReviewer: "user"
     });
     const turn = asRecord(result).turn;
-    this.turnId = typeof asRecord(turn).id === "string" ? asRecord(turn).id : this.turnId;
+    const turnId = parseOptionalString(asRecord(turn).id);
+    if (turnId) {
+      this.turnId = turnId;
+      this.rememberTurnSession(turnId, prompt.sessionId);
+    }
   }
 
   async sendPermission(decision: PermissionDecision): Promise<void> {
@@ -531,20 +539,19 @@ export class CodexAppServerBackend implements AgentBackend {
         return;
       case "item/agentMessage/delta":
       case "item/commandExecution/outputDelta":
-        this.emitOutput("stdout", String(message.params?.delta ?? ""));
+        this.emitOutputForMessage(message, "stdout", String(message.params?.delta ?? ""));
         return;
       case "command/exec/outputDelta":
         this.emitCommandExecOutput(message);
         return;
+      case "turn/started":
+        this.handleTurnStarted(message);
+        return;
       case "turn/completed":
-        this.emitOutput("task_complete", "Task complete");
-        this.publishStatus({
-          ...this.status,
-          task: "idle"
-        });
+        this.handleTurnCompleted(message);
         return;
       case "error":
-        this.emitOutput("error", String(asRecord(message.params?.error).message ?? "Codex app-server error"));
+        this.emitOutputForMessage(message, "error", String(asRecord(message.params?.error).message ?? "Codex app-server error"));
         return;
       case "thread/status/changed":
         this.publishStatus({
@@ -629,7 +636,7 @@ export class CodexAppServerBackend implements AgentBackend {
     if (!requestId) return;
 
     this.pendingApprovals.delete(requestId);
-    this.emitOutput("approval_resolved", requestId);
+    this.emitOutputForMessage(message, "approval_resolved", requestId);
   }
 
   private handleApprovalRequest(message: JsonRpcRequest): void {
@@ -674,7 +681,7 @@ export class CodexAppServerBackend implements AgentBackend {
     const params = asRecord(message.params);
     return {
       id: String(message.id),
-      sessionId: this.currentSessionId,
+      sessionId: this.resolveSessionId(message),
       tool: details.tool,
       action: details.action,
       command: details.command,
@@ -731,16 +738,75 @@ export class CodexAppServerBackend implements AgentBackend {
     const deltaBase64 = typeof params.deltaBase64 === "string" ? params.deltaBase64 : "";
     const text = deltaBase64 ? Buffer.from(deltaBase64, "base64").toString("utf8") : "";
 
-    this.emitOutput(stream, text);
+    this.emitOutputForMessage(message, stream, text);
   }
 
-  private emitOutput(type: CodexOutputEvent["type"], text: string): void {
+  private handleTurnStarted(message: JsonRpcRequest): void {
+    const turnId = extractTurnId(message.params);
+    if (!turnId) return;
+
+    this.turnId = turnId;
+    this.rememberTurnSession(turnId, this.currentSessionId);
+    this.publishStatus({
+      ...this.status,
+      task: "thinking"
+    });
+  }
+
+  private handleTurnCompleted(message: JsonRpcRequest): void {
+    const turnId = extractTurnId(message.params);
+    const sessionId = this.resolveSessionId(message);
+    this.emitOutput("task_complete", "Task complete", {
+      sessionId,
+      turnId
+    });
+
+    if (!turnId || turnId === this.turnId) {
+      this.turnId = undefined;
+      this.publishStatus({
+        ...this.status,
+        task: "idle"
+      });
+    }
+  }
+
+  private emitOutputForMessage(message: JsonRpcRequest, type: CodexOutputEvent["type"], text: string): void {
+    const turnId = extractTurnId(message.params);
+    this.emitOutput(type, text, {
+      sessionId: this.resolveSessionId(message),
+      turnId
+    });
+  }
+
+  private resolveSessionId(message: JsonRpcRequest): string {
+    const turnId = extractTurnId(message.params);
+    return (turnId ? this.turnSessions.get(turnId) : undefined) ?? this.currentSessionId;
+  }
+
+  private rememberTurnSession(turnId: string, sessionId: string): void {
+    if (!this.turnSessions.has(turnId)) {
+      this.turnSessionOrder.push(turnId);
+    }
+    this.turnSessions.set(turnId, sessionId);
+
+    while (this.turnSessionOrder.length > MAX_TURN_SESSION_MAPPINGS) {
+      const staleTurnId = this.turnSessionOrder.shift();
+      if (staleTurnId) this.turnSessions.delete(staleTurnId);
+    }
+  }
+
+  private emitOutput(
+    type: CodexOutputEvent["type"],
+    text: string,
+    options: { sessionId?: string; turnId?: string } = {}
+  ): void {
     if (!text) return;
 
     const event: CodexOutputEvent = {
-      sessionId: this.currentSessionId,
+      sessionId: options.sessionId ?? this.currentSessionId,
       type,
       text,
+      ...(options.turnId ? { turnId: options.turnId } : {}),
       timestamp: this.now()
     };
 
@@ -864,6 +930,19 @@ function optionalUnknownArray(value: unknown): unknown[] | undefined {
 
 function parseOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function extractTurnId(value: unknown): string | undefined {
+  const params = asRecord(value);
+  const direct = parseOptionalString(params.turnId ?? params.turn_id);
+  if (direct) return direct;
+
+  const turn = asRecord(params.turn);
+  const turnId = parseOptionalString(turn.id ?? turn.turnId ?? turn.turn_id);
+  if (turnId) return turnId;
+
+  const item = asRecord(params.item);
+  return parseOptionalString(item.turnId ?? item.turn_id);
 }
 
 function approvalRawText(params: Record<string, unknown>, command: string | undefined, networkApproval: boolean): string {
