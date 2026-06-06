@@ -149,7 +149,9 @@ export class VoiceHarnessRunner {
       this.printAudioDiagnostics(audio);
       const transcript = await this.speechProcessor.transcribe(audio);
       this.printTranscript(transcript);
-      await this.terminalHarness.processTranscript(this.textContext.apply(transcript));
+      await this.terminalHarness.processTranscript(this.textContext.apply(transcript), {
+        visualQuestionText: transcript.text
+      });
     } catch (error) {
       this.writeLine(`[voice:error] ${formatError(error)}`);
     }
@@ -335,7 +337,9 @@ export class AlwaysOnVoiceHarnessRunner {
 
       if (source === "manual") {
         this.printTranscript(transcript);
-        await this.terminalHarness.processTranscript(this.textContext.apply(transcript));
+        await this.terminalHarness.processTranscript(this.textContext.apply(transcript), {
+          visualQuestionText: transcript.text
+        });
         return;
       }
 
@@ -413,7 +417,9 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     const routedTranscript = withTranscriptText(transcript, wake.commandText);
-    await this.terminalHarness.processTranscript(wake.commandText ? this.textContext.apply(routedTranscript) : routedTranscript);
+    await this.terminalHarness.processTranscript(wake.commandText ? this.textContext.apply(routedTranscript) : routedTranscript, {
+      visualQuestionText: wake.commandText || transcript.text
+    });
   }
 
   private async tryRouteWakeFollowUp(transcript: Transcript): Promise<boolean> {
@@ -435,7 +441,9 @@ export class AlwaysOnVoiceHarnessRunner {
       await this.terminalHarness.stopVoiceOutput();
     }
     this.writeLine(`[wake:followup] phrase="${followUp.phrase}" command="${transcript.text.trim()}"`);
-    await this.terminalHarness.processTranscript(this.textContext.apply(transcript));
+    await this.terminalHarness.processTranscript(this.textContext.apply(transcript), {
+      visualQuestionText: transcript.text
+    });
     return true;
   }
 
@@ -521,7 +529,9 @@ export class AlwaysOnVoiceHarnessRunner {
       case "command":
         await this.terminalHarness.prepareForNewAgentTurn("New wake command requested");
         this.writeLine(`[barge:command] phrase="${decision.wake.phrase}" command="${decision.commandText}"`);
-        await this.terminalHarness.processTranscript(this.textContext.apply(withTranscriptText(transcript, decision.commandText)));
+        await this.terminalHarness.processTranscript(this.textContext.apply(withTranscriptText(transcript, decision.commandText)), {
+          visualQuestionText: decision.commandText
+        });
         return;
     }
   }

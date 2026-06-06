@@ -64,6 +64,11 @@ export type VisualEvent =
     }
   | {
       op: "voice-agent-ui";
+      type: "question";
+      text: string;
+    }
+  | {
+      op: "voice-agent-ui";
       type: "command";
       text: string;
     }

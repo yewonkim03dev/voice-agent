@@ -31,6 +31,11 @@ test("visual bridge serializes UI events as JSON", () => {
     },
     {
       op: "voice-agent-ui",
+      type: "question",
+      text: "테스트 돌려줘"
+    },
+    {
+      op: "voice-agent-ui",
       type: "status",
       text: "테스트 실행 중"
     },
@@ -321,6 +326,10 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Text\.ElideMiddle/u);
   assert.match(qml, /anchors\.bottom: controls\.top/u);
   assert.match(qml, /id: statusBackdrop/u);
+  assert.match(qml, /property string currentQuestion/u);
+  assert.match(qml, /type === "question"/u);
+  assert.match(qml, /id: questionLabel/u);
+  assert.match(qml, /"Q: " \+ root\.currentQuestion/u);
   assert.match(qml, /root\.uiState === "speaking"/u);
   assert.match(qml, /root\.uiState === "approval_pending"/u);
   assert.match(qml, /root\.uiState === "wake_rejected"/u);
@@ -401,6 +410,10 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /let visualCenterLift = max\(96, min\(220, bounds\.height \* 0\.20\)\)/u);
   assert.match(swift, /let center = CGPoint\(x: bounds\.midX, y: centerY\)/u);
   assert.match(swift, /func updateSessionId\(_ sessionId: String\)/u);
+  assert.match(swift, /questionLabel = NSTextField\(labelWithString: ""\)/u);
+  assert.match(swift, /func updateQuestion\(_ question: String\)/u);
+  assert.match(swift, /case "question":/u);
+  assert.ok(swift.includes('"Q: \\(trimmed)"'));
   assert.match(swift, /rootView\?\.updateSessionId\(codexThreadId\)/u);
   assert.match(swift, /commandPanel\.frame/u);
   assert.match(swift, /circleView\.frame/u);

@@ -485,6 +485,7 @@ final class VisualRootView: NSView {
     private let commandScroll = NSScrollView(frame: .zero)
     private let guideButton = NSButton(title: "?", target: nil, action: nil)
     private let sessionLabel = NSTextField(labelWithString: "session: new")
+    private let questionLabel = NSTextField(labelWithString: "")
     private let controls: NSStackView
 
     init(
@@ -510,6 +511,19 @@ final class VisualRootView: NSView {
 
         circleView.autoresizingMask = []
         addSubview(circleView)
+
+        questionLabel.textColor = NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1)
+        questionLabel.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+        questionLabel.alignment = .center
+        questionLabel.lineBreakMode = .byTruncatingTail
+        questionLabel.maximumNumberOfLines = 2
+        questionLabel.isHidden = true
+        questionLabel.wantsLayer = true
+        questionLabel.layer?.backgroundColor = NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.72).cgColor
+        questionLabel.layer?.borderColor = NSColor(calibratedRed: 0.11, green: 0.20, blue: 0.28, alpha: 0.90).cgColor
+        questionLabel.layer?.borderWidth = 1
+        questionLabel.layer?.cornerRadius = 11
+        addSubview(questionLabel)
 
         sessionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
         sessionLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -715,11 +729,26 @@ final class VisualRootView: NSView {
             width: circleViewWidth,
             height: circleSize
         )
+
+        let questionHeight: CGFloat = expanded ? 50 : 42
+        questionLabel.font = NSFont.systemFont(ofSize: expanded ? 17 : 15, weight: .semibold)
+        questionLabel.frame = NSRect(
+            x: inset,
+            y: max(commandPanel.frame.maxY + 8, circleView.frame.minY - questionHeight - 8),
+            width: contentWidth,
+            height: questionHeight
+        )
     }
 
     func updateSessionId(_ sessionId: String) {
         let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
         sessionLabel.stringValue = trimmed.isEmpty ? "session: new" : "session: \(trimmed)"
+    }
+
+    func updateQuestion(_ question: String) {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        questionLabel.stringValue = trimmed.isEmpty ? "" : "Q: \(trimmed)"
+        questionLabel.isHidden = trimmed.isEmpty
     }
 }
 
@@ -1016,6 +1045,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             circleView.statusText = "wake: \(event["phrase"] as? String ?? "")"
             circleView.glow = 1
             NSSound.beep()
+        case "question":
+            rootView?.updateQuestion(event["text"] as? String ?? "")
         case "command":
             pushCommand(event["text"] as? String ?? "")
         case "speech":

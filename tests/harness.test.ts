@@ -435,6 +435,35 @@ test("pass-through Codex harness strips a wake phrase and forwards the rest", as
   assert.equal(backend.prompts[0].text, "간단한 npm test 돌려줘");
 });
 
+test("pass-through visual displays the current question below the audio circle", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge);
+
+  await harness.start();
+  await harness.processLine("코덱스 README 확인해줘");
+
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "question"), {
+    op: "voice-agent-ui",
+    type: "question",
+    text: "README 확인해줘"
+  });
+
+  backend.emitOutput({
+    sessionId: backend.prompts[0].sessionId,
+    type: "task_complete",
+    text: "Task complete",
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(visualBridge.events.filter((event) => event.type === "question").at(-1), {
+    op: "voice-agent-ui",
+    type: "question",
+    text: ""
+  });
+});
+
 test("pass-through approval speech only acts while a native approval is pending", async () => {
   const backend = new InMemoryAgentBackend();
   const harness = createPassthroughHarness(backend);

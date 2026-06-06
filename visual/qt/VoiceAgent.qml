@@ -15,6 +15,7 @@ ApplicationWindow {
     property string bridgeUrl: argumentValue("--url", "")
     property string uiState: "idle"
     property string statusText: bridgeUrl.length > 0 ? "connecting" : "waiting for bridge"
+    property string currentQuestion: ""
     property real rms: 0.0
     property real peak: 0.0
     property real glow: 0.0
@@ -274,6 +275,8 @@ ApplicationWindow {
                 root.glow = 1
                 wakeEffect.play()
                 glowReset.restart()
+            } else if (event.type === "question") {
+                root.currentQuestion = event.text || ""
             } else if (event.type === "command") {
                 root.pushCommand(event.text)
             } else if (event.type === "speech") {
@@ -704,6 +707,40 @@ ApplicationWindow {
         }
 
         Rectangle {
+            id: questionBackdrop
+            anchors.centerIn: questionLabel
+            width: Math.min(root.width - 16, questionLabel.width + 28)
+            height: questionLabel.height + 14
+            radius: 11
+            color: "#05080c"
+            opacity: root.currentQuestion.length > 0 ? 0.72 : 0
+            border.color: "#1d3347"
+            border.width: opacity > 0 ? 1 : 0
+            z: 0
+        }
+
+        Text {
+            id: questionLabel
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: Math.max(0, Math.min(waveform.y + waveform.height + 8, commandPanel.y - height - 8))
+            width: Math.min(root.width - 20, parent.width + 20)
+            height: root.currentQuestion.length > 0 ? implicitHeight : 0
+            visible: root.currentQuestion.length > 0
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.WordWrap
+            maximumLineCount: root.expandedLayout ? 3 : 2
+            elide: Text.ElideRight
+            text: root.currentQuestion.length > 0 ? "Q: " + root.currentQuestion : ""
+            color: "#e7edf7"
+            font.pixelSize: root.expandedLayout ? 17 : 15
+            font.bold: true
+            lineHeight: 1.08
+            lineHeightMode: Text.ProportionalHeight
+            z: 1
+        }
+
+        Rectangle {
             id: statusBackdrop
             anchors.centerIn: statusLabel
             width: Math.min(root.width - 16, parent.width + 32)
@@ -721,7 +758,7 @@ ApplicationWindow {
             anchors.horizontalCenter: parent.horizontalCenter
             y: root.uiState === "speaking" || root.uiState === "approval_pending" || root.uiState === "wake_rejected"
                 ? Math.max(0, commandPanel.y - height - 10)
-                : Math.max(0, Math.min(waveform.y + waveform.height + 10, commandPanel.y - height - 10))
+                : Math.max(0, Math.min(root.currentQuestion.length > 0 ? questionLabel.y + questionLabel.height + 6 : waveform.y + waveform.height + 10, commandPanel.y - height - 10))
             width: Math.min(root.width - 16, parent.width + 32)
             height: root.statusBandHeight()
             horizontalAlignment: Text.AlignHCenter

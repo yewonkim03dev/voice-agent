@@ -483,6 +483,14 @@ test("always-on voice runner applies visual reference context to the next wake c
   assert.equal(backend.prompts.length, 1);
   assert.equal(backend.prompts[0].text, "테스트 돌려줘\n\n추가 정보:\n- 관련 파일은 README.md야");
   assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "question" }> => event.type === "question").at(-1),
+    {
+      op: "voice-agent-ui",
+      type: "question",
+      text: "테스트 돌려줘"
+    }
+  );
+  assert.deepEqual(
     visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "context" }> => event.type === "context").at(-1)?.entries,
     []
   );

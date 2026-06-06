@@ -67,6 +67,10 @@ interface SpeakVisualOptions {
   visualText?: string;
 }
 
+interface ProcessTranscriptOptions {
+  visualQuestionText?: string;
+}
+
 export { ConsoleVoiceOutput } from "../voice/ConsoleVoiceOutput.ts";
 
 export type HarnessLineResult = "continue" | "quit";
@@ -377,13 +381,13 @@ export class TerminalHarness {
     return "continue";
   }
 
-  async processTranscript(transcript: Transcript): Promise<void> {
+  async processTranscript(transcript: Transcript, options: ProcessTranscriptOptions = {}): Promise<void> {
     if (this.runtime) {
       await this.runtime.handleTranscript(transcript);
       return;
     }
 
-    await this.handlePassthroughTranscript(transcript);
+    await this.handlePassthroughTranscript(transcript, options);
   }
 
   hasPendingApproval(): boolean {
@@ -440,6 +444,7 @@ export class TerminalHarness {
       return;
     }
 
+    this.sendVisualQuestion("");
     this.sendVisualState("idle");
     await this.speak("정지했어.", "status");
   }
@@ -504,7 +509,7 @@ export class TerminalHarness {
     });
   }
 
-  private async handlePassthroughTranscript(transcript: Transcript): Promise<void> {
+  private async handlePassthroughTranscript(transcript: Transcript, options: ProcessTranscriptOptions = {}): Promise<void> {
     const text = transcript.text.trim();
 
     if (this.pendingPermission) {
@@ -537,10 +542,12 @@ export class TerminalHarness {
       return;
     }
 
-    await this.sendPassthroughTranscript(wake ? withTranscriptText(transcript, promptText) : transcript);
+    await this.sendPassthroughTranscript(wake ? withTranscriptText(transcript, promptText) : transcript, {
+      visualQuestionText: options.visualQuestionText ?? promptText
+    });
   }
 
-  private async sendPassthroughTranscript(transcript: Transcript): Promise<void> {
+  private async sendPassthroughTranscript(transcript: Transcript, options: ProcessTranscriptOptions = {}): Promise<void> {
     this.startAgentTurn();
     const generation = ++this.passthroughGeneration;
     this.activePassthroughGeneration = generation;
@@ -560,6 +567,7 @@ export class TerminalHarness {
     };
 
     this.passthroughState = "EXECUTING";
+    this.sendVisualQuestion(options.visualQuestionText ?? transcript.text);
     this.sendVisualState("submitting", "sending to agent");
     await this.backend.sendPrompt(prompt);
     this.codexStatus = {
@@ -701,6 +709,7 @@ export class TerminalHarness {
         this.activePassthroughGeneration = undefined;
       }
       this.sessionGenerations.delete(output.sessionId);
+      this.sendVisualQuestion("");
       if (!this.passthroughStructuredSpeechSessions.has(output.sessionId)) {
         await this.speak("끝났어.", "completion");
       }
@@ -718,6 +727,7 @@ export class TerminalHarness {
     if (output.type === "error") {
       await this.flushPassthroughOutputBuffers(output.sessionId);
       this.passthroughState = "ERROR";
+      this.sendVisualQuestion("");
       this.sendVisualEvent({
         op: "voice-agent-ui",
         type: "error",
@@ -1347,6 +1357,7 @@ export class TerminalHarness {
       return;
     }
 
+    this.sendVisualQuestion("");
     this.sendVisualState("idle");
     await this.speak("정지했어.", "status");
   }
@@ -1503,6 +1514,14 @@ export class TerminalHarness {
       type: "state",
       state: visualState,
       ...(visualText ? { text: visualText } : {})
+    });
+  }
+
+  private sendVisualQuestion(text: string): void {
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "question",
+      text: compactVisualQuestion(text)
     });
   }
 
@@ -2144,6 +2163,13 @@ function parsePassthroughOutputBufferKey(key: string): { sessionId: string; type
 function parseNativeNetworkHost(request: PermissionRequest | undefined): string | undefined {
   const host = asRecord(request?.native?.networkApprovalContext).host;
   return typeof host === "string" && host.trim() ? host.trim() : undefined;
+}
+
+function compactVisualQuestion(text: string): string {
+  const firstSection = text.split(/\n\s*추가 정보:\s*\n/u)[0] ?? text;
+  const normalized = firstSection.trim().replace(/\s+/g, " ");
+  if (normalized.length <= 180) return normalized;
+  return `${normalized.slice(0, 177).trimEnd()}...`;
 }
 
 function describeNativeChoices(decisions: unknown[] | undefined): string | undefined {
