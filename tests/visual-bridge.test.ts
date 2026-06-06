@@ -503,10 +503,13 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /item\.button\?\.title = "VA idle"/u);
   assert.match(swift, /private var hudPanel: NSPanel\?/u);
   assert.match(swift, /FloatingHudPanel\(/u);
-  assert.match(swift, /styleMask: \[\.borderless\]/u);
-  assert.doesNotMatch(swift, /\.nonactivatingPanel/u);
-  assert.match(swift, /panel\.collectionBehavior = \[\.canJoinAllSpaces, \.fullScreenAuxiliary, \.stationary\]/u);
+  assert.match(swift, /styleMask: \[\.borderless, \.nonactivatingPanel\]/u);
+  assert.match(swift, /func configureHudPanel\(\)/u);
+  assert.match(swift, /panel\.level = \.floating/u);
+  assert.match(swift, /panel\.collectionBehavior = \[\s*\.canJoinAllSpaces,\s*\.fullScreenAuxiliary,\s*\.stationary\s*\]/u);
   assert.match(swift, /panel\.orderFrontRegardless\(\)/u);
+  assert.match(swift, /showFloatingHud\(\)\s*\n\s*popover\.show/u);
+  assert.doesNotMatch(swift, /panel\.orderOut\(nil\)\s*\n\s*panel\.orderFrontRegardless\(\)/u);
   assert.match(swift, /hudCircle = AgentCircleView\(frame: \.zero\)/u);
   assert.match(swift, /hudQuestionLabel = NSTextField\(wrappingLabelWithString: ""\)/u);
   assert.match(swift, /hudQuestionLabel\.stringValue = trimmed\.isEmpty \? "" : "Q: \\\(trimmed\)"/u);

@@ -1343,6 +1343,7 @@ final class MenuBarCompanion {
         if popover.isShown {
             popover.performClose(sender)
         } else {
+            showFloatingHud()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
@@ -1378,14 +1379,10 @@ final class MenuBarCompanion {
             let size = NSSize(width: 326, height: 224)
             let panel = FloatingHudPanel(
                 contentRect: NSRect(origin: .zero, size: size),
-                styleMask: [.borderless],
+                styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
             )
-            panel.isFloatingPanel = true
-            panel.level = .floating
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            panel.hidesOnDeactivate = false
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = true
@@ -1394,10 +1391,24 @@ final class MenuBarCompanion {
             hudPanel = panel
         }
 
+        configureHudPanel()
         positionHud()
         if let panel = hudPanel {
             panel.orderFrontRegardless()
         }
+    }
+
+    private func configureHudPanel() {
+        guard let panel = hudPanel else { return }
+
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .fullScreenAuxiliary,
+            .stationary
+        ]
+        panel.hidesOnDeactivate = false
     }
 
     private func positionHud() {
