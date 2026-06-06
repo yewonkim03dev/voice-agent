@@ -106,12 +106,13 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en"}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
     visual: {
-      thinkingVolume: 0.8
+      thinkingVolume: 0.8,
+      responseLanguage: "en"
     }
   });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
@@ -355,6 +356,7 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /volume: root\.thinkingVolume/u);
   assert.match(qml, /function applyRuntimeVisualSettings/u);
   assert.match(qml, /thinkingVolume: root\.thinkingVolume/u);
+  assert.match(qml, /responseLanguage: languageBox\.currentText/u);
   assert.match(qml, /Wake phrases replace list/u);
   assert.match(qml, /palette\.button: "#7a2730"/u);
   assert.doesNotMatch(qml, /color: parent\.down \? "#7f0019" : "#b00020"/u);
@@ -396,7 +398,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /final class VisualRootView/u);
   assert.match(swift, /sessionLabel = NSTextField\(labelWithString: "session: new"\)/u);
   assert.match(swift, /lineBreakMode = \.byTruncatingMiddle/u);
-  assert.match(swift, /let visualCenterLift = max\(112, min\(256, bounds\.height \* 0\.24\)\)/u);
+  assert.match(swift, /let visualCenterLift = max\(96, min\(220, bounds\.height \* 0\.20\)\)/u);
   assert.match(swift, /let center = CGPoint\(x: bounds\.midX, y: centerY\)/u);
   assert.match(swift, /func updateSessionId\(_ sessionId: String\)/u);
   assert.match(swift, /rootView\?\.updateSessionId\(codexThreadId\)/u);
@@ -430,6 +432,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /thinkingPulseSound\.volume/u);
   assert.match(swift, /updateVisualSettings/u);
   assert.match(swift, /"thinkingVolume": thinkingVolume/u);
+  assert.match(swift, /"responseLanguage": responseLanguage/u);
   assert.match(swift, /final class HoverHelpButton/u);
   assert.match(swift, /NSPopover/u);
   assert.match(swift, /referenceHelpButton/u);

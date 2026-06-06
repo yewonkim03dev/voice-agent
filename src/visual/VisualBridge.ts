@@ -41,6 +41,7 @@ export interface VisualTtsSettings {
 
 export interface VisualRuntimeSettings {
   thinkingVolume?: number;
+  responseLanguage?: "ko" | "en" | "auto";
 }
 
 export type VisualEvent =
@@ -297,7 +298,8 @@ function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRunt
   return {
     ...(typeof record.thinkingVolume === "number" && Number.isFinite(record.thinkingVolume)
       ? { thinkingVolume: clamp(record.thinkingVolume, 0, 0.8) }
-      : {})
+      : {}),
+    ...(isVisualLanguage(record.responseLanguage) ? { responseLanguage: record.responseLanguage } : {})
   };
 }
 

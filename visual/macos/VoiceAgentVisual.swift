@@ -887,6 +887,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private var ttsPitch = 1.0
     private var ttsVolume = 1.0
     private var thinkingVolume = 0.32
+    private var responseLanguage = "auto"
     private var wakePhrases: [String] = []
     private var codexThreadId = ""
 
@@ -1101,6 +1102,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         ttsPitch = clampedDouble(settingsPitchField.stringValue, fallback: ttsPitch, min: 0.5, max: 2)
         ttsVolume = clampedDouble(settingsVolumeField.stringValue, fallback: ttsVolume, min: 0, max: 1)
         thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
+        responseLanguage = ttsLanguage
         thinkingPulseSound.volume = Float(thinkingVolume)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
         codexThreadId = settingsCodexThreadField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1149,6 +1151,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private func updateVisualSettings(_ settings: [String: Any]) {
         if let value = settings["thinkingVolume"] as? Double {
             thinkingVolume = min(0.8, max(0, value))
+        }
+        if let value = settings["responseLanguage"] as? String {
+            responseLanguage = normalizedLanguage(value)
+            ttsLanguage = responseLanguage
         }
         thinkingPulseSound.volume = Float(thinkingVolume)
         syncSettingsControls()
@@ -1257,9 +1263,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             "type": "control",
             "action": "update_visual_settings",
             "visual": [
-                "thinkingVolume": thinkingVolume
+                "thinkingVolume": thinkingVolume,
+                "responseLanguage": responseLanguage
             ]
         ])
+    }
+
+    private func normalizedLanguage(_ value: String) -> String {
+        value == "ko" || value == "en" || value == "auto" ? value : "auto"
     }
 
     private func sendWakePhrases() {

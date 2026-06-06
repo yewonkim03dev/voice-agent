@@ -185,7 +185,8 @@ test("visual settings apply persists TTS and visual overrides", async () => {
     volume: 0.8
   });
   visualBridge.emitVisualControl({
-    thinkingVolume: 0.48
+    thinkingVolume: 0.48,
+    responseLanguage: "en"
   });
   await flushAsync();
 
@@ -203,10 +204,28 @@ test("visual settings apply persists TTS and visual overrides", async () => {
     },
     {
       visual: {
-        thinkingVolume: 0.48
+        thinkingVolume: 0.48,
+        responseLanguage: "en"
       }
     }
   ]);
+});
+
+test("visual response language setting is attached to pass-through prompts", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge);
+
+  await harness.start();
+  visualBridge.emitVisualControl({
+    responseLanguage: "en"
+  });
+  await flushAsync();
+  await harness.processLine("코덱스 테스트 돌려줘");
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.equal(backend.prompts[0].responseLanguage, "en");
 });
 
 test("visual settings expose and persist Codex thread id for next restart", async () => {
@@ -282,7 +301,8 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
       volume: 1
     },
     visual: {
-      thinkingVolume: 0.32
+      thinkingVolume: 0.32,
+      responseLanguage: "auto"
     }
   });
 });
@@ -316,7 +336,8 @@ test("visual reset_settings clears persisted overrides", async () => {
       volume: 1
     },
     visual: {
-      thinkingVolume: 0.32
+      thinkingVolume: 0.32,
+      responseLanguage: "auto"
     }
   });
 });

@@ -542,6 +542,7 @@ export class TerminalHarness {
       sessionId: transcript.sessionId,
       text: transcript.text,
       language: transcript.language === "unknown" ? "mixed" : transcript.language,
+      responseLanguage: this.visualSettings.responseLanguage ?? "auto",
       source: "voice",
       mode: "submit",
       metadata: {
@@ -1364,7 +1365,8 @@ export class TerminalHarness {
 
   private currentVisualRuntimeSettings(): VisualRuntimeSettings {
     return {
-      thinkingVolume: this.visualSettings.thinkingVolume ?? defaultVisualThinkingVolume
+      thinkingVolume: this.visualSettings.thinkingVolume ?? defaultVisualThinkingVolume,
+      responseLanguage: this.visualSettings.responseLanguage ?? "auto"
     };
   }
 
@@ -1844,7 +1846,8 @@ function defaultVisualTtsSettings(): VisualTtsSettings {
 
 function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
   return {
-    thinkingVolume: defaultVisualThinkingVolume
+    thinkingVolume: defaultVisualThinkingVolume,
+    responseLanguage: "auto"
   };
 }
 
@@ -1861,7 +1864,8 @@ function visualTtsSettingsFromVoiceOutput(settings: VisualTtsSettings): VisualTt
 
 function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefined): VisualRuntimeSettings {
   return sanitizeVisualRuntimeSettings({
-    thinkingVolume: parsePersistedNumber(settings?.thinkingVolume)
+    thinkingVolume: parsePersistedNumber(settings?.thinkingVolume),
+    responseLanguage: parseVisualResponseLanguage(settings?.responseLanguage)
   }, defaultVisualRuntimeSettings());
 }
 
@@ -1872,8 +1876,13 @@ function sanitizeVisualRuntimeSettings(
   return {
     thinkingVolume: settings.thinkingVolume === undefined
       ? fallback.thinkingVolume ?? defaultVisualThinkingVolume
-      : clamp(settings.thinkingVolume, 0, 0.8)
+      : clamp(settings.thinkingVolume, 0, 0.8),
+    responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto"
   };
+}
+
+function parseVisualResponseLanguage(value: unknown): VisualRuntimeSettings["responseLanguage"] | undefined {
+  return value === "auto" || value === "ko" || value === "en" ? value : undefined;
 }
 
 function ttsFileConfigFromVisualSettings(settings: VisualTtsSettings): VoiceTtsFileConfig {

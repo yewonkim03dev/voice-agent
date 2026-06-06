@@ -19,6 +19,7 @@ export interface VoiceHarnessConfig {
 
 export type VoiceVisualFileConfig = Partial<{
   thinkingVolume: string | number;
+  responseLanguage: "auto" | "ko" | "en";
 }>;
 
 export interface VoiceLocalSettingsOverride {
@@ -272,6 +273,7 @@ export async function resetVoiceLocalSettings(options: {
   delete next.wakePhrases;
   delete next.tts;
   delete visual.thinkingVolume;
+  delete visual.responseLanguage;
 
   if (Object.keys(visual).length > 0) {
     next.visual = visual;
@@ -423,7 +425,8 @@ function hasVoiceConfigFields(parsed: Record<string, unknown>): boolean {
     "sampleRate" in parsed ||
     "channels" in parsed ||
     "wakePhrases" in parsed ||
-    "tts" in parsed;
+    "tts" in parsed ||
+    "visual" in parsed;
 }
 
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
@@ -454,6 +457,9 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
   return {
     ...(parseVisualThinkingVolume(record.thinkingVolume) !== undefined
       ? { thinkingVolume: parseVisualThinkingVolume(record.thinkingVolume) }
+      : {}),
+    ...(parseVisualResponseLanguage(record.responseLanguage)
+      ? { responseLanguage: parseVisualResponseLanguage(record.responseLanguage) }
       : {})
   };
 }
@@ -463,6 +469,10 @@ function parseVisualThinkingVolume(value: unknown): number | undefined {
   if (typeof value !== "string" || value.trim() === "") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? clamp(parsed, 0, 0.8) : undefined;
+}
+
+function parseVisualResponseLanguage(value: unknown): VoiceVisualFileConfig["responseLanguage"] | undefined {
+  return value === "auto" || value === "ko" || value === "en" ? value : undefined;
 }
 
 function parseOptionalWakePhrases(value: unknown): string[] | undefined {

@@ -227,7 +227,7 @@ export class CodexAppServerBackend implements AgentBackend {
 
     const result = await this.sendRequest("turn/start", {
       threadId: this.threadId,
-      input: this.createTurnInput(prompt.text),
+      input: this.createTurnInput(prompt),
       cwd: this.cwd,
       approvalPolicy: this.approvalPolicy,
       approvalsReviewer: "user"
@@ -443,16 +443,18 @@ export class CodexAppServerBackend implements AgentBackend {
     });
   }
 
-  private createTurnInput(text: string): Array<{ type: "text"; text: string; text_elements: unknown[] }> {
+  private createTurnInput(prompt: CodexPrompt): Array<{ type: "text"; text: string; text_elements: unknown[] }> {
     const input = [
       {
         type: "text" as const,
-        text,
+        text: prompt.text,
         text_elements: []
       }
     ];
 
     if (!this.voiceAgentProtocol) return input;
+
+    const policy = responseLanguagePolicyPrompt(prompt.responseLanguage);
 
     return [
       {
@@ -460,6 +462,15 @@ export class CodexAppServerBackend implements AgentBackend {
         text: this.protocolPrompt,
         text_elements: []
       },
+      ...(policy
+        ? [
+            {
+              type: "text" as const,
+              text: policy,
+              text_elements: []
+            }
+          ]
+        : []),
       ...input
     ];
   }
@@ -958,6 +969,19 @@ function createDefaultWebSocket(url: string): WebSocketLike {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function responseLanguagePolicyPrompt(language: CodexPrompt["responseLanguage"]): string | undefined {
+  switch (language) {
+    case "ko":
+      return "Runtime policy: Reply to the user in Korean, regardless of the input language.";
+    case "en":
+      return "Runtime policy: Reply to the user in English, regardless of the input language.";
+    case "auto":
+      return "Runtime policy: Reply in the user's language unless the task explicitly asks for another language.";
+    default:
+      return undefined;
+  }
 }
 
 function noop(_line: string): void {}
