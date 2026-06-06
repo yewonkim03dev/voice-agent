@@ -187,7 +187,8 @@ test("visual settings apply persists TTS and visual overrides", async () => {
   visualBridge.emitVisualControl({
     thinkingVolume: 0.48,
     responseLanguage: "en",
-    chatHistoryEnabled: false
+    chatHistoryEnabled: false,
+    hudEnabled: false
   });
   await flushAsync();
 
@@ -207,7 +208,8 @@ test("visual settings apply persists TTS and visual overrides", async () => {
       visual: {
         thinkingVolume: 0.48,
         responseLanguage: "en",
-        chatHistoryEnabled: false
+        chatHistoryEnabled: false,
+        hudEnabled: false
       }
     }
   ]);
@@ -305,7 +307,8 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
     visual: {
       thinkingVolume: 0.32,
       responseLanguage: "auto",
-      chatHistoryEnabled: true
+      chatHistoryEnabled: true,
+      hudEnabled: true
     }
   });
 });
@@ -341,7 +344,8 @@ test("visual reset_settings clears persisted overrides", async () => {
     visual: {
       thinkingVolume: 0.32,
       responseLanguage: "auto",
-      chatHistoryEnabled: true
+      chatHistoryEnabled: true,
+      hudEnabled: true
     }
   });
 });

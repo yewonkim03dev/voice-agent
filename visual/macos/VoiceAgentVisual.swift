@@ -17,6 +17,9 @@ final class AgentCircleView: NSView {
     var glow: CGFloat = 0 {
         didSet { needsDisplay = true }
     }
+    var compactStatusStyle = false {
+        didSet { needsDisplay = true }
+    }
     private var phase: CGFloat = 0
 
     override init(frame frameRect: NSRect) {
@@ -72,7 +75,7 @@ final class AgentCircleView: NSView {
         drawInnerGuide(center: center, radius: baseRadius - 26)
 
         let expandedText = bounds.width >= 320 || bounds.height >= 320
-        let compactStateText = !expandedText && state != "approval_pending" && state != "wake_rejected"
+        let compactStateText = compactStatusStyle || (!expandedText && state != "approval_pending" && state != "wake_rejected")
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineBreakMode = compactStateText ? .byTruncatingTail : .byWordWrapping
@@ -93,7 +96,7 @@ final class AgentCircleView: NSView {
         if !expandedText && state != "wake_rejected" {
             options.insert(.truncatesLastVisibleLine)
         }
-        if (state == "approval_pending" || state == "wake_rejected"), !statusText.isEmpty {
+        if !compactStatusStyle && (state == "approval_pending" || state == "wake_rejected"), !statusText.isEmpty {
             let backdropRect = textRect.insetBy(dx: -6, dy: -10)
             NSColor(calibratedRed: 0.02, green: 0.03, blue: 0.05, alpha: 0.82).setFill()
             NSBezierPath(roundedRect: backdropRect, xRadius: 12, yRadius: 12).fill()
@@ -1245,14 +1248,27 @@ final class MenuBarCompanion {
     private let hudStateLabel = NSTextField(labelWithString: "idle")
     private let hudDetailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
     private let hudQuestionLabel = NSTextField(wrappingLabelWithString: "Q: none")
+    private let hudContextField = NSTextField(string: "")
+    private let hudContextSummary = NSTextField(labelWithString: "No references queued")
     private var onStop: (() -> Void)?
     private var onTtsStop: (() -> Void)?
     private var onShowWindow: (() -> Void)?
+    private var onAddContext: ((String) -> Void)?
+    private var onClearContext: (() -> Void)?
+    private var hudEnabled = true
 
-    func install(onStop: @escaping () -> Void, onTtsStop: @escaping () -> Void, onShowWindow: @escaping () -> Void) {
+    func install(
+        onStop: @escaping () -> Void,
+        onTtsStop: @escaping () -> Void,
+        onShowWindow: @escaping () -> Void,
+        onAddContext: @escaping (String) -> Void,
+        onClearContext: @escaping () -> Void
+    ) {
         self.onStop = onStop
         self.onTtsStop = onTtsStop
         self.onShowWindow = onShowWindow
+        self.onAddContext = onAddContext
+        self.onClearContext = onClearContext
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VA idle"
@@ -1265,7 +1281,16 @@ final class MenuBarCompanion {
         popover.contentViewController = NSViewController()
         popover.contentViewController?.view = makePopoverView()
 
-        showFloatingHud()
+        setHudEnabled(true)
+    }
+
+    func setHudEnabled(_ enabled: Bool) {
+        hudEnabled = enabled
+        if enabled {
+            showFloatingHud()
+        } else {
+            hudPanel?.orderOut(nil)
+        }
     }
 
     func update(state: String, text: String) {
@@ -1282,6 +1307,17 @@ final class MenuBarCompanion {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         questionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
         hudQuestionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
+    }
+
+    func updateContext(_ entries: [String]) {
+        if entries.isEmpty {
+            hudContextSummary.stringValue = "No references queued"
+            hudContextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
+            return
+        }
+
+        hudContextSummary.stringValue = "\(entries.count) reference item(s) queued"
+        hudContextSummary.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.40, alpha: 1)
     }
 
     func updateMessage(_ text: String) {
@@ -1318,9 +1354,23 @@ final class MenuBarCompanion {
         onShowWindow?()
     }
 
+    @objc private func addContext() {
+        let text = hudContextField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        onAddContext?(text)
+        if !text.isEmpty {
+            hudContextField.stringValue = ""
+        }
+    }
+
+    @objc private func clearContext() {
+        onClearContext?()
+    }
+
     @objc private func showFloatingHud() {
+        guard hudEnabled else { return }
+
         if hudPanel == nil {
-            let size = NSSize(width: 286, height: 172)
+            let size = NSSize(width: 326, height: 224)
             let panel = NSPanel(
                 contentRect: NSRect(origin: .zero, size: size),
                 styleMask: [.borderless, .nonactivatingPanel],
@@ -1401,30 +1451,51 @@ final class MenuBarCompanion {
     }
 
     private func makeHudView() -> NSView {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 286, height: 172))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 326, height: 224))
         view.wantsLayer = true
         view.layer?.cornerRadius = 16
         view.layer?.borderWidth = 1
         view.layer?.borderColor = NSColor(calibratedRed: 0.18, green: 0.26, blue: 0.36, alpha: 0.86).cgColor
         view.layer?.backgroundColor = NSColor(calibratedRed: 0.03, green: 0.05, blue: 0.08, alpha: 0.88).cgColor
 
-        hudCircle.frame = NSRect(x: 14, y: 42, width: 104, height: 104)
+        hudCircle.compactStatusStyle = true
+        hudCircle.frame = NSRect(x: 14, y: 92, width: 110, height: 110)
         view.addSubview(hudCircle)
 
         hudStateLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
         hudStateLabel.textColor = NSColor(calibratedRed: 0.53, green: 0.78, blue: 1.0, alpha: 1)
-        hudStateLabel.frame = NSRect(x: 130, y: 128, width: 138, height: 18)
+        hudStateLabel.frame = NSRect(x: 140, y: 180, width: 168, height: 18)
         view.addSubview(hudStateLabel)
 
         hudDetailLabel.font = NSFont.systemFont(ofSize: 12)
         hudDetailLabel.textColor = NSColor(calibratedRed: 0.86, green: 0.90, blue: 0.96, alpha: 1)
-        hudDetailLabel.frame = NSRect(x: 130, y: 78, width: 138, height: 46)
+        hudDetailLabel.frame = NSRect(x: 140, y: 126, width: 168, height: 50)
         view.addSubview(hudDetailLabel)
 
         hudQuestionLabel.font = NSFont.systemFont(ofSize: 11)
         hudQuestionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
-        hudQuestionLabel.frame = NSRect(x: 130, y: 48, width: 138, height: 26)
+        hudQuestionLabel.frame = NSRect(x: 140, y: 96, width: 168, height: 26)
         view.addSubview(hudQuestionLabel)
+
+        hudContextSummary.font = NSFont.systemFont(ofSize: 10)
+        hudContextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
+        hudContextSummary.frame = NSRect(x: 14, y: 66, width: 298, height: 16)
+        view.addSubview(hudContextSummary)
+
+        hudContextField.placeholderString = "reference text"
+        hudContextField.font = NSFont.systemFont(ofSize: 11)
+        hudContextField.target = self
+        hudContextField.action = #selector(addContext)
+        hudContextField.frame = NSRect(x: 14, y: 40, width: 188, height: 22)
+        view.addSubview(hudContextField)
+
+        let addReference = NSButton(title: "Add", target: self, action: #selector(addContext))
+        addReference.frame = NSRect(x: 210, y: 38, width: 48, height: 26)
+        view.addSubview(addReference)
+
+        let clearReference = NSButton(title: "Clear", target: self, action: #selector(clearContext))
+        clearReference.frame = NSRect(x: 264, y: 38, width: 48, height: 26)
+        view.addSubview(clearReference)
 
         let stop = NSButton(title: "STOP", target: self, action: #selector(stopAgent))
         stop.frame = NSRect(x: 14, y: 10, width: 72, height: 26)
@@ -1474,6 +1545,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let settingsVolumeField = NSTextField(string: "1.00")
     private let settingsThinkingVolumeField = NSTextField(string: "0.32")
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
+    private let settingsHudCheckbox = NSButton(checkboxWithTitle: "Show floating HUD", target: nil, action: nil)
     private let settingsCodexThreadField = NSTextField(string: "")
     private let settingsWakePhrasesView = NSTextView(frame: .zero)
     private var ttsLanguage = "auto"
@@ -1485,6 +1557,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private var thinkingVolume = 0.32
     private var responseLanguage = "auto"
     private var chatHistoryEnabled = true
+    private var hudEnabled = true
     private var wakePhrases: [String] = []
     private var codexThreadId = ""
 
@@ -1509,7 +1582,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         menuBarCompanion.install(
             onStop: { [weak self] in self?.sendControl("emergency_stop") },
             onTtsStop: { [weak self] in self?.sendControl("tts_stop") },
-            onShowWindow: { [weak self] in self?.showMainWindow() }
+            onShowWindow: { [weak self] in self?.showMainWindow() },
+            onAddContext: { [weak self] text in self?.submitContext(text) },
+            onClearContext: { [weak self] in self?.clearContext() }
         )
         connect()
     }
@@ -1736,6 +1811,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func addContext() {
         let text = contextField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        submitContext(text)
+    }
+
+    private func submitContext(_ text: String) {
         sendControl("add_context", text: text)
         if !text.isEmpty {
             contextField.stringValue = ""
@@ -1766,8 +1845,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
         responseLanguage = ttsLanguage
         chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
+        hudEnabled = settingsHudCheckbox.state == .on
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: chatHistoryEnabled)
+        menuBarCompanion.setHudEnabled(hudEnabled)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
         codexThreadId = settingsCodexThreadField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         sendTtsSettings()
@@ -1779,8 +1860,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func resetSettings() {
         thinkingVolume = 0.32
         chatHistoryEnabled = true
+        hudEnabled = true
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: true)
+        menuBarCompanion.setHudEnabled(true)
         syncSettingsControls()
         sendControl("reset_settings")
     }
@@ -1797,11 +1880,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         if contextEntries.isEmpty {
             contextSummary.stringValue = "No references queued"
             contextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
+            menuBarCompanion.updateContext(contextEntries)
             return
         }
 
         contextSummary.stringValue = "\(contextEntries.count) reference item(s) queued"
         contextSummary.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.40, alpha: 1)
+        menuBarCompanion.updateContext(contextEntries)
     }
 
     private func updateTtsSettings(_ settings: [String: Any]) {
@@ -1825,6 +1910,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         if let value = settings["chatHistoryEnabled"] as? Bool {
             chatHistoryEnabled = value
             rootView?.updateChatHistory(enabled: value)
+        }
+        if let value = settings["hudEnabled"] as? Bool {
+            hudEnabled = value
+            menuBarCompanion.setHudEnabled(value)
         }
         thinkingPulseSound.volume = Float(thinkingVolume)
         syncSettingsControls()
@@ -1867,13 +1956,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         addSettingsRow(view, label: "Codex Thread", control: settingsCodexThreadField, y: 202)
         settingsChatHistoryCheckbox.frame = NSRect(x: 132, y: 172, width: 216, height: 22)
         view.addSubview(settingsChatHistoryCheckbox)
+        settingsHudCheckbox.frame = NSRect(x: 132, y: 150, width: 216, height: 22)
+        view.addSubview(settingsHudCheckbox)
 
         let wakeLabel = NSTextField(labelWithString: "Wake")
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        wakeLabel.frame = NSRect(x: 26, y: 142, width: 96, height: 20)
+        wakeLabel.frame = NSRect(x: 26, y: 120, width: 96, height: 20)
         view.addSubview(wakeLabel)
 
-        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 70, width: 216, height: 94))
+        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 70, width: 216, height: 72))
         wakeScroll.borderType = .bezelBorder
         wakeScroll.hasVerticalScroller = true
         settingsWakePhrasesView.isVerticallyResizable = true
@@ -1913,6 +2004,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
         settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
+        settingsHudCheckbox.state = hudEnabled ? .on : .off
         settingsCodexThreadField.stringValue = codexThreadId
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
     }
@@ -1938,7 +2030,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             "visual": [
                 "thinkingVolume": thinkingVolume,
                 "responseLanguage": responseLanguage,
-                "chatHistoryEnabled": chatHistoryEnabled
+                "chatHistoryEnabled": chatHistoryEnabled,
+                "hudEnabled": hudEnabled
             ]
         ])
     }

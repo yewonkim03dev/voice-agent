@@ -43,6 +43,7 @@ export interface VisualRuntimeSettings {
   thinkingVolume?: number;
   responseLanguage?: "ko" | "en" | "auto";
   chatHistoryEnabled?: boolean;
+  hudEnabled?: boolean;
 }
 
 export type VisualEvent =
@@ -306,7 +307,8 @@ function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRunt
       ? { thinkingVolume: clamp(record.thinkingVolume, 0, 0.8) }
       : {}),
     ...(isVisualLanguage(record.responseLanguage) ? { responseLanguage: record.responseLanguage } : {}),
-    ...(typeof record.chatHistoryEnabled === "boolean" ? { chatHistoryEnabled: record.chatHistoryEnabled } : {})
+    ...(typeof record.chatHistoryEnabled === "boolean" ? { chatHistoryEnabled: record.chatHistoryEnabled } : {}),
+    ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {})
   };
 }
 

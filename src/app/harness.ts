@@ -1462,7 +1462,8 @@ export class TerminalHarness {
     return {
       thinkingVolume: this.visualSettings.thinkingVolume ?? defaultVisualThinkingVolume,
       responseLanguage: this.visualSettings.responseLanguage ?? "auto",
-      chatHistoryEnabled: this.visualSettings.chatHistoryEnabled ?? true
+      chatHistoryEnabled: this.visualSettings.chatHistoryEnabled ?? true,
+      hudEnabled: this.visualSettings.hudEnabled ?? true
     };
   }
 
@@ -1952,7 +1953,8 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
   return {
     thinkingVolume: defaultVisualThinkingVolume,
     responseLanguage: "auto",
-    chatHistoryEnabled: true
+    chatHistoryEnabled: true,
+    hudEnabled: true
   };
 }
 
@@ -1971,7 +1973,8 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
   return sanitizeVisualRuntimeSettings({
     thinkingVolume: parsePersistedNumber(settings?.thinkingVolume),
     responseLanguage: parseVisualResponseLanguage(settings?.responseLanguage),
-    chatHistoryEnabled: typeof settings?.chatHistoryEnabled === "boolean" ? settings.chatHistoryEnabled : undefined
+    chatHistoryEnabled: typeof settings?.chatHistoryEnabled === "boolean" ? settings.chatHistoryEnabled : undefined,
+    hudEnabled: typeof settings?.hudEnabled === "boolean" ? settings.hudEnabled : undefined
   }, defaultVisualRuntimeSettings());
 }
 
@@ -1984,7 +1987,8 @@ function sanitizeVisualRuntimeSettings(
       ? fallback.thinkingVolume ?? defaultVisualThinkingVolume
       : clamp(settings.thinkingVolume, 0, 0.8),
     responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto",
-    chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true
+    chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true,
+    hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true
   };
 }
 

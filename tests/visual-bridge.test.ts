@@ -111,14 +111,15 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
     visual: {
       thinkingVolume: 0.8,
       responseLanguage: "en",
-      chatHistoryEnabled: false
+      chatHistoryEnabled: false,
+      hudEnabled: false
     }
   });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
@@ -445,6 +446,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /Recent Q\/A/u);
   assert.match(swift, /Show Recent Q\/A panel/u);
   assert.match(swift, /"chatHistoryEnabled": chatHistoryEnabled/u);
+  assert.match(swift, /"hudEnabled": hudEnabled/u);
   assert.match(swift, /case "question":/u);
   assert.match(swift, /pushChat\(role: "user", kind: "question"/u);
   assert.match(swift, /pushChat\(role: "assistant", kind: "speech"/u);
@@ -456,7 +458,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /commandPanel\.frame/u);
   assert.match(swift, /circleView\.frame/u);
   assert.match(swift, /let maxCircle: CGFloat = expanded \? 720 : 360/u);
-  assert.match(swift, /let compactStateText = !expandedText && state != "approval_pending" && state != "wake_rejected"/u);
+  assert.match(swift, /var compactStatusStyle = false/u);
+  assert.match(swift, /let compactStateText = compactStatusStyle \|\| \(!expandedText && state != "approval_pending" && state != "wake_rejected"\)/u);
   assert.match(swift, /lineBreakMode = compactStateText \? \.byTruncatingTail : \.byWordWrapping/u);
   assert.match(swift, /usesLineFragmentOrigin/u);
   assert.match(swift, /let textInset: CGFloat = compactStateText \? 8 : 24/u);
@@ -465,6 +468,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /state == "approval_pending" \|\| state == "wake_rejected" \? 13 : 15/u);
   assert.doesNotMatch(swift, /state == "speaking" \? 20/u);
   assert.doesNotMatch(swift, /state == "speaking" \|\| state == "approval_pending" \|\| state == "wake_rejected"/u);
+  assert.match(swift, /if !compactStatusStyle && \(state == "approval_pending" \|\| state == "wake_rejected"\)/u);
   assert.match(swift, /state == "approval_pending"/u);
   assert.match(swift, /state == "wake_rejected"/u);
   assert.match(swift, /if !expandedText && state != "wake_rejected"/u);
@@ -484,6 +488,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsCodexThreadField/u);
   assert.match(swift, /Codex Thread/u);
   assert.match(swift, /settingsThinkingVolumeField/u);
+  assert.match(swift, /settingsHudCheckbox/u);
+  assert.match(swift, /Show floating HUD/u);
   assert.match(swift, /Thinking Fx/u);
   assert.match(swift, /thinkingPulseSound\.volume/u);
   assert.match(swift, /updateVisualSettings/u);
@@ -498,17 +504,25 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /panel\.collectionBehavior = \[\.canJoinAllSpaces, \.fullScreenAuxiliary, \.stationary\]/u);
   assert.match(swift, /panel\.orderFrontRegardless\(\)/u);
   assert.match(swift, /hudCircle = AgentCircleView\(frame: \.zero\)/u);
+  assert.match(swift, /hudCircle\.compactStatusStyle = true/u);
+  assert.match(swift, /private let hudContextField = NSTextField\(string: ""\)/u);
+  assert.match(swift, /private let hudContextSummary = NSTextField\(labelWithString: "No references queued"\)/u);
+  assert.match(swift, /onAddContext: @escaping \(String\) -> Void/u);
+  assert.match(swift, /onClearContext: @escaping \(\) -> Void/u);
   assert.match(swift, /func updateVolume\(rms: CGFloat, peak: CGFloat\)/u);
   assert.match(swift, /func update\(state: String, text: String\)/u);
   assert.match(swift, /hudCircle\.statusText = state/u);
   assert.doesNotMatch(swift, /hudCircle\.statusText = text\.isEmpty \? state : text/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
+  assert.match(swift, /func updateContext\(_ entries: \[String\]\)/u);
   const hudUpdateMessage = swift.match(/func updateMessage\(_ text: String\) \{[\s\S]*?\n    \}/u);
   assert.ok(hudUpdateMessage);
   assert.match(hudUpdateMessage[0], /hudDetailLabel\.stringValue = trimmed/u);
   assert.doesNotMatch(hudUpdateMessage[0], /hudCircle\.statusText\s*=/u);
   assert.match(swift, /private let menuBarCompanion = MenuBarCompanion\(\)/u);
   assert.match(swift, /menuBarCompanion\.install/u);
+  assert.match(swift, /onAddContext: \{ \[weak self\] text in self\?\.submitContext\(text\) \}/u);
+  assert.match(swift, /onClearContext: \{ \[weak self\] in self\?\.clearContext\(\) \}/u);
   assert.match(swift, /menuBarCompanion\.update\(state: circleView\.state, text: circleView\.statusText\)/u);
   assert.match(swift, /NSPopover/u);
   assert.match(swift, /referenceHelpButton/u);
@@ -527,6 +541,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /add_context/u);
   assert.match(swift, /clear_context/u);
   assert.match(swift, /placeholderString = "reference text"/u);
+  assert.match(swift, /hudContextField\.placeholderString = "reference text"/u);
+  assert.match(swift, /hudContextField\.action = #selector\(addContext\)/u);
   assert.match(swift, /Visual에서는 \/add를 붙이지 않아도/u);
   assert.match(swift, /No references queued/u);
   assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);
