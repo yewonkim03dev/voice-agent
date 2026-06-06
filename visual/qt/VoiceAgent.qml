@@ -16,14 +16,18 @@ ApplicationWindow {
     property string uiState: "idle"
     property string statusText: bridgeUrl.length > 0 ? "connecting" : "waiting for bridge"
     property string currentQuestion: ""
+    property var chatItems: []
     property real rms: 0.0
     property real peak: 0.0
     property real glow: 0.0
     property real visualPhase: 0.0
     property bool expandedLayout: width >= 760 || height >= 760
+    property bool chatPanelVisible: expandedLayout && width >= 980
+    property int chatPanelWidth: Math.round(Math.min(360, Math.max(300, width * 0.26)))
+    property int mainRightInset: chatPanelVisible ? chatPanelWidth + 18 : 0
     property int controlsHeight: 38
     property int commandPanelHeight: Math.round(Math.max(132, Math.min(expandedLayout ? 220 : 172, height * (expandedLayout ? 0.22 : 0.25))))
-    property int visualDiameter: Math.round(Math.max(220, Math.min(width * (expandedLayout ? 0.78 : 0.84), height * (expandedLayout ? 0.60 : 0.48), height - commandPanelHeight - controlsHeight - 92, expandedLayout ? 720 : 360)))
+    property int visualDiameter: Math.round(Math.max(220, Math.min((width - mainRightInset) * (expandedLayout ? 0.78 : 0.84), height * (expandedLayout ? 0.60 : 0.48), height - commandPanelHeight - controlsHeight - 92, expandedLayout ? 720 : 360)))
     property int visualCenterYOffset: -Math.round(Math.max(96, Math.min(220, height * 0.20)))
     property var commands: []
     property var contextEntries: []
@@ -189,6 +193,43 @@ ApplicationWindow {
         commands = next.slice(0, 8)
     }
 
+    function pushChat(role, kind, text) {
+        var trimmed = String(text || "").trim()
+        if (trimmed.length === 0) return
+        var next = chatItems.slice()
+        next.push({
+            role: role,
+            kind: kind,
+            text: trimmed
+        })
+        chatItems = next.slice(Math.max(0, next.length - 10))
+    }
+
+    function chatBubbleColor(role, kind) {
+        if (role === "user") return "#142337"
+        if (kind === "command") return "#131b26"
+        if (kind === "status") return "#151d2b"
+        if (kind === "error") return "#31131b"
+        return "#10252f"
+    }
+
+    function chatBorderColor(role, kind) {
+        if (role === "user") return "#2b5e9e"
+        if (kind === "command") return "#324057"
+        if (kind === "status") return "#3b4660"
+        if (kind === "error") return "#9d2f45"
+        return "#266070"
+    }
+
+    function chatLabel(kind) {
+        if (kind === "question") return "Q"
+        if (kind === "speech") return "speech"
+        if (kind === "command") return "command"
+        if (kind === "status") return "status"
+        if (kind === "error") return "error"
+        return kind
+    }
+
     function stateColor() {
         if (uiState === "approval_pending") return "#ffd166"
         if (uiState === "error") return "#ff4d6d"
@@ -277,19 +318,25 @@ ApplicationWindow {
                 glowReset.restart()
             } else if (event.type === "question") {
                 root.currentQuestion = event.text || ""
+                root.pushChat("user", "question", event.text)
             } else if (event.type === "command") {
                 root.pushCommand(event.text)
+                root.pushChat("assistant", "command", event.text)
             } else if (event.type === "speech") {
                 root.uiState = "speaking"
                 root.statusText = event.text
+                root.pushChat("assistant", "speech", event.text)
             } else if (event.type === "status") {
                 root.statusText = event.text
+                root.pushChat("assistant", "status", event.text)
             } else if (event.type === "error") {
                 root.uiState = "error"
                 root.statusText = event.text
+                root.pushChat("assistant", "error", event.text)
             } else if (event.type === "approval") {
                 root.uiState = "approval_pending"
                 root.statusText = event.text
+                root.pushChat("assistant", "status", event.text)
             } else if (event.type === "context") {
                 root.contextEntries = event.entries || []
                 if (root.contextEntries.length === 0) contextInput.text = ""
@@ -455,6 +502,7 @@ ApplicationWindow {
             width: root.visualDiameter
             height: root.visualDiameter
             anchors.centerIn: parent
+            anchors.horizontalCenterOffset: root.chatPanelVisible ? -Math.round(root.chatPanelWidth / 2) : 0
             anchors.verticalCenterOffset: root.visualCenterYOffset
             antialiasing: true
             opacity: 0.96
@@ -722,8 +770,9 @@ ApplicationWindow {
         Text {
             id: questionLabel
             anchors.horizontalCenter: parent.horizontalCenter
+            anchors.horizontalCenterOffset: root.chatPanelVisible ? -Math.round(root.chatPanelWidth / 2) : 0
             y: Math.max(0, Math.min(waveform.y + waveform.height + 8, commandPanel.y - height - 8))
-            width: Math.min(root.width - 20, parent.width + 20)
+            width: Math.min(root.width - root.mainRightInset - 20, parent.width - root.mainRightInset + 20)
             height: root.currentQuestion.length > 0 ? implicitHeight : 0
             visible: root.currentQuestion.length > 0
             horizontalAlignment: Text.AlignHCenter
@@ -756,10 +805,11 @@ ApplicationWindow {
         Text {
             id: statusLabel
             anchors.horizontalCenter: parent.horizontalCenter
+            anchors.horizontalCenterOffset: root.chatPanelVisible ? -Math.round(root.chatPanelWidth / 2) : 0
             y: root.uiState === "speaking" || root.uiState === "approval_pending" || root.uiState === "wake_rejected"
                 ? Math.max(0, commandPanel.y - height - 10)
                 : Math.max(0, Math.min(root.currentQuestion.length > 0 ? questionLabel.y + questionLabel.height + 6 : waveform.y + waveform.height + 10, commandPanel.y - height - 10))
-            width: Math.min(root.width - 16, parent.width + 32)
+            width: Math.min(root.width - root.mainRightInset - 16, parent.width - root.mainRightInset + 32)
             height: root.statusBandHeight()
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -779,6 +829,7 @@ ApplicationWindow {
             id: commandPanel
             anchors.left: parent.left
             anchors.right: parent.right
+            anchors.rightMargin: root.mainRightInset
             anchors.bottom: controls.top
             anchors.bottomMargin: 10
             height: root.commandPanelHeight
@@ -864,6 +915,90 @@ ApplicationWindow {
                         color: "#f4f7fb"
                         font.pixelSize: 14
                         elide: Text.ElideRight
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            id: chatPanel
+            visible: root.chatPanelVisible
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.bottom: controls.top
+            anchors.bottomMargin: 10
+            width: root.chatPanelWidth
+            radius: 10
+            color: "#0b1119"
+            border.color: "#26354a"
+            border.width: 1
+            z: 4
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 10
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Recent Q/A"
+                    color: "#e7edf7"
+                    font.pixelSize: 15
+                    font.bold: true
+                }
+
+                ListView {
+                    id: chatList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 8
+                    model: root.chatItems
+                    onCountChanged: positionViewAtEnd()
+
+                    delegate: Item {
+                        width: ListView.view.width
+                        height: Math.max(46, bubbleText.implicitHeight + bubbleKind.implicitHeight + 26)
+
+                        Rectangle {
+                            id: bubble
+                            width: parent.width * 0.88
+                            height: parent.height
+                            x: modelData.role === "user" ? parent.width - width : 0
+                            radius: 12
+                            color: root.chatBubbleColor(modelData.role, modelData.kind)
+                            border.color: root.chatBorderColor(modelData.role, modelData.kind)
+                            border.width: 1
+
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 4
+
+                                Text {
+                                    id: bubbleKind
+                                    width: parent.width
+                                    text: root.chatLabel(modelData.kind)
+                                    color: modelData.role === "user" ? "#8fc7ff" : "#9fb0c7"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+
+                                Text {
+                                    id: bubbleText
+                                    width: parent.width
+                                    text: modelData.text
+                                    color: "#f4f7fb"
+                                    font.pixelSize: modelData.kind === "command" ? 12 : 13
+                                    font.family: modelData.kind === "command" ? "Menlo" : ""
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 5
+                                    elide: Text.ElideRight
+                                    lineHeight: 1.12
+                                    lineHeightMode: Text.ProportionalHeight
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -486,6 +486,7 @@ final class VisualRootView: NSView {
     private let guideButton = NSButton(title: "?", target: nil, action: nil)
     private let sessionLabel = NSTextField(labelWithString: "session: new")
     private let questionView = QuestionLabelView(frame: .zero)
+    private let chatView = ChatHistoryView(frame: .zero)
     private let controls: NSStackView
 
     init(
@@ -514,6 +515,9 @@ final class VisualRootView: NSView {
 
         questionView.isHidden = true
         addSubview(questionView)
+
+        chatView.isHidden = true
+        addSubview(chatView)
 
         sessionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
         sessionLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -608,16 +612,28 @@ final class VisualRootView: NSView {
         let gap: CGFloat = 10
         let controlsHeight: CGFloat = 34
         let expanded = bounds.width >= 760 || bounds.height >= 760
+        let chatVisible = expanded && bounds.width >= 980
+        let chatWidth = min(CGFloat(360), max(CGFloat(300), bounds.width * 0.26))
         let commandHeight = max(132, min(expanded ? 220 : 172, bounds.height * (expanded ? 0.22 : 0.25)))
         let contentWidth = max(0, bounds.width - inset * 2)
+        let mainContentWidth = chatVisible ? max(320, bounds.width - inset * 3 - gap - chatWidth) : contentWidth
 
         controls.frame = NSRect(x: inset, y: inset, width: contentWidth, height: controlsHeight)
         commandPanel.frame = NSRect(
             x: inset,
             y: controls.frame.maxY + gap,
-            width: contentWidth,
+            width: mainContentWidth,
             height: commandHeight
         )
+        chatView.isHidden = !chatVisible
+        if chatVisible {
+            chatView.frame = NSRect(
+                x: bounds.width - inset - chatWidth,
+                y: commandPanel.frame.minY,
+                width: chatWidth,
+                height: bounds.height - commandPanel.frame.minY - inset
+            )
+        }
 
         let panelInset: CGFloat = 14
         let labelHeight: CGFloat = 18
@@ -701,20 +717,21 @@ final class VisualRootView: NSView {
             centerY = (topLimit + bottomLimit) / 2
         }
         let center = CGPoint(x: bounds.midX, y: centerY)
+        let visualCenterX = chatVisible ? inset + mainContentWidth / 2 : center.x
         let centerClearance = max(110, min(topLimit - center.y, center.y - bottomLimit))
         let maxCircle: CGFloat = expanded ? 720 : 360
         let circleSize = max(
             220,
             min(
-                contentWidth * (expanded ? 0.78 : 0.84),
+                mainContentWidth * (expanded ? 0.78 : 0.84),
                 bounds.height * (expanded ? 0.60 : 0.48),
                 centerClearance * 2,
                 maxCircle
             )
         )
-        let circleViewWidth = min(contentWidth, max(circleSize, circleSize + 120))
+        let circleViewWidth = min(mainContentWidth, max(circleSize, circleSize + 120))
         circleView.frame = NSRect(
-            x: center.x - circleViewWidth / 2,
+            x: visualCenterX - circleViewWidth / 2,
             y: center.y - circleSize / 2,
             width: circleViewWidth,
             height: circleSize
@@ -725,7 +742,7 @@ final class VisualRootView: NSView {
         questionView.frame = NSRect(
             x: inset,
             y: max(commandPanel.frame.maxY + 8, circleView.frame.minY - questionHeight - 8),
-            width: contentWidth,
+            width: mainContentWidth,
             height: questionHeight
         )
     }
@@ -738,6 +755,10 @@ final class VisualRootView: NSView {
     func updateQuestion(_ question: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         questionView.question = trimmed
+    }
+
+    func pushChat(role: String, kind: String, text: String) {
+        chatView.push(role: role, kind: kind, text: text)
     }
 }
 
@@ -786,6 +807,153 @@ final class QuestionLabelView: NSView {
             options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
             attributes: attrs
         )
+    }
+}
+
+struct ChatHistoryItem {
+    let role: String
+    let kind: String
+    let text: String
+}
+
+final class ChatHistoryView: NSView {
+    private var items: [ChatHistoryItem] = []
+
+    func push(role: String, kind: String, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        items.append(ChatHistoryItem(role: role, kind: kind, text: trimmed))
+        if items.count > 10 {
+            items.removeFirst(items.count - 10)
+        }
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let panel = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
+        NSColor(calibratedRed: 0.04, green: 0.07, blue: 0.10, alpha: 1).setFill()
+        panel.fill()
+        NSColor(calibratedRed: 0.15, green: 0.21, blue: 0.29, alpha: 1).setStroke()
+        panel.lineWidth = 1
+        panel.stroke()
+
+        drawTitle()
+
+        var y: CGFloat = 14
+        for item in items.reversed() {
+            let bubbleWidth = bounds.width * 0.86
+            let textWidth = bubbleWidth - 24
+            let kindAttrs = kindAttributes(for: item)
+            let textAttrs = textAttributes(for: item)
+            let textHeight = min(
+                CGFloat(92),
+                max(
+                    CGFloat(18),
+                    (item.text as NSString).boundingRect(
+                        with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin, .usesFontLeading],
+                        attributes: textAttrs
+                    ).height
+                )
+            )
+            let bubbleHeight = max(48, textHeight + 34)
+            if y + bubbleHeight > bounds.height - 42 { break }
+
+            let x = item.role == "user" ? bounds.width - bubbleWidth - 12 : 12
+            let rect = NSRect(x: x, y: y, width: bubbleWidth, height: bubbleHeight)
+            drawBubble(rect, item: item)
+            (label(for: item.kind) as NSString).draw(
+                with: NSRect(x: rect.minX + 12, y: rect.maxY - 22, width: textWidth, height: 14),
+                options: [.usesLineFragmentOrigin],
+                attributes: kindAttrs
+            )
+            (item.text as NSString).draw(
+                with: NSRect(x: rect.minX + 12, y: rect.minY + 10, width: textWidth, height: bubbleHeight - 30),
+                options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+                attributes: textAttrs
+            )
+            y += bubbleHeight + 8
+        }
+    }
+
+    private func drawTitle() {
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .bold),
+            .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1)
+        ]
+        ("Recent Q/A" as NSString).draw(
+            with: NSRect(x: 14, y: bounds.height - 30, width: bounds.width - 28, height: 18),
+            options: [.usesLineFragmentOrigin],
+            attributes: attrs
+        )
+    }
+
+    private func drawBubble(_ rect: NSRect, item: ChatHistoryItem) {
+        bubbleColor(for: item).setFill()
+        let path = NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12)
+        path.fill()
+        borderColor(for: item).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+
+    private func kindAttributes(for item: ChatHistoryItem) -> [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+            .foregroundColor: item.role == "user"
+                ? NSColor(calibratedRed: 0.56, green: 0.78, blue: 1.0, alpha: 1)
+                : NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
+        ]
+    }
+
+    private func textAttributes(for item: ChatHistoryItem) -> [NSAttributedString.Key: Any] {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        return [
+            .font: item.kind == "command"
+                ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+                : NSFont.systemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: NSColor(calibratedRed: 0.96, green: 0.97, blue: 0.99, alpha: 1),
+            .paragraphStyle: paragraph
+        ]
+    }
+
+    private func label(for kind: String) -> String {
+        switch kind {
+        case "question": return "Q"
+        case "speech": return "speech"
+        case "command": return "command"
+        case "status": return "status"
+        case "error": return "error"
+        default: return kind
+        }
+    }
+
+    private func bubbleColor(for item: ChatHistoryItem) -> NSColor {
+        if item.role == "user" {
+            return NSColor(calibratedRed: 0.08, green: 0.14, blue: 0.22, alpha: 1)
+        }
+        if item.kind == "command" {
+            return NSColor(calibratedRed: 0.07, green: 0.10, blue: 0.15, alpha: 1)
+        }
+        if item.kind == "error" {
+            return NSColor(calibratedRed: 0.19, green: 0.07, blue: 0.10, alpha: 1)
+        }
+        return NSColor(calibratedRed: 0.06, green: 0.15, blue: 0.19, alpha: 1)
+    }
+
+    private func borderColor(for item: ChatHistoryItem) -> NSColor {
+        if item.role == "user" {
+            return NSColor(calibratedRed: 0.17, green: 0.37, blue: 0.62, alpha: 1)
+        }
+        if item.kind == "command" {
+            return NSColor(calibratedRed: 0.20, green: 0.25, blue: 0.34, alpha: 1)
+        }
+        if item.kind == "error" {
+            return NSColor(calibratedRed: 0.62, green: 0.18, blue: 0.27, alpha: 1)
+        }
+        return NSColor(calibratedRed: 0.15, green: 0.38, blue: 0.44, alpha: 1)
     }
 }
 
@@ -1083,20 +1251,32 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             circleView.glow = 1
             NSSound.beep()
         case "question":
-            rootView?.updateQuestion(event["text"] as? String ?? "")
+            let question = event["text"] as? String ?? ""
+            rootView?.updateQuestion(question)
+            rootView?.pushChat(role: "user", kind: "question", text: question)
         case "command":
-            pushCommand(event["text"] as? String ?? "")
+            let command = event["text"] as? String ?? ""
+            pushCommand(command)
+            rootView?.pushChat(role: "assistant", kind: "command", text: command)
         case "speech":
             circleView.state = "speaking"
-            circleView.statusText = event["text"] as? String ?? "speaking"
+            let speech = event["text"] as? String ?? "speaking"
+            circleView.statusText = speech
+            rootView?.pushChat(role: "assistant", kind: "speech", text: speech)
         case "status":
-            circleView.statusText = event["text"] as? String ?? "status"
+            let status = event["text"] as? String ?? "status"
+            circleView.statusText = status
+            rootView?.pushChat(role: "assistant", kind: "status", text: status)
         case "error":
             circleView.state = "error"
-            circleView.statusText = event["text"] as? String ?? "error"
+            let error = event["text"] as? String ?? "error"
+            circleView.statusText = error
+            rootView?.pushChat(role: "assistant", kind: "error", text: error)
         case "approval":
             circleView.state = "approval_pending"
-            circleView.statusText = event["text"] as? String ?? "approval pending"
+            let approval = event["text"] as? String ?? "approval pending"
+            circleView.statusText = approval
+            rootView?.pushChat(role: "assistant", kind: "status", text: approval)
         case "context":
             updateContext(event["entries"] as? [String] ?? [])
         case "settings":
