@@ -620,13 +620,17 @@ export class AlwaysOnVoiceHarnessRunner {
     if (this.terminalHarness.hasPendingApproval()) return true;
     if (detectConfiguredWakePhrase(transcript.text, this.wakePhrases)) return true;
     if (this.wakeFollowUp && this.wakeFollowUp.expiresAt >= this.now()) return true;
-    return !this.terminalHarness.isAgentRequestActive();
+    return !this.shouldSuppressBackgroundCandidateFeedback();
   }
 
   private shouldSuppressTranscriptionError(source: "candidate" | "manual", details: string): boolean {
     if (this.debug || source !== "candidate") return false;
-    if (!this.terminalHarness.isAgentRequestActive()) return false;
+    if (!this.shouldSuppressBackgroundCandidateFeedback()) return false;
     return /no transcript|no speech detected|produced no transcript/i.test(details);
+  }
+
+  private shouldSuppressBackgroundCandidateFeedback(): boolean {
+    return this.terminalHarness.isAgentRequestActive() || this.terminalHarness.ttsPlaybackState.isSpeakingOrRecent(this.now());
   }
 
   private printTranscript(transcript: Transcript): void {

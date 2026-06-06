@@ -998,10 +998,33 @@ test("always-on voice runner ignores non-wake speech during TTS", async () => {
   await runner.drain();
 
   assert.equal(backend.prompts.length, 0);
+  assert.equal(logs.some((line) => line.startsWith("[stt:")), false);
   assert.ok(logs.includes("[barge:ignored] reason=no_wake"));
+  assert.equal(visualBridge.events.some((event) => event.type === "status" && event.text === "그냥 배경 소리"), false);
   assert.equal(lastStateEvent(visualBridge.events)?.state, "speaking");
 
   await runner.stop();
+});
+
+test("always-on voice runner hides no-transcript candidate errors while TTS is speaking", async () => {
+  const speechProcessor = new SequenceSpeechProcessor([
+    new Error("Apple Speech produced no transcript.")
+  ]);
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([], {
+    speechProcessor,
+    voiceOutput: new InspectableTestVoiceOutput(),
+    debug: false
+  });
+
+  await runner.start();
+  emitAgentSpeech(backend, "응답을 읽고 있어.");
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(logs.some((line) => line.includes("[voice:error] Apple Speech produced no transcript.")), false);
 });
 
 test("always-on voice runner keeps thinking after recent non-wake speech during active request", async () => {
