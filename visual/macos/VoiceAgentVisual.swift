@@ -487,7 +487,10 @@ final class VisualRootView: NSView {
     private let sessionLabel = NSTextField(labelWithString: "session: new")
     private let questionView = QuestionLabelView(frame: .zero)
     private let chatView = ChatHistoryView(frame: .zero)
+    private let chatToggleButton = NSButton(title: "Q/A", target: nil, action: nil)
     private let controls: NSStackView
+    private var chatHistoryEnabled = true
+    private var chatPanelOpen = true
 
     init(
         circleView: AgentCircleView,
@@ -518,6 +521,11 @@ final class VisualRootView: NSView {
 
         chatView.isHidden = true
         addSubview(chatView)
+
+        chatToggleButton.bezelStyle = .rounded
+        chatToggleButton.target = self
+        chatToggleButton.action = #selector(toggleChatPanel)
+        addSubview(chatToggleButton)
 
         sessionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
         sessionLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -612,7 +620,8 @@ final class VisualRootView: NSView {
         let gap: CGFloat = 10
         let controlsHeight: CGFloat = 34
         let expanded = bounds.width >= 760 || bounds.height >= 760
-        let chatVisible = expanded && bounds.width >= 980
+        let chatAvailable = chatHistoryEnabled && expanded && bounds.width >= 980
+        let chatVisible = chatAvailable && chatPanelOpen
         let chatWidth = min(CGFloat(360), max(CGFloat(300), bounds.width * 0.26))
         let commandHeight = max(132, min(expanded ? 220 : 172, bounds.height * (expanded ? 0.22 : 0.25)))
         let contentWidth = max(0, bounds.width - inset * 2)
@@ -634,6 +643,14 @@ final class VisualRootView: NSView {
                 height: bounds.height - commandPanel.frame.minY - inset
             )
         }
+        chatToggleButton.isHidden = !chatAvailable
+        chatToggleButton.title = chatPanelOpen ? "Hide" : "Q/A"
+        chatToggleButton.frame = NSRect(
+            x: bounds.width - inset - 72,
+            y: bounds.height - inset - 68,
+            width: 72,
+            height: 28
+        )
 
         let panelInset: CGFloat = 14
         let labelHeight: CGFloat = 18
@@ -760,6 +777,19 @@ final class VisualRootView: NSView {
     func pushChat(role: String, kind: String, text: String) {
         chatView.push(role: role, kind: kind, text: text)
     }
+
+    func updateChatHistory(enabled: Bool) {
+        chatHistoryEnabled = enabled
+        if enabled {
+            chatPanelOpen = true
+        }
+        needsLayout = true
+    }
+
+    @objc private func toggleChatPanel() {
+        chatPanelOpen.toggle()
+        needsLayout = true
+    }
 }
 
 final class QuestionLabelView: NSView {
@@ -818,6 +848,22 @@ struct ChatHistoryItem {
 
 final class ChatHistoryView: NSView {
     private var items: [ChatHistoryItem] = []
+    private var bubbleViews: [ChatBubbleView] = []
+    private let scrollView = NSScrollView(frame: .zero)
+    private let contentView = NSView(frame: .zero)
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.documentView = contentView
+        addSubview(scrollView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     func push(role: String, kind: String, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -827,7 +873,15 @@ final class ChatHistoryView: NSView {
         if items.count > 10 {
             items.removeFirst(items.count - 10)
         }
+        rebuildBubbles()
+        layoutBubbles(scrollToBottom: true)
         needsDisplay = true
+    }
+
+    override func layout() {
+        super.layout()
+        scrollView.frame = NSRect(x: 8, y: 8, width: max(0, bounds.width - 16), height: max(0, bounds.height - 44))
+        layoutBubbles(scrollToBottom: false)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -839,42 +893,6 @@ final class ChatHistoryView: NSView {
         panel.stroke()
 
         drawTitle()
-
-        var y: CGFloat = 14
-        for item in items.reversed() {
-            let bubbleWidth = bounds.width * 0.86
-            let textWidth = bubbleWidth - 24
-            let kindAttrs = kindAttributes(for: item)
-            let textAttrs = textAttributes(for: item)
-            let textHeight = min(
-                CGFloat(92),
-                max(
-                    CGFloat(18),
-                    (item.text as NSString).boundingRect(
-                        with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                        options: [.usesLineFragmentOrigin, .usesFontLeading],
-                        attributes: textAttrs
-                    ).height
-                )
-            )
-            let bubbleHeight = max(48, textHeight + 34)
-            if y + bubbleHeight > bounds.height - 42 { break }
-
-            let x = item.role == "user" ? bounds.width - bubbleWidth - 12 : 12
-            let rect = NSRect(x: x, y: y, width: bubbleWidth, height: bubbleHeight)
-            drawBubble(rect, item: item)
-            (label(for: item.kind) as NSString).draw(
-                with: NSRect(x: rect.minX + 12, y: rect.maxY - 22, width: textWidth, height: 14),
-                options: [.usesLineFragmentOrigin],
-                attributes: kindAttrs
-            )
-            (item.text as NSString).draw(
-                with: NSRect(x: rect.minX + 12, y: rect.minY + 10, width: textWidth, height: bubbleHeight - 30),
-                options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
-                attributes: textAttrs
-            )
-            y += bubbleHeight + 8
-        }
     }
 
     private func drawTitle() {
@@ -889,16 +907,85 @@ final class ChatHistoryView: NSView {
         )
     }
 
-    private func drawBubble(_ rect: NSRect, item: ChatHistoryItem) {
-        bubbleColor(for: item).setFill()
-        let path = NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12)
-        path.fill()
-        borderColor(for: item).setStroke()
-        path.lineWidth = 1
-        path.stroke()
+    private func rebuildBubbles() {
+        bubbleViews.forEach { $0.removeFromSuperview() }
+        bubbleViews = items.map { ChatBubbleView(item: $0) }
+        bubbleViews.forEach { contentView.addSubview($0) }
     }
 
-    private func kindAttributes(for item: ChatHistoryItem) -> [NSAttributedString.Key: Any] {
+    private func layoutBubbles(scrollToBottom: Bool) {
+        let scrollBounds = scrollView.contentView.bounds
+        let bubbleWidth = max(160, scrollView.bounds.width * 0.86)
+        let spacing: CGFloat = 8
+        let margin: CGFloat = 8
+        let heights = bubbleViews.map { $0.preferredHeight(width: bubbleWidth) }
+        let totalHeight = heights.reduce(margin, +) + CGFloat(max(0, heights.count - 1)) * spacing + margin
+        let contentHeight = max(scrollView.bounds.height, totalHeight)
+        contentView.frame = NSRect(x: 0, y: 0, width: scrollView.bounds.width, height: contentHeight)
+
+        var y = contentHeight - margin
+        for (index, bubble) in bubbleViews.enumerated() {
+            let height = heights[index]
+            y -= height
+            let x = bubble.item.role == "user" ? contentView.bounds.width - bubbleWidth - margin : margin
+            bubble.frame = NSRect(x: x, y: y, width: bubbleWidth, height: height)
+            y -= spacing
+        }
+
+        if scrollToBottom {
+            scrollView.contentView.scroll(to: NSPoint(x: scrollBounds.origin.x, y: 0))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+    }
+}
+
+final class ChatBubbleView: NSView {
+    let item: ChatHistoryItem
+
+    init(item: ChatHistoryItem) {
+        self.item = item
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func preferredHeight(width: CGFloat) -> CGFloat {
+        let textWidth = max(40, width - 24)
+        let textHeight = max(
+            CGFloat(18),
+            (item.text as NSString).boundingRect(
+                with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: textAttributes()
+            ).height
+        )
+        return max(48, textHeight + 34)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        bubbleColor().setFill()
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
+        path.fill()
+        borderColor().setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let textWidth = bounds.width - 24
+        (label(for: item.kind) as NSString).draw(
+            with: NSRect(x: 12, y: bounds.height - 22, width: textWidth, height: 14),
+            options: [.usesLineFragmentOrigin],
+            attributes: kindAttributes()
+        )
+        (item.text as NSString).draw(
+            with: NSRect(x: 12, y: 10, width: textWidth, height: bounds.height - 30),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: textAttributes()
+        )
+    }
+
+    private func kindAttributes() -> [NSAttributedString.Key: Any] {
         [
             .font: NSFont.systemFont(ofSize: 11, weight: .bold),
             .foregroundColor: item.role == "user"
@@ -907,9 +994,9 @@ final class ChatHistoryView: NSView {
         ]
     }
 
-    private func textAttributes(for item: ChatHistoryItem) -> [NSAttributedString.Key: Any] {
+    private func textAttributes() -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineBreakMode = item.kind == "command" ? .byCharWrapping : .byWordWrapping
         return [
             .font: item.kind == "command"
                 ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -930,7 +1017,7 @@ final class ChatHistoryView: NSView {
         }
     }
 
-    private func bubbleColor(for item: ChatHistoryItem) -> NSColor {
+    private func bubbleColor() -> NSColor {
         if item.role == "user" {
             return NSColor(calibratedRed: 0.08, green: 0.14, blue: 0.22, alpha: 1)
         }
@@ -943,7 +1030,7 @@ final class ChatHistoryView: NSView {
         return NSColor(calibratedRed: 0.06, green: 0.15, blue: 0.19, alpha: 1)
     }
 
-    private func borderColor(for item: ChatHistoryItem) -> NSColor {
+    private func borderColor() -> NSColor {
         if item.role == "user" {
             return NSColor(calibratedRed: 0.17, green: 0.37, blue: 0.62, alpha: 1)
         }
@@ -1112,6 +1199,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private let settingsPitchField = NSTextField(string: "1.00")
     private let settingsVolumeField = NSTextField(string: "1.00")
     private let settingsThinkingVolumeField = NSTextField(string: "0.32")
+    private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
     private let settingsCodexThreadField = NSTextField(string: "")
     private let settingsWakePhrasesView = NSTextView(frame: .zero)
     private var ttsLanguage = "auto"
@@ -1122,6 +1210,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
     private var ttsVolume = 1.0
     private var thinkingVolume = 0.32
     private var responseLanguage = "auto"
+    private var chatHistoryEnabled = true
     private var wakePhrases: [String] = []
     private var codexThreadId = ""
 
@@ -1166,6 +1255,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         )
         self.rootView = rootView
         rootView.updateSessionId(codexThreadId)
+        rootView.updateChatHistory(enabled: chatHistoryEnabled)
         return rootView
     }
 
@@ -1351,7 +1441,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         ttsVolume = clampedDouble(settingsVolumeField.stringValue, fallback: ttsVolume, min: 0, max: 1)
         thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
         responseLanguage = ttsLanguage
+        chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
         thinkingPulseSound.volume = Float(thinkingVolume)
+        rootView?.updateChatHistory(enabled: chatHistoryEnabled)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
         codexThreadId = settingsCodexThreadField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         sendTtsSettings()
@@ -1362,7 +1454,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func resetSettings() {
         thinkingVolume = 0.32
+        chatHistoryEnabled = true
         thinkingPulseSound.volume = Float(thinkingVolume)
+        rootView?.updateChatHistory(enabled: true)
         syncSettingsControls()
         sendControl("reset_settings")
     }
@@ -1404,6 +1498,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             responseLanguage = normalizedLanguage(value)
             ttsLanguage = responseLanguage
         }
+        if let value = settings["chatHistoryEnabled"] as? Bool {
+            chatHistoryEnabled = value
+            rootView?.updateChatHistory(enabled: value)
+        }
         thinkingPulseSound.volume = Float(thinkingVolume)
         syncSettingsControls()
     }
@@ -1443,19 +1541,21 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 282)
         addSettingsRow(view, label: "Thinking Fx", control: settingsThinkingVolumeField, y: 242)
         addSettingsRow(view, label: "Codex Thread", control: settingsCodexThreadField, y: 202)
+        settingsChatHistoryCheckbox.frame = NSRect(x: 132, y: 172, width: 216, height: 22)
+        view.addSubview(settingsChatHistoryCheckbox)
 
         let wakeLabel = NSTextField(labelWithString: "Wake")
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        wakeLabel.frame = NSRect(x: 26, y: 160, width: 96, height: 20)
+        wakeLabel.frame = NSRect(x: 26, y: 142, width: 96, height: 20)
         view.addSubview(wakeLabel)
 
-        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 70, width: 216, height: 112))
+        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 70, width: 216, height: 94))
         wakeScroll.borderType = .bezelBorder
         wakeScroll.hasVerticalScroller = true
         settingsWakePhrasesView.isVerticallyResizable = true
         settingsWakePhrasesView.isHorizontallyResizable = false
         settingsWakePhrasesView.autoresizingMask = [.width]
-        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 216, height: 112)
+        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 216, height: 94)
         settingsWakePhrasesView.font = NSFont.systemFont(ofSize: 13)
         wakeScroll.documentView = settingsWakePhrasesView
         view.addSubview(wakeScroll)
@@ -1488,6 +1588,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
         settingsPitchField.stringValue = String(format: "%.2f", ttsPitch)
         settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
         settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
+        settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
         settingsCodexThreadField.stringValue = codexThreadId
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
     }
@@ -1512,7 +1613,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate {
             "action": "update_visual_settings",
             "visual": [
                 "thinkingVolume": thinkingVolume,
-                "responseLanguage": responseLanguage
+                "responseLanguage": responseLanguage,
+                "chatHistoryEnabled": chatHistoryEnabled
             ]
         ])
     }

@@ -1229,7 +1229,8 @@ test("voice local settings store persists overrides and reset restores factory d
         volume: 0.8
       },
       visual: {
-        thinkingVolume: 0.47
+        thinkingVolume: 0.47,
+        chatHistoryEnabled: false
       },
       codexThreadId: "thread_456"
     });
@@ -1253,7 +1254,8 @@ test("voice local settings store persists overrides and reset restores factory d
     });
     assert.deepEqual(updated.visual, {
       provider: "qtqml",
-      thinkingVolume: 0.47
+      thinkingVolume: 0.47,
+      chatHistoryEnabled: false
     });
 
     await store.resetAll();

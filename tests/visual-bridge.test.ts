@@ -111,13 +111,14 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en"}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
     visual: {
       thinkingVolume: 0.8,
-      responseLanguage: "en"
+      responseLanguage: "en",
+      chatHistoryEnabled: false
     }
   });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
@@ -328,6 +329,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /id: statusBackdrop/u);
   assert.match(qml, /property string currentQuestion/u);
   assert.match(qml, /property var chatItems/u);
+  assert.match(qml, /property bool chatHistoryEnabled/u);
+  assert.match(qml, /property bool chatPanelOpen/u);
   assert.match(qml, /property bool chatPanelVisible/u);
   assert.match(qml, /function pushChat\(role, kind, text\)/u);
   assert.match(qml, /type === "question"/u);
@@ -340,6 +343,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /"Q: " \+ root\.currentQuestion/u);
   assert.match(qml, /id: chatPanel/u);
   assert.match(qml, /Recent Q\/A/u);
+  assert.match(qml, /id: chatOpenButton/u);
+  assert.match(qml, /Show Recent Q\/A panel/u);
   assert.match(qml, /model: root\.chatItems/u);
   assert.match(qml, /root\.uiState === "speaking"/u);
   assert.match(qml, /root\.uiState === "approval_pending"/u);
@@ -377,6 +382,7 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /function applyRuntimeVisualSettings/u);
   assert.match(qml, /thinkingVolume: root\.thinkingVolume/u);
   assert.match(qml, /responseLanguage: languageBox\.currentText/u);
+  assert.match(qml, /chatHistoryEnabled: chatHistoryCheck\.checked/u);
   assert.match(qml, /Wake phrases replace list/u);
   assert.match(qml, /palette\.button: "#7a2730"/u);
   assert.doesNotMatch(qml, /color: parent\.down \? "#7f0019" : "#b00020"/u);
@@ -425,10 +431,15 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /private let questionView = QuestionLabelView\(frame: \.zero\)/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
   assert.match(swift, /final class ChatHistoryView: NSView/u);
+  assert.match(swift, /final class ChatBubbleView: NSView/u);
   assert.match(swift, /private let chatView = ChatHistoryView\(frame: \.zero\)/u);
+  assert.match(swift, /private let chatToggleButton = NSButton\(title: "Q\/A"/u);
   assert.match(swift, /func pushChat\(role: String, kind: String, text: String\)/u);
+  assert.match(swift, /func updateChatHistory\(enabled: Bool\)/u);
   assert.match(swift, /items\.removeFirst\(items\.count - 10\)/u);
   assert.match(swift, /Recent Q\/A/u);
+  assert.match(swift, /Show Recent Q\/A panel/u);
+  assert.match(swift, /"chatHistoryEnabled": chatHistoryEnabled/u);
   assert.match(swift, /case "question":/u);
   assert.match(swift, /pushChat\(role: "user", kind: "question"/u);
   assert.match(swift, /pushChat\(role: "assistant", kind: "speech"/u);

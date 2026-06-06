@@ -22,7 +22,10 @@ ApplicationWindow {
     property real glow: 0.0
     property real visualPhase: 0.0
     property bool expandedLayout: width >= 760 || height >= 760
-    property bool chatPanelVisible: expandedLayout && width >= 980
+    property bool chatHistoryEnabled: true
+    property bool chatPanelOpen: true
+    property bool chatPanelAvailable: root.chatHistoryEnabled && expandedLayout && width >= 980
+    property bool chatPanelVisible: root.chatPanelAvailable && root.chatPanelOpen
     property int chatPanelWidth: Math.round(Math.min(360, Math.max(300, width * 0.26)))
     property int mainRightInset: chatPanelVisible ? chatPanelWidth + 18 : 0
     property int controlsHeight: 38
@@ -102,7 +105,8 @@ ApplicationWindow {
                 action: "update_visual_settings",
                 visual: {
                     thinkingVolume: root.thinkingVolume,
-                    responseLanguage: languageBox.currentText
+                    responseLanguage: languageBox.currentText,
+                    chatHistoryEnabled: chatHistoryCheck.checked
                 }
             }))
         }
@@ -111,7 +115,10 @@ ApplicationWindow {
 
     function resetSettings() {
         root.thinkingVolume = 0.32
+        root.chatHistoryEnabled = true
+        root.chatPanelOpen = true
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
+        if (chatHistoryCheck) chatHistoryCheck.checked = true
         if (socket.status === WebSocket.Open) {
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
@@ -158,7 +165,10 @@ ApplicationWindow {
     function applyRuntimeVisualSettings(settings) {
         root.thinkingVolume = settings.thinkingVolume === undefined ? 0.32 : Math.max(0, Math.min(0.8, settings.thinkingVolume))
         root.responseLanguage = settings.responseLanguage || "auto"
+        root.chatHistoryEnabled = settings.chatHistoryEnabled === undefined ? true : !!settings.chatHistoryEnabled
+        if (root.chatHistoryEnabled && !root.chatPanelOpen) root.chatPanelOpen = true
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
+        if (chatHistoryCheck) chatHistoryCheck.checked = root.chatHistoryEnabled
         if (languageBox) languageBox.currentIndex = root.indexOfValue(["auto", "ko", "en"], root.responseLanguage)
     }
 
@@ -939,12 +949,23 @@ ApplicationWindow {
                 anchors.margins: 14
                 spacing: 10
 
-                Text {
+                RowLayout {
                     Layout.fillWidth: true
-                    text: "Recent Q/A"
-                    color: "#e7edf7"
-                    font.pixelSize: 15
-                    font.bold: true
+                    spacing: 8
+
+                    Text {
+                        id: chatTitle
+                        Layout.fillWidth: true
+                        text: "Recent Q/A"
+                        color: "#e7edf7"
+                        font.pixelSize: 15
+                        font.bold: true
+                    }
+
+                    Button {
+                        text: "Hide"
+                        onClicked: root.chatPanelOpen = false
+                    }
                 }
 
                 ListView {
@@ -991,9 +1012,8 @@ ApplicationWindow {
                                     color: "#f4f7fb"
                                     font.pixelSize: modelData.kind === "command" ? 12 : 13
                                     font.family: modelData.kind === "command" ? "Menlo" : ""
-                                    wrapMode: Text.WordWrap
-                                    maximumLineCount: 5
-                                    elide: Text.ElideRight
+                                    wrapMode: modelData.kind === "command" ? Text.WrapAnywhere : Text.WordWrap
+                                    elide: Text.ElideNone
                                     lineHeight: 1.12
                                     lineHeightMode: Text.ProportionalHeight
                                 }
@@ -1002,6 +1022,18 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+
+        Button {
+            id: chatOpenButton
+            visible: root.chatPanelAvailable && !root.chatPanelOpen
+            text: "Q/A"
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.topMargin: 62
+            anchors.rightMargin: 16
+            z: 6
+            onClicked: root.chatPanelOpen = true
         }
 
         Rectangle {
@@ -1148,6 +1180,13 @@ ApplicationWindow {
                     value: root.thinkingVolume
                     stepSize: 0.01
                     onValueChanged: root.thinkingVolume = value
+                }
+
+                CheckBox {
+                    id: chatHistoryCheck
+                    text: "Show Recent Q/A panel"
+                    checked: root.chatHistoryEnabled
+                    onCheckedChanged: root.chatHistoryEnabled = checked
                 }
 
                 Text {

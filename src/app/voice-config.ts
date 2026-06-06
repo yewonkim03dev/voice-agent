@@ -20,6 +20,7 @@ export interface VoiceHarnessConfig {
 export type VoiceVisualFileConfig = Partial<{
   thinkingVolume: string | number;
   responseLanguage: "auto" | "ko" | "en";
+  chatHistoryEnabled: boolean;
 }>;
 
 export interface VoiceLocalSettingsOverride {
@@ -274,6 +275,7 @@ export async function resetVoiceLocalSettings(options: {
   delete next.tts;
   delete visual.thinkingVolume;
   delete visual.responseLanguage;
+  delete visual.chatHistoryEnabled;
 
   if (Object.keys(visual).length > 0) {
     next.visual = visual;
@@ -460,7 +462,8 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
       : {}),
     ...(parseVisualResponseLanguage(record.responseLanguage)
       ? { responseLanguage: parseVisualResponseLanguage(record.responseLanguage) }
-      : {})
+      : {}),
+    ...(typeof record.chatHistoryEnabled === "boolean" ? { chatHistoryEnabled: record.chatHistoryEnabled } : {})
   };
 }
 

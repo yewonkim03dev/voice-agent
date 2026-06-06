@@ -1461,7 +1461,8 @@ export class TerminalHarness {
   private currentVisualRuntimeSettings(): VisualRuntimeSettings {
     return {
       thinkingVolume: this.visualSettings.thinkingVolume ?? defaultVisualThinkingVolume,
-      responseLanguage: this.visualSettings.responseLanguage ?? "auto"
+      responseLanguage: this.visualSettings.responseLanguage ?? "auto",
+      chatHistoryEnabled: this.visualSettings.chatHistoryEnabled ?? true
     };
   }
 
@@ -1950,7 +1951,8 @@ function defaultVisualTtsSettings(): VisualTtsSettings {
 function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
   return {
     thinkingVolume: defaultVisualThinkingVolume,
-    responseLanguage: "auto"
+    responseLanguage: "auto",
+    chatHistoryEnabled: true
   };
 }
 
@@ -1968,7 +1970,8 @@ function visualTtsSettingsFromVoiceOutput(settings: VisualTtsSettings): VisualTt
 function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefined): VisualRuntimeSettings {
   return sanitizeVisualRuntimeSettings({
     thinkingVolume: parsePersistedNumber(settings?.thinkingVolume),
-    responseLanguage: parseVisualResponseLanguage(settings?.responseLanguage)
+    responseLanguage: parseVisualResponseLanguage(settings?.responseLanguage),
+    chatHistoryEnabled: typeof settings?.chatHistoryEnabled === "boolean" ? settings.chatHistoryEnabled : undefined
   }, defaultVisualRuntimeSettings());
 }
 
@@ -1980,7 +1983,8 @@ function sanitizeVisualRuntimeSettings(
     thinkingVolume: settings.thinkingVolume === undefined
       ? fallback.thinkingVolume ?? defaultVisualThinkingVolume
       : clamp(settings.thinkingVolume, 0, 0.8),
-    responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto"
+    responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto",
+    chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true
   };
 }
 
