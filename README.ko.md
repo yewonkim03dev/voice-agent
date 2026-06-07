@@ -1,3 +1,5 @@
+Language / 언어: [English](./README.md) | 한국어
+
 # Voice Agent
 
 ![Voice Agent visual companion 및 floating HUD](./docs/voice-agent.png)

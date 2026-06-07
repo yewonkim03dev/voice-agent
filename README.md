@@ -1,3 +1,5 @@
+Language / 언어: English | [한국어](./README.ko.md)
+
 # Voice Agent
 
 ![Voice Agent visual companion and floating HUD](./docs/voice-agent.png)
@@ -9,8 +11,6 @@ The goal is to make an agent feel present in your workflow, not like a command y
 The current implementation is Codex-focused and macOS-optimized. It listens through the Mac microphone, transcribes Korean/English speech with the local Apple Speech path, routes wake commands to Codex, speaks short responses with Apple TTS, and shows a native visual companion window for listening, thinking, speaking, and approval states.
 
 The local layer is intentionally thin: it handles voice I/O, wake phrases, STT/TTS, visual feedback, and native approval bridging. It does not classify coding intent locally. Normal user commands are passed through to Codex.
-
-Korean documentation is available in [`README.ko.md`](./README.ko.md).
 
 ## macOS Quick Start
 
