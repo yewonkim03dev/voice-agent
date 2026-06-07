@@ -372,7 +372,7 @@ test("always-on voice runner routes a configured custom wake phrase", async () =
 
 test("always-on voice runner updates wake phrases from visual settings", async () => {
   const visualBridge = new FakeVisualBridge();
-  const { backend, runner, audioInput } = createAlwaysOnRunner(
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
     [
       {
         text: "컴퓨터 테스트 돌려줘",
@@ -817,7 +817,7 @@ test("always-on voice runner keeps agent visual state during non-wake background
   await runner.stop();
 });
 
-test("wake-only status response marks the visual as speaking", async () => {
+test("wake-only response arms follow-up without speaking ready TTS", async () => {
   const visualBridge = new FakeVisualBridge();
   const voiceOutput = new InspectableTestVoiceOutput();
   const { backend, runner, audioInput } = createAlwaysOnRunner(
@@ -839,12 +839,11 @@ test("wake-only status response marks the visual as speaking", async () => {
   await runner.stop();
 
   assert.equal(backend.prompts.length, 0);
-  assert.equal(voiceOutput.messages.at(-1)?.text, "Codex 준비됐어.");
-  assert.deepEqual(visualBridge.events.find((event) => event.type === "state" && event.state === "speaking"), {
+  assert.equal(voiceOutput.messages.length, 0);
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "state" && event.state === "listening"), {
     op: "voice-agent-ui",
     type: "state",
-    state: "speaking",
-    text: "Codex 준비됐어."
+    state: "listening"
   });
 });
 
@@ -878,32 +877,34 @@ test("always-on voice runner routes one follow-up command after wake-only speech
   assert.equal(logs.filter((line) => line.startsWith("[wake:followup]")).length, 1);
 });
 
-test("always-on voice runner keeps wake follow-up armed after ready TTS echo", async () => {
-  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+test("always-on voice runner does not create ready TTS echo after wake-only speech", async () => {
+  const voiceOutput = new InspectableTestVoiceOutput();
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스",
+        language: "ko"
+      },
+      {
+        text: "npm test 돌려줘",
+        language: "ko"
+      }
+    ],
     {
-      text: "코덱스",
-      language: "ko"
-    },
-    {
-      text: "Codex 준비됐어",
-      language: "ko"
-    },
-    {
-      text: "npm test 돌려줘",
-      language: "ko"
+      voiceOutput
     }
-  ]);
+  );
 
   await runner.start();
   emitCandidate(audioInput, 1000);
-  emitCandidate(audioInput, 2000);
   emitCandidate(audioInput, 3000);
   await runner.drain();
   await runner.stop();
 
   assert.equal(backend.prompts.length, 1);
   assert.equal(backend.prompts[0].text, "npm test 돌려줘");
-  assert.equal(logs.some((line) => line.startsWith("[echo:discarded] similarity=")), true);
+  assert.equal(voiceOutput.messages.length, 0);
+  assert.equal(logs.some((line) => line.startsWith("[echo:discarded] similarity=")), false);
   assert.ok(logs.includes('[wake:followup] phrase="코덱스" command="npm test 돌려줘"'));
 });
 

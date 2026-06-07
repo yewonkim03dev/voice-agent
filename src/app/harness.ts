@@ -584,7 +584,8 @@ export class TerminalHarness {
 
     if (!promptText) {
       this.passthroughState = "LISTENING";
-      await this.speak(`${agentLabel(this.agentTarget)} 준비됐어.`, "status");
+      this.writeLine("[voice:cue] wake ready \u0007");
+      this.sendVisualState("listening");
       return;
     }
 
