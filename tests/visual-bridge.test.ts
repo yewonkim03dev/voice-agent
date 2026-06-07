@@ -105,14 +105,16 @@ test("visual bridge parses allowed control events only", () => {
     action: "update_wake_phrases",
     wakePhrases: ["코덱스", "자비스"]
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_approval_phrases","approvalPhrases":{"onceApprove":["  해  ",""],"deny":["마"],"sessionApprove":["오늘만"]}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_approval_phrases","approvalPhrases":{"onceApprove":["  해  ",""],"deny":["마"],"sessionApprove":["오늘만"],"policyApprove":["계속"],"networkPolicyApprove":["호스트"]}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_approval_phrases",
     approvalPhrases: {
       onceApprove: ["해"],
       deny: ["마"],
-      sessionApprove: ["오늘만"]
+      sessionApprove: ["오늘만"],
+      policyApprove: ["계속"],
+      networkPolicyApprove: ["호스트"]
     }
   });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_codex_thread_id","codexThreadId":" 019e-session ","codexAlwaysStartNewThread":true}'), {
@@ -405,6 +407,12 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /update_wake_phrases/u);
   assert.match(qml, /update_approval_phrases/u);
   assert.match(qml, /Approval allow phrases/u);
+  assert.match(qml, /Persistent allow phrases/u);
+  assert.match(qml, /Network persistent allow phrases/u);
+  assert.match(qml, /id: approvalPolicyField/u);
+  assert.match(qml, /id: approvalNetworkPolicyField/u);
+  assert.match(qml, /policyApprove: root\.parseWakePhrases\(approvalPolicyField\.text\)/u);
+  assert.match(qml, /networkPolicyApprove: root\.parseWakePhrases\(approvalNetworkPolicyField\.text\)/u);
   assert.match(qml, /update_codex_thread_id/u);
   assert.match(qml, /update_visual_settings/u);
   assert.match(qml, /reset_settings/u);
@@ -493,7 +501,11 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /func updateSessionId\(_ sessionId: String\)/u);
   assert.match(swift, /func updateUsage\(_ usage: String\)/u);
   assert.match(swift, /settingsApprovalOncePhrasesView/u);
+  assert.match(swift, /settingsApprovalPolicyPhrasesView/u);
+  assert.match(swift, /settingsApprovalNetworkPolicyPhrasesView/u);
   assert.match(swift, /update_approval_phrases/u);
+  assert.match(swift, /"policyApprove": approvalPolicyPhrases/u);
+  assert.match(swift, /"networkPolicyApprove": approvalNetworkPolicyPhrases/u);
   assert.match(swift, /final class QuestionLabelView: NSView/u);
   assert.match(swift, /private let questionView = QuestionLabelView\(frame: \.zero\)/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);

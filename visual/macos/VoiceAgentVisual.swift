@@ -73,6 +73,8 @@ private let visualTextEn: [String: String] = [
     "allow": "Allow",
     "deny": "Deny",
     "sessionAllow": "Session Allow",
+    "policyAllow": "Persistent Allow",
+    "networkPolicyAllow": "Network Allow",
     "quitVoiceAgent": "Quit Voice Agent",
     "voiceGuide": "1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn.",
     "referenceHelp": "Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request.",
@@ -93,6 +95,8 @@ private let visualTextEn: [String: String] = [
     "approvalAllowHelp": "Phrases that approve once during permission prompts. One phrase per line.",
     "approvalDenyHelp": "Phrases that deny permission prompts. Overlaps with allow phrases may be treated as unknown.",
     "sessionAllowHelp": "Phrases that approve for the current session.",
+    "policyAllowHelp": "Phrases that keep allowing the same command or execution policy.",
+    "networkPolicyAllowHelp": "Phrases that keep allowing the same network, host, or domain.",
     "speech": "speech",
     "command": "command",
     "status": "status"
@@ -165,6 +169,8 @@ private let visualTextKo: [String: String] = [
     "allow": "허용",
     "deny": "거부",
     "sessionAllow": "세션 허용",
+    "policyAllow": "계속 허용",
+    "networkPolicyAllow": "네트워크 계속 허용",
     "quitVoiceAgent": "Voice Agent 종료",
     "voiceGuide": "1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. 참고자료는 다음 요청 한 번에만 붙습니다.\n5. 정지는 현재 에이전트 작업을 즉시 중단합니다.",
     "referenceHelp": "파일명, URL, 조건 같은 참고자료만 적고 추가를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.",
@@ -185,6 +191,8 @@ private let visualTextKo: [String: String] = [
     "approvalAllowHelp": "권한 요청에서 한 번만 허용으로 처리할 문구입니다. 줄마다 하나씩 입력합니다.",
     "approvalDenyHelp": "권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 안전하게 unknown으로 처리될 수 있습니다.",
     "sessionAllowHelp": "현재 세션 동안 허용으로 처리할 문구입니다.",
+    "policyAllowHelp": "같은 명령 또는 같은 실행 정책을 계속 허용으로 처리할 문구입니다.",
+    "networkPolicyAllowHelp": "같은 네트워크, 호스트, 도메인을 계속 허용으로 처리할 문구입니다.",
     "speech": "음성",
     "command": "명령",
     "status": "상태"
@@ -2014,6 +2022,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsApprovalOncePhrasesView = NSTextView(frame: .zero)
     private let settingsApprovalDenyPhrasesView = NSTextView(frame: .zero)
     private let settingsApprovalSessionPhrasesView = NSTextView(frame: .zero)
+    private let settingsApprovalPolicyPhrasesView = NSTextView(frame: .zero)
+    private let settingsApprovalNetworkPolicyPhrasesView = NSTextView(frame: .zero)
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
     private var ttsVoiceName = ""
@@ -2031,6 +2041,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var approvalOncePhrases: [String] = []
     private var approvalDenyPhrases: [String] = []
     private var approvalSessionPhrases: [String] = []
+    private var approvalPolicyPhrases: [String] = []
+    private var approvalNetworkPolicyPhrases: [String] = []
     private var codexThreadId = ""
     private var uiLanguage: UiLanguage = .en
     private var uiLanguageInitialized = false
@@ -2387,6 +2399,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         approvalOncePhrases = normalizedPhrases([settingsApprovalOncePhrasesView.string])
         approvalDenyPhrases = normalizedPhrases([settingsApprovalDenyPhrasesView.string])
         approvalSessionPhrases = normalizedPhrases([settingsApprovalSessionPhrasesView.string])
+        approvalPolicyPhrases = normalizedPhrases([settingsApprovalPolicyPhrasesView.string])
+        approvalNetworkPolicyPhrases = normalizedPhrases([settingsApprovalNetworkPolicyPhrasesView.string])
         codexThreadId = settingsCodexThreadField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         sendTtsSettings()
         sendWakePhrases()
@@ -2501,6 +2515,12 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         if let phrases = settings["sessionApprove"] as? [String] {
             approvalSessionPhrases = normalizedPhrases(phrases)
         }
+        if let phrases = settings["policyApprove"] as? [String] {
+            approvalPolicyPhrases = normalizedPhrases(phrases)
+        }
+        if let phrases = settings["networkPolicyApprove"] as? [String] {
+            approvalNetworkPolicyPhrases = normalizedPhrases(phrases)
+        }
         syncSettingsControls()
     }
 
@@ -2522,7 +2542,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 944),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -2530,7 +2550,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         window.title = localizedText("settings", language: uiLanguage)
         window.isReleasedWhenClosed = false
 
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 820))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 944))
         window.contentView = view
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
@@ -2541,7 +2561,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             view,
             label: localizedText("allow", language: uiLanguage),
             textView: settingsApprovalOncePhrasesView,
-            y: 738,
+            y: 862,
             placeholderHeight: 46,
             help: localizedText("approvalAllowHelp", language: uiLanguage)
         )
@@ -2549,7 +2569,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             view,
             label: localizedText("deny", language: uiLanguage),
             textView: settingsApprovalDenyPhrasesView,
-            y: 676,
+            y: 800,
             placeholderHeight: 46,
             help: localizedText("approvalDenyHelp", language: uiLanguage)
         )
@@ -2557,9 +2577,25 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             view,
             label: localizedText("sessionAllow", language: uiLanguage),
             textView: settingsApprovalSessionPhrasesView,
-            y: 614,
+            y: 738,
             placeholderHeight: 46,
             help: localizedText("sessionAllowHelp", language: uiLanguage)
+        )
+        addSettingsPhraseArea(
+            view,
+            label: localizedText("policyAllow", language: uiLanguage),
+            textView: settingsApprovalPolicyPhrasesView,
+            y: 676,
+            placeholderHeight: 46,
+            help: localizedText("policyAllowHelp", language: uiLanguage)
+        )
+        addSettingsPhraseArea(
+            view,
+            label: localizedText("networkPolicyAllow", language: uiLanguage),
+            textView: settingsApprovalNetworkPolicyPhrasesView,
+            y: 614,
+            placeholderHeight: 46,
+            help: localizedText("networkPolicyAllowHelp", language: uiLanguage)
         )
 
         addSettingsRow(view, label: localizedText("language", language: uiLanguage), control: settingsLanguagePopup, y: 570)
@@ -2681,6 +2717,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsApprovalOncePhrasesView.string = approvalOncePhrases.joined(separator: "\n")
         settingsApprovalDenyPhrasesView.string = approvalDenyPhrases.joined(separator: "\n")
         settingsApprovalSessionPhrasesView.string = approvalSessionPhrases.joined(separator: "\n")
+        settingsApprovalPolicyPhrasesView.string = approvalPolicyPhrases.joined(separator: "\n")
+        settingsApprovalNetworkPolicyPhrasesView.string = approvalNetworkPolicyPhrases.joined(separator: "\n")
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -2741,7 +2779,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             "approvalPhrases": [
                 "onceApprove": approvalOncePhrases,
                 "deny": approvalDenyPhrases,
-                "sessionApprove": approvalSessionPhrases
+                "sessionApprove": approvalSessionPhrases,
+                "policyApprove": approvalPolicyPhrases,
+                "networkPolicyApprove": approvalNetworkPolicyPhrases
             ]
         ])
     }

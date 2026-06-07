@@ -51,6 +51,8 @@ ApplicationWindow {
     property var approvalOncePhrases: []
     property var approvalDenyPhrases: []
     property var approvalSessionPhrases: []
+    property var approvalPolicyPhrases: []
+    property var approvalNetworkPolicyPhrases: []
     property string codexThreadId: ""
     property bool codexAlwaysStartNewThread: false
     property string uiLanguage: "en"
@@ -110,6 +112,8 @@ ApplicationWindow {
             approvalAllowPhrases: "허용 문구",
             approvalDenyPhrases: "거부 문구",
             sessionAllowPhrases: "세션 허용 문구",
+            policyAllowPhrases: "계속 허용 문구",
+            networkPolicyAllowPhrases: "네트워크 계속 허용 문구",
             codexThreadRestart: "Codex thread id (재시작 후 적용)",
             alwaysStartNewThread: "항상 새 스레드로 시작",
             restoreDefaults: "기본값 복원",
@@ -137,6 +141,8 @@ ApplicationWindow {
             approvalAllowHelp: "권한 요청에서 한 번 허용으로 처리할 문구입니다.",
             approvalDenyHelp: "권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 unknown으로 처리될 수 있습니다.",
             sessionAllowHelp: "현재 세션 동안 허용으로 처리할 문구입니다.",
+            policyAllowHelp: "같은 명령 또는 같은 실행 정책을 계속 허용으로 처리할 문구입니다.",
+            networkPolicyAllowHelp: "같은 네트워크, 호스트, 도메인을 계속 허용으로 처리할 문구입니다.",
             threadHelp: "다음 재시작 때 이어갈 Codex thread id입니다.",
             newThreadHelp: "체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다."
         }
@@ -190,6 +196,8 @@ ApplicationWindow {
             approvalAllowPhrases: "Approval allow phrases",
             approvalDenyPhrases: "Approval deny phrases",
             sessionAllowPhrases: "Session allow phrases",
+            policyAllowPhrases: "Persistent allow phrases",
+            networkPolicyAllowPhrases: "Network persistent allow phrases",
             codexThreadRestart: "Codex thread id (applies after restart)",
             alwaysStartNewThread: "Always start new thread",
             restoreDefaults: "Restore Defaults",
@@ -217,6 +225,8 @@ ApplicationWindow {
             approvalAllowHelp: "Phrases that approve once during permission prompts.",
             approvalDenyHelp: "Phrases that deny permission prompts. Overlaps can be treated as unknown.",
             sessionAllowHelp: "Phrases that approve for the current session.",
+            policyAllowHelp: "Phrases that keep allowing the same command or execution policy.",
+            networkPolicyAllowHelp: "Phrases that keep allowing the same network, host, or domain.",
             threadHelp: "Codex thread id to resume after restart.",
             newThreadHelp: "Starts a new Codex thread on restart when checked; resumes the last thread when unchecked."
         }
@@ -312,7 +322,9 @@ ApplicationWindow {
                 approvalPhrases: {
                     onceApprove: root.parseWakePhrases(approvalOnceField.text),
                     deny: root.parseWakePhrases(approvalDenyField.text),
-                    sessionApprove: root.parseWakePhrases(approvalSessionField.text)
+                    sessionApprove: root.parseWakePhrases(approvalSessionField.text),
+                    policyApprove: root.parseWakePhrases(approvalPolicyField.text),
+                    networkPolicyApprove: root.parseWakePhrases(approvalNetworkPolicyField.text)
                 }
             }))
             socket.sendTextMessage(JSON.stringify({
@@ -390,9 +402,13 @@ ApplicationWindow {
         root.approvalOncePhrases = root.normalizedPhrases((phrases && phrases.onceApprove) || [])
         root.approvalDenyPhrases = root.normalizedPhrases((phrases && phrases.deny) || [])
         root.approvalSessionPhrases = root.normalizedPhrases((phrases && phrases.sessionApprove) || [])
+        root.approvalPolicyPhrases = root.normalizedPhrases((phrases && phrases.policyApprove) || [])
+        root.approvalNetworkPolicyPhrases = root.normalizedPhrases((phrases && phrases.networkPolicyApprove) || [])
         if (approvalOnceField) approvalOnceField.text = root.approvalOncePhrases.join("\n")
         if (approvalDenyField) approvalDenyField.text = root.approvalDenyPhrases.join("\n")
         if (approvalSessionField) approvalSessionField.text = root.approvalSessionPhrases.join("\n")
+        if (approvalPolicyField) approvalPolicyField.text = root.approvalPolicyPhrases.join("\n")
+        if (approvalNetworkPolicyField) approvalNetworkPolicyField.text = root.approvalNetworkPolicyPhrases.join("\n")
     }
 
     function applyVisualSettings(event) {
@@ -1848,6 +1864,74 @@ ApplicationWindow {
                         id: approvalSessionField
                         text: root.approvalSessionPhrases.join("\n")
                         placeholderText: "이번 세션 동안 허용\nalways allow"
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.uiText("policyAllowPhrases")
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: root.uiText("policyAllowHelp")
+                    }
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 64
+                    clip: true
+
+                    TextArea {
+                        id: approvalPolicyField
+                        text: root.approvalPolicyPhrases.join("\n")
+                        placeholderText: "같은 명령 계속 허용\n항상 이 명령 허용"
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.uiText("networkPolicyAllowPhrases")
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: root.uiText("networkPolicyAllowHelp")
+                    }
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 64
+                    clip: true
+
+                    TextArea {
+                        id: approvalNetworkPolicyField
+                        text: root.approvalNetworkPolicyPhrases.join("\n")
+                        placeholderText: "같은 네트워크 계속 허용\n이 호스트 계속 허용"
                         selectByMouse: true
                         wrapMode: TextEdit.WrapAnywhere
                     }
