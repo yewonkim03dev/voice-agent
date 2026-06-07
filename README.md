@@ -49,6 +49,14 @@ npm run tts:test -- --ko "코덱스 음성 출력 테스트야."
 npm test
 ```
 
+## Architecture
+
+![Voice Agent architecture](./docs/architecture.png)
+
+Voice Agent is the voice interaction layer around an agent app-server. It turns the user's speech into normal agent input, keeps TTS and visual/HUD state in sync, and mediates approval or input requests by request id. The app-server remains the source of truth for model reasoning, tool selection, plugin calls, connector calls, and execution results.
+
+In the current Codex implementation, plugins installed in the Codex app can be used through Voice Agent. Voice Agent does not call those plugins directly. It forwards STT text to the Codex app-server, then handles the approval or input requests that the app-server sends back, so installed tools, MCP connectors, Google Calendar, Gmail, and similar integrations stay on the official app-server path.
+
 ## Floating HUD (macOS)
 
 ![Voice Agent floating HUD on macOS](./docs/floating-hud.png)
@@ -95,6 +103,10 @@ npm run harness:codex
 ```
 
 Codex mode starts `codex app-server --listen ws://127.0.0.1:0`, opens a local websocket JSON-RPC connection, and sends normal text directly with `turn/start`. It does not run local intent classification or text-based permission parsing in front of Codex. This avoids fake approval prompts such as `approve_action`.
+
+Approval and input handling also stays on the app-server protocol path. Voice Agent keeps a pending request by the opaque JSON-RPC id and method, then replies to that same id after the user speaks or chooses a decision. The bridge handles command execution approval, file-change approval, permissions approval, MCP elicitation, and tool user-input requests without branching on a plugin name. If a request supports only one-shot approval, Visual/HUD shows only that choice; unsupported session or persistent approval phrases keep the request pending and ask for a supported answer.
+
+MCP elicitation is rendered as app-server input, not as local connector logic. Form mode displays the server message, fields, required markers, defaults, and enum choices, then returns `accept`, `decline`, or `cancel` using the schema-shaped response expected by app-server. Required form values are filled from schema defaults/const/enum values or explicit user answers; unknown required values are not guessed. URL mode displays the full URL in terminal/visual command output, never opens or fetches it automatically, and provides the URL again only after explicit approval.
 
 On first start, Codex mode stores the returned app-server `threadId` under `codex.threadId` in `.voice-agent.local.json`. Later runs try `thread/resume` with that id before creating a new thread, so repeated `npm run harness:wake:codex -- --visual --tts` sessions continue in the same Codex app chat when the stored thread is still available. To force a specific thread, use `--codex-thread-id <id>` or `VOICE_AGENT_CODEX_THREAD_ID`.
 

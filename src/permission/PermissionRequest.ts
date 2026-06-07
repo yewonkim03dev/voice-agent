@@ -5,6 +5,9 @@ export type NativePermissionBackend = "codex" | "claude" | "mock";
 export interface NativePermissionMetadata {
   backend: NativePermissionBackend;
   requestMethod?: string;
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
   availableDecisions?: unknown[];
   additionalPermissions?: unknown;
   networkApprovalContext?: unknown;

@@ -422,6 +422,43 @@ test("routes app-server approval requests to RuntimeController and sends decisio
   });
 });
 
+test("does not overwrite a pending app-server approval with the same request id", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const permissions: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => permissions.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "approval_duplicate",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      command: "npm test"
+    }
+  });
+  socket.receive({
+    id: "approval_duplicate",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      command: "rm -rf /tmp/not-used"
+    }
+  });
+  await backend.sendPermission(permission("approval_duplicate", "allow"));
+
+  assert.equal(permissions.length, 1);
+  assert.equal(permissions[0].command, "npm test");
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "approval_duplicate",
+    result: {
+      decision: "accept"
+    }
+  });
+});
+
 test("maps session approval only when Codex offers a session decision", async () => {
   const { backend, child, socket } = createStartedBackend();
   const permissions: PermissionRequest[] = [];
@@ -707,7 +744,7 @@ test("routes generic Codex approval requests instead of silently ignoring them",
   assert.equal(requests.length, 1);
   assert.equal(requests[0].id, "edit_approval");
   assert.equal(requests[0].tool, "codex");
-  assert.equal(requests[0].action, "item/fileChange/requestApproval");
+  assert.equal(requests[0].action, "file_change");
   assert.equal(requests[0].rawText, "Apply README edits?");
 
   await backend.sendPermission(permission("edit_approval", "allow"));
@@ -758,7 +795,8 @@ test("routes MCP elicitation requests to approval flow and accepts with schema c
   assert.equal(requests[0].id, "mcp_elicitation_1");
   assert.equal(requests[0].tool, "codex_apps");
   assert.equal(requests[0].action, "mcp_elicitation");
-  assert.equal(requests[0].rawText, "Google Calendar action\nCreate a Google Calendar event?");
+  assert.equal(requests[0].rawText.includes("Google Calendar action\nCreate a Google Calendar event?"), true);
+  assert.equal(requests[0].rawText.includes("Fields: confirmation"), true);
   assert.deepEqual(socket.sent.at(-1), {
     id: "mcp_elicitation_1",
     result: {
@@ -796,7 +834,325 @@ test("denies MCP elicitation requests with a decline action", async () => {
     id: "mcp_elicitation_deny",
     result: {
       action: "decline",
+      content: null,
       _meta: {}
+    }
+  });
+});
+
+test("routes current MCP form elicitation requestedSchema and accepts schema content", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const requests: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => requests.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_form_current",
+    method: "mcpServer/elicitation/request",
+    params: {
+      threadId: "thread_1",
+      turnId: "turn_1",
+      serverName: "codex_apps",
+      mode: "form",
+      message: "Allow Google Calendar to create an event?",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          confirmation: {
+            type: "string",
+            title: "Confirmation",
+            enum: ["Allow", "__codex_mcp_decline__"]
+          },
+          notify: {
+            type: "boolean",
+            default: false
+          }
+        },
+        required: ["confirmation"]
+      }
+    }
+  });
+  await backend.sendPermission(permission("mcp_form_current", "allow"));
+
+  assert.equal(requests[0].rawText.includes("Allow Google Calendar to create an event?"), true);
+  assert.equal(requests[0].rawText.includes("Fields:"), true);
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "mcp_form_current",
+    result: {
+      action: "accept",
+      content: {
+        confirmation: "Allow",
+        notify: false
+      },
+      _meta: {}
+    }
+  });
+});
+
+test("keeps MCP form elicitation pending when required content cannot be inferred safely", async () => {
+  const { backend, child, socket } = createStartedBackend();
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_form_required_missing",
+    method: "mcpServer/elicitation/request",
+    params: {
+      threadId: "thread_1",
+      turnId: "turn_1",
+      serverName: "codex_apps",
+      mode: "form",
+      message: "Provide a reason.",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          reason: {
+            type: "string",
+            title: "Reason"
+          }
+        },
+        required: ["reason"]
+      }
+    }
+  });
+
+  const sentBeforeAllow = socket.sent.length;
+  await assert.rejects(
+    () => backend.sendPermission(permission("mcp_form_required_missing", "allow")),
+    /requires explicit input for field "reason"/u
+  );
+  assert.equal(socket.sent.length, sentBeforeAllow);
+
+  await backend.sendPermission(permission("mcp_form_required_missing", "cancel"));
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "mcp_form_required_missing",
+    result: {
+      action: "cancel",
+      content: null,
+      _meta: {}
+    }
+  });
+});
+
+test("fills an uninferable MCP required field from explicit user transcript", async () => {
+  const { backend, child, socket } = createStartedBackend();
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_form_required_answered",
+    method: "mcpServer/elicitation/request",
+    params: {
+      threadId: "thread_1",
+      turnId: "turn_1",
+      serverName: "codex_apps",
+      mode: "form",
+      message: "Provide a reason.",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          reason: {
+            type: "string",
+            title: "Reason"
+          }
+        },
+        required: ["reason"]
+      }
+    }
+  });
+  await backend.sendPermission(permission("mcp_form_required_answered", "allow", {
+    transcript: "테스트 일정 확인용"
+  }));
+
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "mcp_form_required_answered",
+    result: {
+      action: "accept",
+      content: {
+        reason: "테스트 일정 확인용"
+      },
+      _meta: {}
+    }
+  });
+});
+
+test("cancels MCP elicitation requests with a cancel action", async () => {
+  const { backend, child, socket } = createStartedBackend();
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_elicitation_cancel",
+    method: "mcpServer/elicitation/request",
+    params: {
+      serverName: "codex_apps",
+      mode: "form",
+      message: "Create a Google Calendar event?",
+      requestedSchema: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  });
+  await backend.sendPermission(permission("mcp_elicitation_cancel", "cancel"));
+
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "mcp_elicitation_cancel",
+    result: {
+      action: "cancel",
+      content: null,
+      _meta: {}
+    }
+  });
+});
+
+test("routes MCP URL elicitations without form content", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const requests: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => requests.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_url",
+    method: "mcpServer/elicitation/request",
+    params: {
+      threadId: "thread_1",
+      turnId: "turn_1",
+      serverName: "example",
+      mode: "url",
+      message: "Authorization is required.",
+      elicitationId: "elicitation_1",
+      url: "https://example.com/connect?elicitationId=elicitation_1"
+    }
+  });
+  await backend.sendPermission(permission("mcp_url", "allow"));
+
+  assert.equal(requests[0].rawText.includes("URL: https://example.com/connect?elicitationId=elicitation_1"), true);
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "mcp_url",
+    result: {
+      action: "accept",
+      content: null,
+      _meta: {}
+    }
+  });
+});
+
+test("routes file change approval requests and can accept for session", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const requests: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => requests.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "file_change_1",
+    method: "item/fileChange/requestApproval",
+    params: {
+      threadId: "thread_1",
+      turnId: "turn_1",
+      itemId: "item_1",
+      startedAtMs: 1000,
+      reason: "Write access is required.",
+      grantRoot: "/repo"
+    }
+  });
+  await backend.sendPermission(permission("file_change_1", "allow", {
+    remember: true,
+    scope: "session"
+  }));
+
+  assert.equal(requests[0].action, "file_change");
+  assert.equal(requests[0].native?.threadId, "thread_1");
+  assert.equal(requests[0].native?.turnId, "turn_1");
+  assert.equal(requests[0].native?.itemId, "item_1");
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "file_change_1",
+    result: {
+      decision: "acceptForSession"
+    }
+  });
+});
+
+test("routes tool user input requests and returns answers by question id", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const requests: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => requests.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "user_input_1",
+    method: "item/tool/requestUserInput",
+    params: {
+      threadId: "thread_1",
+      turnId: "turn_1",
+      itemId: "item_1",
+      questions: [
+        {
+          id: "choice",
+          header: "Mode",
+          question: "Which mode?",
+          isOther: false,
+          isSecret: false,
+          options: [
+            {
+              label: "Allow",
+              description: "Continue"
+            },
+            {
+              label: "Cancel",
+              description: "Stop"
+            }
+          ]
+        }
+      ]
+    }
+  });
+  await backend.sendPermission(permission("user_input_1", "allow", {
+    transcript: "허용"
+  }));
+
+  assert.equal(requests[0].action, "request_user_input");
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "user_input_1",
+    result: {
+      answers: {
+        choice: {
+          answers: ["Allow"]
+        }
+      }
     }
   });
 });
@@ -946,6 +1302,116 @@ test("terminal harness surfaces MCP elicitation details and routes Korean allow 
       _meta: {}
     }
   });
+});
+
+test("terminal harness routes free-form speech to pending MCP form input", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "real-test",
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  const started = harness.start();
+  child.stderr.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_elicitation_input_harness",
+    method: "mcpServer/elicitation/request",
+    params: {
+      serverName: "codex_apps",
+      mode: "form",
+      message: "Provide a reason.",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          reason: {
+            type: "string",
+            title: "Reason"
+          }
+        },
+        required: ["reason"]
+      }
+    }
+  });
+  await flushAsync();
+
+  await harness.processLine("테스트 일정 확인용");
+
+  assert.deepEqual(socket.sent.findLast((message) => message.id === "mcp_elicitation_input_harness"), {
+    id: "mcp_elicitation_input_harness",
+    result: {
+      action: "accept",
+      content: {
+        reason: "테스트 일정 확인용"
+      },
+      _meta: {}
+    }
+  });
+});
+
+test("terminal harness provides MCP URL elicitations only after explicit approval", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const visualBridge = new FakeVisualBridge();
+  const lines: string[] = [];
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "real-test",
+    visualBridge,
+    writeLine: (line) => lines.push(line),
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  const started = harness.start();
+  child.stderr.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_url_harness",
+    method: "mcpServer/elicitation/request",
+    params: {
+      serverName: "example",
+      mode: "url",
+      message: "Authorization is required.",
+      url: "https://example.com/connect?elicitationId=elicitation_1"
+    }
+  });
+  await flushAsync();
+
+  assert.equal(
+    harness.voiceOutput.messages.some((message) => message.text.includes("https://example.com")),
+    false
+  );
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "command" && event.text.includes("MCP URL requested")), {
+    op: "voice-agent-ui",
+    type: "command",
+    text: "MCP URL requested:\nhttps://example.com/connect?elicitationId=elicitation_1"
+  });
+  assert.equal(lines.some((line) => line.includes("MCP URL approved")), false);
+
+  await harness.processLine("허용");
+
+  assert.deepEqual(socket.sent.findLast((message) => message.id === "mcp_url_harness"), {
+    id: "mcp_url_harness",
+    result: {
+      action: "accept",
+      content: null,
+      _meta: {}
+    }
+  });
+  assert.deepEqual(visualBridge.events.find((event) => event.type === "command" && event.text.includes("MCP URL approved")), {
+    op: "voice-agent-ui",
+    type: "command",
+    text: "MCP URL approved:\nhttps://example.com/connect?elicitationId=elicitation_1"
+  });
+  assert.equal(lines.some((line) => line.includes("[agent:command]")), true);
 });
 
 test("terminal harness updates visual settings and usage when Codex returns app-server metadata", async () => {

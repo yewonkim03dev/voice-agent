@@ -18,7 +18,8 @@ import {
   approvalPhraseSet,
   type ApprovalPhraseConfig,
   type ApprovalPhraseSet,
-  interpretApprovalSpeech
+  interpretApprovalSpeech,
+  normalizeApprovalSpeech
 } from "../permission/ApprovalSpeech.ts";
 import type { PermissionDecision } from "../permission/PermissionDecision.ts";
 import type { PermissionRequest } from "../permission/PermissionRequest.ts";
@@ -69,6 +70,9 @@ import {
 } from "./voice-config.ts";
 
 type WriteLine = (line: string) => void;
+
+const LATE_APPROVAL_SPEECH_GRACE_MS = 4_000;
+
 interface SpeakVisualOptions {
   visualState?: VisualUiState;
   visualText?: string;
@@ -274,6 +278,7 @@ export class TerminalHarness {
   private voiceGeneration = 0;
   private progressVoiceGeneration = 0;
   private readonly permissionCueMessageIds = new Set<string>();
+  private ignoreApprovalSpeechUntil = 0;
 
   constructor(options: TerminalHarnessOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -539,6 +544,11 @@ export class TerminalHarness {
       return;
     }
 
+    if (this.shouldIgnoreLateApprovalSpeech(text)) {
+      this.writeLine(`[voice:permission] ignored late approval speech: ${text}`);
+      return;
+    }
+
     if (this.shouldInterrupt(text)) {
       this.passthroughState = "INTERRUPTING";
       this.clearStalePassthroughOutput();
@@ -567,6 +577,10 @@ export class TerminalHarness {
     await this.sendPassthroughTranscript(wake ? withTranscriptText(transcript, promptText) : transcript, {
       visualQuestionText: options.visualQuestionText ?? promptText
     });
+  }
+
+  private shouldIgnoreLateApprovalSpeech(text: string): boolean {
+    return this.now() <= this.ignoreApprovalSpeechUntil && isExactApprovalPhrase(text, this.approvalPhrases);
   }
 
   private async sendPassthroughTranscript(transcript: Transcript, options: ProcessTranscriptOptions = {}): Promise<void> {
@@ -604,8 +618,13 @@ export class TerminalHarness {
     if (!pending) return;
 
     const interpreted = interpretApprovalSpeech(text, this.approvalPhrases);
+    let intent = interpreted.intent;
 
-    if (interpreted.intent === "unknown") {
+    if (intent === "unknown" && canUseTranscriptAsNativeInput(pending)) {
+      intent = "approve_once";
+    }
+
+    if (intent === "unknown") {
       await this.speak("허용인지 거부인지 다시 말해줘.", "permission");
       this.passthroughState = "CONFIRMING";
       return;
@@ -613,9 +632,9 @@ export class TerminalHarness {
 
     const decision: PermissionDecision = {
       requestId: pending.id,
-      decision: interpreted.intent === "deny" ? "deny" : "allow",
-      remember: interpreted.intent === "approve_session" || interpreted.intent === "approve_policy",
-      scope: approvalScope(interpreted.intent),
+      decision: intent === "deny" ? "deny" : intent === "cancel" ? "cancel" : "allow",
+      remember: intent === "approve_session" || intent === "approve_policy",
+      scope: approvalScope(intent),
       decidedBy: "voice",
       transcript: text
     };
@@ -623,11 +642,16 @@ export class TerminalHarness {
     try {
       await this.backend.sendPermission(decision);
     } catch (error) {
-      await this.speak(unsupportedApprovalGuidance(interpreted.intent, pending, error), "warning");
+      await this.speak(unsupportedApprovalGuidance(intent, pending, error), "warning");
       this.passthroughState = "CONFIRMING";
       return;
     }
 
+    if (decision.decision === "allow") {
+      this.emitNativeMcpUrlReference(pending, "approved");
+    }
+
+    this.ignoreApprovalSpeechUntil = this.now() + LATE_APPROVAL_SPEECH_GRACE_MS;
     this.pendingPermission = undefined;
     if (await this.activateNextPendingPermission()) {
       return;
@@ -683,6 +707,7 @@ export class TerminalHarness {
         text: request.command
       });
     }
+    this.emitNativeMcpUrlReference(request, "requested");
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "approval",
@@ -1418,6 +1443,19 @@ export class TerminalHarness {
     this.visualBridge?.send(event);
   }
 
+  private emitNativeMcpUrlReference(request: PermissionRequest, phase: "requested" | "approved"): void {
+    const url = nativeMcpElicitationUrl(request);
+    if (!url) return;
+
+    const text = `${phase === "approved" ? "MCP URL approved" : "MCP URL requested"}:\n${url}`;
+    this.printAgentOutputBlock("command", text);
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "command",
+      text
+    });
+  }
+
   private sendVisualTtsSettings(): void {
     this.sendVisualEvent({
       op: "voice-agent-ui",
@@ -1546,6 +1584,7 @@ export class TerminalHarness {
     return {
       onceApprove: [...this.approvalPhrases.onceApprove],
       deny: [...this.approvalPhrases.deny],
+      cancel: [...this.approvalPhrases.cancel],
       sessionApprove: [...this.approvalPhrases.sessionApprove],
       policyApprove: [...this.approvalPhrases.policyApprove],
       networkPolicyApprove: [...this.approvalPhrases.networkPolicyApprove]
@@ -2117,6 +2156,66 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function canUseTranscriptAsNativeInput(request: PermissionRequest): boolean {
+  if (request.action === "request_user_input" || request.native?.requestMethod === "item/tool/requestUserInput") {
+    return true;
+  }
+
+  if (request.action !== "mcp_elicitation" && request.native?.requestMethod !== "mcpServer/elicitation/request") {
+    return false;
+  }
+
+  const raw = asRecord(request.native?.raw);
+  const schema = nativeMcpElicitationSchema(raw);
+  const properties = asRecord(schema.properties);
+  const required = parseNativeStringArray(schema.required);
+  return required.some((key) => !nativeMcpFieldHasInferableValue(asRecord(properties[key])));
+}
+
+function nativeMcpElicitationUrl(request: PermissionRequest): string | undefined {
+  if (request.action !== "mcp_elicitation" && request.native?.requestMethod !== "mcpServer/elicitation/request") {
+    return undefined;
+  }
+
+  const raw = asRecord(request.native?.raw);
+  const nested = asRecord(raw.request);
+  const mode = parseNativeString(raw.mode ?? nested.mode);
+  const url = parseNativeString(raw.url ?? nested.url);
+  return mode === "url" ? url : undefined;
+}
+
+function nativeMcpElicitationSchema(raw: Record<string, unknown>): Record<string, unknown> {
+  const request = asRecord(raw.request);
+  return asRecord(raw.requestedSchema ?? raw.requested_schema ?? raw.schema ?? request.requestedSchema ?? request.requested_schema ?? request.schema);
+}
+
+function nativeMcpFieldHasInferableValue(schema: Record<string, unknown>): boolean {
+  if (schema.const !== undefined || schema.default !== undefined) return true;
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) return true;
+  if (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) return true;
+  return Array.isArray(schema.anyOf) && schema.anyOf.length > 0;
+}
+
+function parseNativeStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function parseNativeString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isExactApprovalPhrase(text: string, phrases: ApprovalPhraseSet): boolean {
+  const normalized = normalizeApprovalSpeech(text);
+  return [
+    ...phrases.onceApprove,
+    ...phrases.deny,
+    ...phrases.cancel,
+    ...phrases.sessionApprove,
+    ...phrases.policyApprove,
+    ...phrases.networkPolicyApprove
+  ].includes(normalized);
+}
+
 function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["intent"]): PermissionDecision["scope"] {
   switch (intent) {
     case "approve_session":
@@ -2127,6 +2226,7 @@ function approvalScope(intent: ReturnType<typeof interpretApprovalSpeech>["inten
       return "network";
     case "approve_once":
     case "deny":
+    case "cancel":
     case "unknown":
       return "once";
   }
@@ -2214,9 +2314,15 @@ function approvalVisualText(
     permissionTarget === "네트워크" ? "네트워크 권한 필요해." : `${permissionTarget} 실행 권한 필요해.`,
     `허용: ${phrases.onceApprove.join(" / ")}`,
     `거부: ${phrases.deny.join(" / ")}`,
-    `세션 허용: ${phrases.sessionApprove.join(" / ")}`,
-    `계속 허용: ${phrases.policyApprove.join(" / ")}`
+    `취소: ${phrases.cancel.join(" / ")}`
   ];
+
+  if (supportsSessionApproval(request)) {
+    lines.push(`세션 허용: ${phrases.sessionApprove.join(" / ")}`);
+  }
+  if (supportsToolApproval(request)) {
+    lines.push(`계속 허용: ${phrases.policyApprove.join(" / ")}`);
+  }
 
   if (permissionTarget === "네트워크") {
     const host = parseNativeNetworkHost(request);
@@ -2224,7 +2330,9 @@ function approvalVisualText(
     if (request?.rawText) lines.push(`사유: ${request.rawText}`);
     const choices = describeNativeChoices(request?.native?.availableDecisions);
     if (choices) lines.push(`Codex 선택지: ${choices}`);
-    lines.push(`네트워크 계속 허용: ${phrases.networkPolicyApprove.join(" / ")}`);
+    if (supportsNetworkApproval(request)) {
+      lines.push(`네트워크 계속 허용: ${phrases.networkPolicyApprove.join(" / ")}`);
+    }
   } else if (permissionTarget === "작업") {
     if (request?.rawText) lines.push(`사유: ${request.rawText}`);
     const choices = describeNativeChoices(request?.native?.availableDecisions);
@@ -2242,6 +2350,21 @@ function permissionPromptText(permissionTarget: string): string {
 function permissionTargetLabel(request: PermissionRequest): string {
   if (isNativeNetworkPermissionRequest(request)) return "네트워크";
   return request.command ? "명령" : "작업";
+}
+
+function supportsSessionApproval(request: PermissionRequest | undefined): boolean {
+  if (!request) return false;
+  if (request.action === "request_permissions" || request.action === "network_permissions" || request.action === "file_change") return true;
+  return supportsNativeDecision(request.native?.availableDecisions, "acceptForSession");
+}
+
+function supportsToolApproval(request: PermissionRequest | undefined): boolean {
+  return supportsNativeDecision(request?.native?.availableDecisions, "acceptWithExecpolicyAmendment");
+}
+
+function supportsNetworkApproval(request: PermissionRequest | undefined): boolean {
+  return supportsNativeDecision(request?.native?.availableDecisions, "applyNetworkPolicyAmendment") ||
+    ((request?.native?.proposedNetworkPolicyAmendments?.length ?? 0) > 0);
 }
 
 function isNativeNetworkPermissionRequest(request: PermissionRequest): boolean {

@@ -53,6 +53,14 @@ npm run tts:test -- --en "Codex voice output test."
 npm test
 ```
 
+## 아키텍처
+
+![Voice Agent architecture](./docs/architecture.png)
+
+Voice Agent는 agent app-server를 감싸는 음성 상호작용 계층입니다. 사용자의 음성을 일반 agent 입력으로 바꾸고, TTS와 visual/HUD 상태를 동기화하며, 승인이나 추가 입력 요청은 request id 기준으로 중재합니다. 모델 추론, 도구 선택, 플러그인 호출, 커넥터 호출, 실행 결과의 기준점은 app-server입니다.
+
+현재 Codex 구현에서는 Codex app에 설치한 플러그인도 Voice Agent로 작업 처리할 수 있습니다. Voice Agent가 플러그인을 직접 호출하지 않습니다. STT 텍스트를 Codex app-server에 전달하고, app-server가 다시 보내는 승인이나 입력 요청을 Voice Agent가 처리하므로 설치된 도구, MCP connector, Google Calendar, Gmail 같은 연동은 공식 app-server 경로 위에서 동작합니다.
+
 ## 지원 모드
 
 ### Always-On Wake Codex Harness

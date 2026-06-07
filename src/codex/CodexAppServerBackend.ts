@@ -71,13 +71,19 @@ interface JsonRpcRequest {
 interface PendingCodexApproval {
   rpcId: RequestId;
   requestMethod: string;
-  responseKind: "decision" | "permissions" | "mcp_elicitation";
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  createdAt: number;
+  resolved: boolean;
+  responseKind: "decision" | "permissions" | "mcp_elicitation" | "tool_user_input";
   availableDecisions?: unknown[];
   additionalPermissions?: unknown;
   networkApprovalContext?: unknown;
   requestedPermissions?: unknown;
   proposedExecpolicyAmendment?: unknown;
   proposedNetworkPolicyAmendments?: unknown[];
+  params: Record<string, unknown>;
   raw: Record<string, unknown>;
 }
 
@@ -261,6 +267,7 @@ export class CodexAppServerBackend implements AgentBackend {
 
     const nativeResult = this.resolveNativeResponse(decision, pending);
 
+    pending.resolved = true;
     this.pendingApprovals.delete(decision.requestId);
     this.writeLine(`[codex-app] approval ${decision.decision}: ${decision.requestId}`);
     this.sendResponse(pending.rpcId, nativeResult);
@@ -565,8 +572,14 @@ export class CodexAppServerBackend implements AgentBackend {
       case "item/permissions/requestApproval":
         this.handlePermissionsApprovalRequest(message);
         return;
+      case "item/fileChange/requestApproval":
+        this.handleFileChangeApprovalRequest(message);
+        return;
       case "mcpServer/elicitation/request":
         this.handleMcpServerElicitationRequest(message);
+        return;
+      case "item/tool/requestUserInput":
+        this.handleToolRequestUserInput(message);
         return;
       case "item/agentMessage/delta":
       case "item/commandExecution/outputDelta":
@@ -668,6 +681,28 @@ export class CodexAppServerBackend implements AgentBackend {
     });
   }
 
+  private handleFileChangeApprovalRequest(message: JsonRpcRequest): void {
+    if (message.id === undefined) return;
+
+    const params = asRecord(message.params);
+    const grantRoot = parseOptionalString(params.grantRoot ?? params.grant_root);
+    const reason = parseOptionalString(params.reason);
+    const request = this.createApprovalRequest(message, {
+      tool: "codex",
+      action: "file_change",
+      command: grantRoot ? `Allow file changes under ${grantRoot}` : undefined,
+      rawText: reason ?? (grantRoot ? `Codex requests write access under ${grantRoot}.` : "Codex requests approval for file changes."),
+      riskLevel: "medium",
+      availableDecisions: ["accept", "acceptForSession", "decline", "cancel"]
+    });
+
+    this.publishApprovalRequest(message, request, {
+      responseKind: "decision",
+      availableDecisions: ["accept", "acceptForSession", "decline", "cancel"],
+      raw: params
+    });
+  }
+
   private handleMcpServerElicitationRequest(message: JsonRpcRequest): void {
     if (message.id === undefined) return;
 
@@ -677,11 +712,30 @@ export class CodexAppServerBackend implements AgentBackend {
       tool: serverName,
       action: "mcp_elicitation",
       rawText: mcpElicitationRawText(params, serverName),
-      riskLevel: "medium"
+      riskLevel: "medium",
+      availableDecisions: ["accept", "decline", "cancel"]
     });
 
     this.publishApprovalRequest(message, request, {
       responseKind: "mcp_elicitation",
+      raw: params
+    });
+  }
+
+  private handleToolRequestUserInput(message: JsonRpcRequest): void {
+    if (message.id === undefined) return;
+
+    const params = asRecord(message.params);
+    const questions = Array.isArray(params.questions) ? params.questions : [];
+    const request = this.createApprovalRequest(message, {
+      tool: "codex",
+      action: "request_user_input",
+      rawText: toolUserInputRawText(questions),
+      riskLevel: "medium"
+    });
+
+    this.publishApprovalRequest(message, request, {
+      responseKind: "tool_user_input",
       raw: params
     });
   }
@@ -785,9 +839,14 @@ export class CodexAppServerBackend implements AgentBackend {
       command?: string;
       rawText: string;
       riskLevel: PermissionRequest["riskLevel"];
+      availableDecisions?: unknown[];
     }
   ): PermissionRequest {
     const params = asRecord(message.params);
+    const threadId = extractThreadId(params);
+    const turnId = extractTurnId(params);
+    const itemId = extractItemId(params);
+    const availableDecisions = details.availableDecisions ?? optionalUnknownArray(params.availableDecisions ?? params.available_decisions);
     return {
       id: String(message.id),
       sessionId: this.resolveSessionId(message),
@@ -800,7 +859,10 @@ export class CodexAppServerBackend implements AgentBackend {
       native: {
         backend: "codex",
         requestMethod: message.method,
-        availableDecisions: optionalUnknownArray(params.availableDecisions ?? params.available_decisions),
+        threadId,
+        turnId,
+        itemId,
+        availableDecisions,
         additionalPermissions: params.additionalPermissions ?? params.additional_permissions,
         networkApprovalContext: params.networkApprovalContext ?? params.network_approval_context,
         requestedPermissions: params.permissions ?? params.requestedPermissions ?? params.requested_permissions,
@@ -816,12 +878,27 @@ export class CodexAppServerBackend implements AgentBackend {
   private publishApprovalRequest(
     message: JsonRpcRequest,
     request: PermissionRequest,
-    pending: Omit<PendingCodexApproval, "rpcId" | "requestMethod">
+    pending: Omit<
+      PendingCodexApproval,
+      "rpcId" | "requestMethod" | "threadId" | "turnId" | "itemId" | "createdAt" | "resolved" | "params"
+    >
   ): void {
     if (message.id === undefined) return;
+    if (this.pendingApprovals.has(request.id)) {
+      this.writeLine(`[codex-app] duplicate approval request ignored: ${request.id}`);
+      return;
+    }
+
+    const params = asRecord(message.params);
     this.pendingApprovals.set(request.id, {
       rpcId: message.id,
       requestMethod: message.method ?? "unknown",
+      threadId: extractThreadId(params),
+      turnId: extractTurnId(params),
+      itemId: extractItemId(params),
+      createdAt: request.createdAt,
+      resolved: false,
+      params,
       ...pending
     });
     this.writeLine(`[codex-app] approval requested: ${request.command ?? request.action}`);
@@ -967,28 +1044,61 @@ export class CodexAppServerBackend implements AgentBackend {
       return this.resolveMcpElicitationResponse(decision, pending);
     }
 
+    if (pending.responseKind === "tool_user_input") {
+      return this.resolveToolUserInputResponse(decision, pending);
+    }
+
     return {
       decision: this.resolveNativeDecision(decision, pending)
     };
   }
 
   private resolveMcpElicitationResponse(decision: PermissionDecision, pending: PendingCodexApproval): Record<string, unknown> {
+    if (decision.decision === "cancel") {
+      return {
+        action: "cancel",
+        content: null,
+        _meta: {}
+      };
+    }
+
     if (decision.decision === "deny") {
       return {
         action: "decline",
+        content: null,
+        _meta: {}
+      };
+    }
+
+    if (isMcpUrlElicitation(pending.raw)) {
+      return {
+        action: "accept",
+        content: null,
         _meta: {}
       };
     }
 
     return {
       action: "accept",
-      content: mcpElicitationAcceptContent(pending.raw),
+      content: mcpElicitationAcceptContent(pending.raw, decision.transcript),
       _meta: {}
     };
   }
 
+  private resolveToolUserInputResponse(decision: PermissionDecision, pending: PendingCodexApproval): Record<string, unknown> {
+    if (decision.decision !== "allow") {
+      return {
+        answers: {}
+      };
+    }
+
+    return {
+      answers: toolUserInputAnswers(pending.raw, decision.transcript)
+    };
+  }
+
   private resolvePermissionsResponse(decision: PermissionDecision, pending: PendingCodexApproval): Record<string, unknown> {
-    if (decision.decision === "deny") {
+    if (decision.decision !== "allow") {
       return {
         permissions: {},
         scope: "turn"
@@ -1002,6 +1112,10 @@ export class CodexAppServerBackend implements AgentBackend {
   }
 
   private resolveNativeDecision(decision: PermissionDecision, pending: PendingCodexApproval): unknown {
+    if (decision.decision === "cancel") {
+      return this.requireAvailableDecision(pending, ["cancel", "decline", "reject", "deny"]);
+    }
+
     if (decision.decision === "deny") {
       return this.requireAvailableDecision(pending, ["decline", "reject", "deny", "cancel"]);
     }
@@ -1195,6 +1309,19 @@ function parseOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function extractThreadId(value: unknown): string | undefined {
+  const params = asRecord(value);
+  const direct = parseOptionalString(params.threadId ?? params.thread_id);
+  if (direct) return direct;
+
+  const thread = asRecord(params.thread);
+  const threadId = parseOptionalString(thread.id ?? thread.threadId ?? thread.thread_id);
+  if (threadId) return threadId;
+
+  const item = asRecord(params.item);
+  return parseOptionalString(item.threadId ?? item.thread_id);
+}
+
 function extractTurnId(value: unknown): string | undefined {
   const params = asRecord(value);
   const direct = parseOptionalString(params.turnId ?? params.turn_id);
@@ -1206,6 +1333,15 @@ function extractTurnId(value: unknown): string | undefined {
 
   const item = asRecord(params.item);
   return parseOptionalString(item.turnId ?? item.turn_id);
+}
+
+function extractItemId(value: unknown): string | undefined {
+  const params = asRecord(value);
+  const direct = parseOptionalString(params.itemId ?? params.item_id);
+  if (direct) return direct;
+
+  const item = asRecord(params.item);
+  return parseOptionalString(item.id ?? item.itemId ?? item.item_id);
 }
 
 function approvalRawText(params: Record<string, unknown>, command: string | undefined, networkApproval: boolean): string {
@@ -1227,36 +1363,197 @@ function approvalRawText(params: Record<string, unknown>, command: string | unde
 
 function mcpElicitationRawText(params: Record<string, unknown>, serverName: string): string {
   const request = asRecord(params.request);
-  const schema = asRecord(request.schema ?? request.requestedSchema ?? request.requested_schema);
+  const schema = mcpElicitationSchema(params);
+  const mode = parseOptionalString(params.mode ?? request.mode);
+  const url = parseOptionalString(params.url ?? request.url);
   const title =
     parseOptionalString(request.title ?? params.title) ??
     parseOptionalString(schema.title);
   const message =
     parseOptionalString(request.message ?? request.prompt ?? request.description ?? params.message ?? params.reason) ??
     parseOptionalString(schema.description);
+  const fields = mcpElicitationFieldSummary(schema);
+  const urlLine = mode === "url" && url ? `URL: ${url}` : undefined;
 
-  if (title && message && title !== message) return `${title}\n${message}`;
-  if (message) return message;
-  if (title) return title;
-  return `MCP server ${serverName} requests input.`;
+  const parts = [title && title !== message ? title : undefined, message, urlLine, fields].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join("\n") : `MCP server ${serverName} requests input.`;
 }
 
-function mcpElicitationAcceptContent(raw: Record<string, unknown>): Record<string, unknown> {
-  const request = asRecord(raw.request);
-  const schema = asRecord(request.schema ?? request.requestedSchema ?? request.requested_schema);
+function mcpElicitationAcceptContent(raw: Record<string, unknown>, transcript?: string): Record<string, unknown> {
+  const schema = mcpElicitationSchema(raw);
   const properties = asRecord(schema.properties);
   const required = parseStringArray(schema.required);
+  const explicitAnswers = mcpExplicitFieldAnswers(schema, transcript);
   const content: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(properties)) {
     const propertySchema = asRecord(value);
-    const selected = mcpAcceptValue(propertySchema);
+    const selected = mcpAcceptValue(propertySchema) ?? explicitAnswers[key];
     if (selected !== undefined || required.includes(key)) {
-      content[key] = selected ?? "";
+      if (selected === undefined) {
+        throw new Error(`MCP elicitation requires explicit input for field "${key}".`);
+      }
+      content[key] = selected;
     }
   }
 
   return content;
+}
+
+function mcpExplicitFieldAnswers(schema: Record<string, unknown>, transcript: string | undefined): Record<string, unknown> {
+  const text = transcript?.trim();
+  if (!text || isStandaloneMcpApprovalIntent(text)) {
+    return {};
+  }
+
+  const properties = asRecord(schema.properties);
+  const required = parseStringArray(schema.required);
+  const answers: Record<string, unknown> = {};
+  const missingRequired = required.filter((key) => mcpAcceptValue(asRecord(properties[key])) === undefined);
+
+  for (const [key, value] of Object.entries(properties)) {
+    const propertySchema = asRecord(value);
+    const label = parseOptionalString(propertySchema.title) ?? key;
+    const explicit = extractLabeledMcpAnswer(text, [key, label]);
+    if (explicit !== undefined) answers[key] = coerceMcpExplicitAnswer(explicit, propertySchema);
+  }
+
+  if (missingRequired.length === 1 && answers[missingRequired[0]] === undefined) {
+    answers[missingRequired[0]] = coerceMcpExplicitAnswer(text, asRecord(properties[missingRequired[0]]));
+  }
+
+  return answers;
+}
+
+function extractLabeledMcpAnswer(text: string, labels: string[]): string | undefined {
+  for (const label of labels) {
+    const escaped = escapeRegExp(label);
+    const match = text.match(new RegExp(`(?:^|[\\n,;])\\s*${escaped}\\s*(?:[:=]|은|는|:)?\\s*(.+?)(?=$|[\\n,;])`, "iu"));
+    const value = match?.[1]?.trim();
+    if (value) return value;
+  }
+
+  return undefined;
+}
+
+function coerceMcpExplicitAnswer(text: string, schema: Record<string, unknown>): unknown {
+  switch (schema.type) {
+    case "boolean":
+      if (/^(true|yes|y|1|on|허용|승인|예|네)$/iu.test(text)) return true;
+      if (/^(false|no|n|0|off|거부|아니|아니오)$/iu.test(text)) return false;
+      return text;
+    case "integer": {
+      const parsed = parseFiniteNumber(text);
+      return parsed === undefined ? text : Math.trunc(parsed);
+    }
+    case "number":
+      return parseFiniteNumber(text) ?? text;
+    case "array":
+      return text.split(",").map((item) => item.trim()).filter(Boolean);
+    case "object":
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        return text;
+      }
+    default:
+      return text;
+  }
+}
+
+function mcpElicitationSchema(raw: Record<string, unknown>): Record<string, unknown> {
+  const request = asRecord(raw.request);
+  return asRecord(raw.requestedSchema ?? raw.requested_schema ?? raw.schema ?? request.requestedSchema ?? request.requested_schema ?? request.schema);
+}
+
+function isMcpUrlElicitation(raw: Record<string, unknown>): boolean {
+  const request = asRecord(raw.request);
+  return parseOptionalString(raw.mode ?? request.mode) === "url" || parseOptionalString(raw.url ?? request.url) !== undefined;
+}
+
+function mcpElicitationFieldSummary(schema: Record<string, unknown>): string | undefined {
+  const properties = asRecord(schema.properties);
+  if (Object.keys(properties).length === 0) return undefined;
+
+  const required = new Set(parseStringArray(schema.required));
+  const fields = Object.entries(properties).map(([key, value]) => {
+    const propertySchema = asRecord(value);
+    const label = parseOptionalString(propertySchema.title) ?? key;
+    const choices = mcpSchemaChoices(propertySchema);
+    const defaultValue = propertySchema.default !== undefined ? ` default=${String(propertySchema.default)}` : "";
+    const suffix = [
+      required.has(key) ? "required" : undefined,
+      choices.length > 0 ? `choices=${choices.join(" / ")}` : undefined
+    ].filter(Boolean).join(", ");
+    return `${label}${defaultValue}${suffix ? ` (${suffix})` : ""}`;
+  });
+  return `Fields: ${fields.join("; ")}`;
+}
+
+function mcpSchemaChoices(schema: Record<string, unknown>): string[] {
+  const enumValues = optionalUnknownArray(schema.enum);
+  if (enumValues) return enumValues.map(String);
+
+  const options = optionalUnknownArray(schema.oneOf) ?? optionalUnknownArray(schema.anyOf);
+  if (!options) return [];
+
+  return options
+    .map((option) => {
+      const record = asRecord(option);
+      return parseOptionalString(record.title) ?? parseOptionalString(record.description) ?? (record.const !== undefined ? String(record.const) : undefined);
+    })
+    .filter((value): value is string => Boolean(value));
+}
+
+function toolUserInputRawText(questions: unknown[]): string {
+  if (questions.length === 0) return "Codex requests user input.";
+
+  const lines = questions.map((question, index) => {
+    const record = asRecord(question);
+    const prompt = parseOptionalString(record.question ?? record.prompt ?? record.text ?? record.label) ?? `Question ${index + 1}`;
+    const id = parseOptionalString(record.id);
+    const options = Array.isArray(record.options)
+      ? record.options.map((option) => parseOptionalString(asRecord(option).label) ?? parseOptionalString(asRecord(option).value) ?? parseOptionalString(option)).filter((value): value is string => Boolean(value))
+      : [];
+    return `${id ? `${id}: ` : ""}${prompt}${options.length > 0 ? ` (${options.join(" / ")})` : ""}`;
+  });
+  return lines.join("\n");
+}
+
+function toolUserInputAnswers(raw: Record<string, unknown>, transcript: string | undefined): Record<string, unknown> {
+  const questions = Array.isArray(raw.questions) ? raw.questions : [];
+  const answerText = transcript?.trim() || "허용";
+  const answers: Record<string, unknown> = {};
+
+  for (const [index, question] of questions.entries()) {
+    const record = asRecord(question);
+    const id = parseOptionalString(record.id) ?? `question_${index + 1}`;
+    answers[id] = toolUserInputAnswer(record, answerText);
+  }
+
+  return answers;
+}
+
+function toolUserInputAnswer(question: Record<string, unknown>, answerText: string): unknown {
+  const options = Array.isArray(question.options) ? question.options : [];
+  if (options.length === 0) return { answers: [answerText] };
+
+  const normalized = normalizeForChoice(answerText);
+  const option = options.map(asRecord).find((candidate) => {
+    const label = parseOptionalString(candidate.label);
+    return label ? normalizeForChoice(label).includes(normalized) : false;
+  }) ?? options.map(asRecord).find((candidate) => {
+    const label = parseOptionalString(candidate.label);
+    return label ? isPositiveMcpApprovalValue(label) : false;
+  }) ?? asRecord(options[0]);
+
+  return {
+    answers: [parseOptionalString(option.label) ?? answerText]
+  };
+}
+
+function normalizeForChoice(value: string): string {
+  return value.toLowerCase().replace(/\s+/gu, "");
 }
 
 function mcpAcceptValue(schema: Record<string, unknown>): unknown {
@@ -1275,21 +1572,7 @@ function mcpAcceptValue(schema: Record<string, unknown>): unknown {
   const option = selectMcpAcceptOption(optionalUnknownArray(schema.oneOf)) ?? selectMcpAcceptOption(optionalUnknownArray(schema.anyOf));
   if (option !== undefined) return option;
 
-  switch (schema.type) {
-    case "boolean":
-      return true;
-    case "integer":
-    case "number":
-      return parseFiniteNumber(schema.minimum) ?? 0;
-    case "array":
-      return [];
-    case "object":
-      return {};
-    case "string":
-      return "";
-    default:
-      return undefined;
-  }
+  return undefined;
 }
 
 function selectMcpAcceptOption(options: unknown[] | undefined): unknown {
@@ -1320,6 +1603,22 @@ function isPositiveMcpApprovalValue(value: unknown): boolean {
 function isNegativeMcpApprovalValue(value: unknown): boolean {
   if (typeof value !== "string") return false;
   return /\b(deny|decline|reject|cancel|no)\b|거부|취소|반려|불허|거절/iu.test(value);
+}
+
+function isCancelMcpApprovalValue(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return /\b(cancel|stop)\b|취소|멈춰|중단/iu.test(value);
+}
+
+function isStandaloneMcpApprovalIntent(value: string): boolean {
+  const text = value.trim();
+  return /^(allow|approve|accept|yes|confirm|ok|허용|승인|동의|확인)$/iu.test(text) ||
+    /^(deny|decline|reject|no|거부|반려|불허|거절)$/iu.test(text) ||
+    /^(cancel|stop|취소|멈춰|중단)$/iu.test(text);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function isNetworkApprovalParams(params: Record<string, unknown>): boolean {

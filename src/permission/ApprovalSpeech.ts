@@ -4,6 +4,7 @@ export type ApprovalSpeechIntent =
   | "approve_policy"
   | "approve_network_policy"
   | "deny"
+  | "cancel"
   | "unknown";
 
 export interface ApprovalSpeechResult {
@@ -14,6 +15,7 @@ export interface ApprovalSpeechResult {
 export interface ApprovalPhraseConfig {
   onceApprove?: string[];
   deny?: string[];
+  cancel?: string[];
   sessionApprove?: string[];
   policyApprove?: string[];
   networkPolicyApprove?: string[];
@@ -22,6 +24,7 @@ export interface ApprovalPhraseConfig {
 export interface ApprovalPhraseSet {
   onceApprove: string[];
   deny: string[];
+  cancel: string[];
   sessionApprove: string[];
   policyApprove: string[];
   networkPolicyApprove: string[];
@@ -84,11 +87,14 @@ export const denyPhrases = [
   "안돼",
   "하지 마",
   "하지마",
-  "취소",
-  "멈춰",
   "no",
   "deny",
-  "reject",
+  "reject"
+];
+
+export const cancelPhrases = [
+  "취소",
+  "멈춰",
   "cancel",
   "stop"
 ];
@@ -97,13 +103,14 @@ export function interpretApprovalSpeech(text: string, phraseConfig: ApprovalPhra
   const normalized = normalizeApprovalSpeech(text);
   const phrases = approvalPhraseSet(phraseConfig);
   const denies = containsAny(normalized, phrases.deny);
+  const cancels = containsAny(normalized, phrases.cancel);
   const approvesNetworkPolicy = containsAny(normalized, phrases.networkPolicyApprove);
   const approvesPolicy = containsAny(normalized, phrases.policyApprove);
   const approvesSession = containsAny(normalized, phrases.sessionApprove);
   const approvesOnce = containsAny(normalized, phrases.onceApprove);
   const approves = approvesNetworkPolicy || approvesPolicy || approvesSession || approvesOnce;
 
-  if (!normalized || (approves && denies)) {
+  if (!normalized || [approves, denies, cancels].filter(Boolean).length > 1) {
     return {
       intent: "unknown",
       text: normalized
@@ -113,6 +120,13 @@ export function interpretApprovalSpeech(text: string, phraseConfig: ApprovalPhra
   if (denies) {
     return {
       intent: "deny",
+      text: normalized
+    };
+  }
+
+  if (cancels) {
+    return {
+      intent: "cancel",
       text: normalized
     };
   }
@@ -159,6 +173,7 @@ export function approvalPhraseSet(config: ApprovalPhraseConfig = {}): ApprovalPh
   return {
     onceApprove: normalizePhraseList(config.onceApprove, onceApprovePhrases),
     deny: normalizePhraseList(config.deny, denyPhrases),
+    cancel: normalizePhraseList(config.cancel, cancelPhrases),
     sessionApprove: normalizePhraseList(config.sessionApprove, sessionApprovePhrases),
     policyApprove: normalizePhraseList(config.policyApprove, policyApprovePhrases),
     networkPolicyApprove: normalizePhraseList(config.networkPolicyApprove, networkPolicyApprovePhrases)
@@ -169,6 +184,7 @@ export function sanitizeApprovalPhraseConfig(config: ApprovalPhraseConfig = {}):
   return {
     onceApprove: normalizePhraseList(config.onceApprove, onceApprovePhrases),
     deny: normalizePhraseList(config.deny, denyPhrases),
+    cancel: normalizePhraseList(config.cancel, cancelPhrases),
     sessionApprove: normalizePhraseList(config.sessionApprove, sessionApprovePhrases),
     policyApprove: normalizePhraseList(config.policyApprove, policyApprovePhrases),
     networkPolicyApprove: normalizePhraseList(config.networkPolicyApprove, networkPolicyApprovePhrases)

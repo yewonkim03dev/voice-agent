@@ -480,6 +480,7 @@ function parseApprovalPhrases(value: unknown): ApprovalPhraseConfig | undefined 
   return sanitizeApprovalPhraseConfig({
     onceApprove: parsePhraseArray(record.onceApprove),
     deny: parsePhraseArray(record.deny),
+    cancel: parsePhraseArray(record.cancel),
     sessionApprove: parsePhraseArray(record.sessionApprove),
     policyApprove: parsePhraseArray(record.policyApprove),
     networkPolicyApprove: parsePhraseArray(record.networkPolicyApprove)

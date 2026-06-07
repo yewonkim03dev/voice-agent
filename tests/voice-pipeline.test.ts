@@ -1418,6 +1418,7 @@ test("voice local settings store persists overrides and reset restores factory d
     assert.deepEqual(updated.approvalPhrases, {
       onceApprove: ["진행"],
       deny: ["그만"],
+      cancel: ["취소", "멈춰", "cancel", "stop"],
       sessionApprove: ["오늘은 허용"],
       policyApprove: [
         "같은 명령 계속 허용",

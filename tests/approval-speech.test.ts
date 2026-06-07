@@ -17,6 +17,7 @@ test("interprets session and policy approval phrases before generic allow", () =
 
 test("interprets denial phrases and treats mixed speech as unknown", () => {
   assert.equal(interpretApprovalSpeech("거부").intent, "deny");
+  assert.equal(interpretApprovalSpeech("취소").intent, "cancel");
   assert.equal(interpretApprovalSpeech("허용하지 마").intent, "unknown");
   assert.equal(interpretApprovalSpeech("음 글쎄").intent, "unknown");
 });
@@ -25,11 +26,13 @@ test("interprets configured approval phrases", () => {
   const phrases = {
     onceApprove: ["진짜 해"],
     deny: ["멈춰줘"],
+    cancel: ["그만"],
     sessionApprove: ["오늘은 허용"]
   };
 
   assert.equal(interpretApprovalSpeech("진짜 해", phrases).intent, "approve_once");
   assert.equal(interpretApprovalSpeech("오늘은 허용", phrases).intent, "approve_session");
   assert.equal(interpretApprovalSpeech("멈춰줘", phrases).intent, "deny");
+  assert.equal(interpretApprovalSpeech("그만", phrases).intent, "cancel");
   assert.equal(interpretApprovalSpeech("허용", phrases).intent, "unknown");
 });

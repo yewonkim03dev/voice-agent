@@ -53,6 +53,7 @@ export interface VisualRuntimeSettings {
 export interface VisualApprovalPhrases {
   onceApprove?: string[];
   deny?: string[];
+  cancel?: string[];
   sessionApprove?: string[];
   policyApprove?: string[];
   networkPolicyApprove?: string[];
@@ -351,10 +352,12 @@ function parseVisualApprovalPhrases(record: Record<string, unknown>): VisualAppr
   const sessionApprove = parsePhrases(record.sessionApprove);
   const policyApprove = parsePhrases(record.policyApprove);
   const networkPolicyApprove = parsePhrases(record.networkPolicyApprove);
+  const cancel = parsePhrases(record.cancel);
 
   return {
     ...(onceApprove !== undefined ? { onceApprove } : {}),
     ...(deny !== undefined ? { deny } : {}),
+    ...(cancel !== undefined ? { cancel } : {}),
     ...(sessionApprove !== undefined ? { sessionApprove } : {}),
     ...(policyApprove !== undefined ? { policyApprove } : {}),
     ...(networkPolicyApprove !== undefined ? { networkPolicyApprove } : {})
@@ -365,6 +368,7 @@ function cloneApprovalPhrases(phrases: VisualApprovalPhrases): VisualApprovalPhr
   return {
     ...(phrases.onceApprove !== undefined ? { onceApprove: [...phrases.onceApprove] } : {}),
     ...(phrases.deny !== undefined ? { deny: [...phrases.deny] } : {}),
+    ...(phrases.cancel !== undefined ? { cancel: [...phrases.cancel] } : {}),
     ...(phrases.sessionApprove !== undefined ? { sessionApprove: [...phrases.sessionApprove] } : {}),
     ...(phrases.policyApprove !== undefined ? { policyApprove: [...phrases.policyApprove] } : {}),
     ...(phrases.networkPolicyApprove !== undefined ? { networkPolicyApprove: [...phrases.networkPolicyApprove] } : {})
