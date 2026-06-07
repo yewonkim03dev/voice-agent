@@ -922,17 +922,16 @@ test("parses adjacent voice-agent events defensively", () => {
 });
 
 test("voice-agent protocol prefers speech for audible progress", () => {
-  assert.match(voiceAgentProtocolPrompt, /Before tool use.+brief speech event/u);
-  assert.match(voiceAgentProtocolPrompt, /role="progress"/u);
-  assert.match(voiceAgentProtocolPrompt, /role=final/u);
-  assert.match(voiceAgentProtocolPrompt, /Missing or unknown roles are treated as message/u);
-  assert.match(voiceAgentProtocolPrompt, /During long-running work.+brief speech progress updates/u);
-  assert.match(voiceAgentProtocolPrompt, /normal Codex\/Claude CLI working cadence/u);
-  assert.match(voiceAgentProtocolPrompt, /Use speech, not status or command, for user-facing progress/u);
-  assert.match(voiceAgentProtocolPrompt, /findings, conclusions, and short summaries/u);
-  assert.match(voiceAgentProtocolPrompt, /command.+only for shell commands, file paths, URLs/u);
-  assert.match(voiceAgentProtocolPrompt, /Do not put investigation summaries.+in command/u);
-  assert.match(voiceAgentProtocolPrompt, /status.+only for silent UI state/u);
+  assert.match(voiceAgentProtocolPrompt, /Output NDJSON only/u);
+  assert.match(voiceAgentProtocolPrompt, /Before tool\/file\/search\/command work.+brief speech progress event/u);
+  assert.match(voiceAgentProtocolPrompt, /"role":"progress\|message\|final"/u);
+  assert.match(voiceAgentProtocolPrompt, /Final answers must use role="final"/u);
+  assert.match(voiceAgentProtocolPrompt, /During long work.+meaningful milestones/u);
+  assert.match(voiceAgentProtocolPrompt, /speech: TTS text for user-facing progress, findings, and final answers/u);
+  assert.match(voiceAgentProtocolPrompt, /command: commands, paths, URLs, flags, stack traces, logs/u);
+  assert.match(voiceAgentProtocolPrompt, /display only, never spoken/u);
+  assert.match(voiceAgentProtocolPrompt, /status: silent UI state/u);
+  assert.match(voiceAgentProtocolPrompt, /Use the configured response language/u);
 });
 
 test("pass-through progress TTS keeps only the latest queued progress", async () => {

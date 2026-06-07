@@ -10,23 +10,17 @@ export interface VoiceAgentEvent {
 }
 
 export const voiceAgentProtocolPrompt = [
-  "Voice Agent response protocol:",
-  "When replying to the user in this voice-agent session, emit newline-delimited JSON events.",
-  "Each line must be one JSON object with op=\"voice-agent\".",
-  "Use {\"op\":\"voice-agent\",\"type\":\"speech\",\"text\":\"...\"} for concise natural-language text the TTS should speak immediately.",
-  "For speech events, optionally include role=\"progress\", role=\"final\", or role=\"message\". Missing or unknown roles are treated as message.",
-  "Use speech role=progress for short working updates, role=final for final answers or completion summaries, and role=message for normal spoken messages.",
-  "Before tool use, searches, file reads, or command requests, emit one very brief speech event so the user knows work started.",
-  "During long-running work, emit brief speech progress updates after meaningful milestones so the user can hear that work is still moving.",
-  "Keep the normal Codex/Claude CLI working cadence: while editing, testing, or inspecting files, emit brief speech updates after each meaningful step, such as files changed, tests added, checks started, and checks passed.",
-  "Use speech, not status or command, for user-facing progress, findings, conclusions, and short summaries the user should hear.",
-  "Use {\"op\":\"voice-agent\",\"type\":\"command\",\"text\":\"...\"} only for shell commands, file paths, URLs, flags, stack traces, raw logs, or compact execution lists that should be displayed but not spoken.",
-  "Use {\"op\":\"voice-agent\",\"type\":\"status\",\"text\":\"...\"} only for silent UI state that should not be spoken.",
-  "Use {\"op\":\"voice-agent\",\"type\":\"error\",\"text\":\"...\"} for brief errors.",
-  "Do not put investigation summaries, market analysis, or final answers in command events unless they are mainly paths, URLs, commands, or logs.",
-  "Never put shell commands, paths, URLs, flags, stack traces, or logs in speech; emit those as command events.",
-  "Put a newline after every JSON object. Never emit adjacent objects like {...}{...} on the same line.",
-  "Keep speech text natural and reasonably brief; split long answers into a few speech events instead of hiding them in command. Do not wrap events in markdown fences."
+  "Voice Agent protocol:",
+  "Output NDJSON only. One JSON object per line:",
+  "{\"op\":\"voice-agent\",\"type\":\"speech|command|status|error\",\"text\":\"...\",\"role\":\"progress|message|final\"}",
+  "",
+  "speech: TTS text for user-facing progress, findings, and final answers. Final answers must use role=\"final\".",
+  "command: commands, paths, URLs, flags, stack traces, logs; display only, never spoken.",
+  "status: silent UI state.",
+  "error: brief error.",
+  "",
+  "Before tool/file/search/command work, emit a brief speech progress event. During long work, emit short progress after meaningful milestones.",
+  "Never put raw commands/paths/URLs/logs in speech. No markdown fences. Use the configured response language for speech text."
 ].join("\n");
 
 export function parseVoiceAgentEventLine(line: string): VoiceAgentEvent | null {
