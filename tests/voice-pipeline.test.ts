@@ -175,6 +175,24 @@ test("voice runner appends /add text to the next manual STT transcript", async (
   assert.equal(backend.prompts[0].text, "테스트 돌려줘\n\n추가 정보:\n- 파일은 src/app/voice-harness.ts야");
 });
 
+test("voice runner lists queued /add references", async () => {
+  const lines: string[] = [];
+  const { runner } = createVoiceRunner([
+    {
+      text: "코덱스 테스트 돌려줘",
+      language: "ko"
+    }
+  ], {
+    writeLine: (line) => lines.push(line)
+  });
+
+  await runner.start();
+  await runner.processLine("/add 파일은 src/app/voice-harness.ts야");
+  await runner.processLine("/refs");
+
+  assert.ok(lines.includes("[voice:context] queued references:\n1. 파일은 src/app/voice-harness.ts야"));
+});
+
 test("voice runner routes plain typed text immediately", async () => {
   const { backend, runner } = createVoiceRunner([]);
 
@@ -551,6 +569,26 @@ test("always-on voice runner applies visual reference context to the next wake c
   assert.deepEqual(
     visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "context" }> => event.type === "context").at(-1)?.entries,
     []
+  );
+});
+
+test("always-on voice runner shows visual reference context list", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { runner } = createAlwaysOnRunner([], {
+    visualBridge
+  });
+
+  await runner.start();
+  visualBridge.emitControl("add_context", "관련 파일은 README.md야");
+  visualBridge.emitControl("show_context");
+  await flushAsync();
+
+  assert.equal(
+    visualBridge.events.some((event) =>
+      event.type === "command" &&
+      event.text === "[voice:context] queued references:\n1. 관련 파일은 README.md야"
+    ),
+    true
   );
 });
 
@@ -1569,6 +1607,7 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:permission] 명령 실행 권한 필요해."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:cue] approval ready \u0007"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  Wake: 코덱스 <명령>"), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("  /refs lists queued additional info."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[codex-app] turn/start sess_1: 날씨 확인해줘"), false);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[wake:candidate] start preRollFrames=8 preRollBytes=32768"), false);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[audio] bytes=1024 durationMs=100 rms=0.01 peak=0.1"), false);
@@ -1639,7 +1678,12 @@ function emitLongCandidate(audioInput: FakeAudioInput, startedAt: number, endedA
   audioInput.emitPcm(0.2, endedAt);
 }
 
-function createVoiceRunner(transcripts: Array<{ text: string; language: Language }>): {
+function createVoiceRunner(
+  transcripts: Array<{ text: string; language: Language }>,
+  options: {
+    writeLine?: (line: string) => void;
+  } = {}
+): {
   backend: InMemoryAgentBackend;
   harness: TerminalHarness;
   runner: VoiceHarnessRunner;
@@ -1677,7 +1721,8 @@ function createVoiceRunner(transcripts: Array<{ text: string; language: Language
     terminalHarness: harness,
     gate,
     recordingController: controller,
-    speechProcessor
+    speechProcessor,
+    writeLine: options.writeLine
   });
 
   return {

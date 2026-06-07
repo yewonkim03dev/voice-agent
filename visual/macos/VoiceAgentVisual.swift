@@ -479,6 +479,7 @@ final class VisualRootView: NSView {
     private let contextSummary: NSTextField
     private let addContextButton: NSButton
     private let clearContextButton: NSButton
+    private let showContextButton: NSButton
     private let commandPanel = NSView(frame: .zero)
     private let contextLabel = NSTextField(labelWithString: "References")
     private let referenceHelpButton = HoverHelpButton(frame: .zero)
@@ -501,6 +502,7 @@ final class VisualRootView: NSView {
         contextSummary: NSTextField,
         addContextButton: NSButton,
         clearContextButton: NSButton,
+        showContextButton: NSButton,
         controls: NSStackView
     ) {
         self.circleView = circleView
@@ -509,6 +511,7 @@ final class VisualRootView: NSView {
         self.contextSummary = contextSummary
         self.addContextButton = addContextButton
         self.clearContextButton = clearContextButton
+        self.showContextButton = showContextButton
         self.controls = controls
         super.init(frame: .zero)
 
@@ -572,6 +575,7 @@ final class VisualRootView: NSView {
         commandPanel.addSubview(contextSummary)
 
         commandPanel.addSubview(addContextButton)
+        commandPanel.addSubview(showContextButton)
         commandPanel.addSubview(clearContextButton)
 
         commandLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
@@ -681,6 +685,7 @@ final class VisualRootView: NSView {
         let fieldHeight: CGFloat = 26
         let summaryHeight: CGFloat = 16
         let buttonWidth: CGFloat = 76
+        let refButtonWidth: CGFloat = 64
         let topY = commandPanel.bounds.height - panelInset - labelHeight
 
         guideButton.frame = NSRect(
@@ -720,10 +725,16 @@ final class VisualRootView: NSView {
             width: buttonWidth,
             height: fieldHeight
         )
-        addContextButton.frame = NSRect(
-            x: clearContextButton.frame.minX - buttonWidth - 8,
+        showContextButton.frame = NSRect(
+            x: clearContextButton.frame.minX - refButtonWidth - 8,
             y: clearContextButton.frame.minY,
-            width: buttonWidth,
+            width: refButtonWidth,
+            height: fieldHeight
+        )
+        addContextButton.frame = NSRect(
+            x: showContextButton.frame.minX - refButtonWidth - 8,
+            y: clearContextButton.frame.minY,
+            width: refButtonWidth,
             height: fieldHeight
         )
         contextField.frame = NSRect(
@@ -1295,6 +1306,7 @@ final class MenuBarCompanion {
     private var onShowWindow: (() -> Void)?
     private var onAddContext: ((String) -> Void)?
     private var onClearContext: (() -> Void)?
+    private var onShowContext: (() -> Void)?
     private var hudEnabled = true
 
     func install(
@@ -1302,13 +1314,15 @@ final class MenuBarCompanion {
         onTtsStop: @escaping () -> Void,
         onShowWindow: @escaping () -> Void,
         onAddContext: @escaping (String) -> Void,
-        onClearContext: @escaping () -> Void
+        onClearContext: @escaping () -> Void,
+        onShowContext: @escaping () -> Void
     ) {
         self.onStop = onStop
         self.onTtsStop = onTtsStop
         self.onShowWindow = onShowWindow
         self.onAddContext = onAddContext
         self.onClearContext = onClearContext
+        self.onShowContext = onShowContext
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VA idle"
@@ -1412,6 +1426,10 @@ final class MenuBarCompanion {
 
     @objc private func clearContext() {
         onClearContext?()
+    }
+
+    @objc private func showContext() {
+        onShowContext?()
     }
 
     @objc private func showFloatingHud() {
@@ -1560,12 +1578,16 @@ final class MenuBarCompanion {
         hudContextField.isSelectable = true
         hudContextField.target = self
         hudContextField.action = #selector(addContext)
-        hudContextField.frame = NSRect(x: 14, y: 80, width: 188, height: 22)
+        hudContextField.frame = NSRect(x: 14, y: 80, width: 134, height: 22)
         view.addSubview(hudContextField)
 
         let addReference = NSButton(title: "Add", target: self, action: #selector(addContext))
-        addReference.frame = NSRect(x: 210, y: 78, width: 48, height: 26)
+        addReference.frame = NSRect(x: 156, y: 78, width: 48, height: 26)
         view.addSubview(addReference)
+
+        let showReference = NSButton(title: "Refs", target: self, action: #selector(showContext))
+        showReference.frame = NSRect(x: 210, y: 78, width: 48, height: 26)
+        view.addSubview(showReference)
 
         let clearReference = NSButton(title: "Clear", target: self, action: #selector(clearContext))
         clearReference.frame = NSRect(x: 264, y: 78, width: 48, height: 26)
@@ -1681,7 +1703,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             onTtsStop: { [weak self] in self?.sendControl("tts_stop") },
             onShowWindow: { [weak self] in self?.showMainWindow() },
             onAddContext: { [weak self] text in self?.submitContext(text) },
-            onClearContext: { [weak self] in self?.clearContext() }
+            onClearContext: { [weak self] in self?.clearContext() },
+            onShowContext: { [weak self] in self?.showContext() }
         )
         connect()
     }
@@ -1726,6 +1749,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             contextSummary: contextSummary,
             addContextButton: button("Add", action: #selector(addContext)),
             clearContextButton: button("Clear Ref", action: #selector(clearContext)),
+            showContextButton: button("Refs", action: #selector(showContext)),
             controls: controls
         )
         self.rootView = rootView
@@ -1928,6 +1952,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     @objc private func clearContext() {
         updateContext([])
         sendControl("clear_context")
+    }
+
+    @objc private func showContext() {
+        sendControl("show_context")
     }
 
     @objc private func showSettings() {

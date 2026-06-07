@@ -23,6 +23,7 @@ export type VisualControlAction =
   | "clear_commands"
   | "add_context"
   | "clear_context"
+  | "show_context"
   | "emergency_stop"
   | "reset_settings"
   | "update_wake_phrases"
@@ -302,6 +303,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "clear_commands" &&
     record.action !== "add_context" &&
     record.action !== "clear_context" &&
+    record.action !== "show_context" &&
     record.action !== "emergency_stop" &&
     record.action !== "reset_settings" &&
     record.action !== "update_wake_phrases" &&

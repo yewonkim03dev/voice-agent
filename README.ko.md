@@ -1,12 +1,14 @@
 # Voice Agent
 
-Voice Agent는 Codex를 대화형 로컬 코딩 에이전트처럼 쓰기 위한 음성 인터페이스를 지향합니다. 호출어로 깨우고, 한국어/영어 자연어로 작업을 말하고, 짧은 음성 응답을 들으며, Codex가 묻는 권한도 키보드 없이 음성으로 허용/거부하는 흐름을 목표로 합니다.
+![Voice Agent visual companion 및 floating HUD](./docs/voice-agent.png)
+
+Voice Agent의 핵심은 항시 대기하는 음성 상호작용입니다. Codex가 백그라운드에서 준비된 상태로 있고, 사용자는 호출어로 깨운 뒤 한국어/영어 자연어로 작업을 말하고, 짧은 음성 응답을 들으며, Codex가 묻는 권한도 키보드 없이 음성으로 허용/거부합니다.
+
+목표는 코딩 에이전트를 매번 터미널에 입력해서 부르는 명령이 아니라, 작업 흐름 옆에 계속 대기하는 로컬 음성 동료처럼 느끼게 만드는 것입니다. Voice Agent는 마이크 파이프라인, wake phrase routing, TTS, visual feedback, approval flow를 Codex 주변의 얇은 로컬 레이어로 유지합니다.
 
 현재 구현은 macOS에 최적화되어 있습니다. Mac 마이크로 음성을 받고, Apple Speech 기반 STT로 전사한 뒤, wake 명령을 Codex로 전달하고, Apple TTS와 native visual companion으로 응답/상태/권한 대기를 보여줍니다.
 
 핵심 원칙은 pass-through입니다. 로컬 레이어는 코딩 의도를 직접 분류하지 않고, wake/STT/TTS/visual/approval bridge만 담당합니다. 일반 명령은 그대로 Codex 또는 Claude backend로 전달됩니다.
-
-![Voice Agent visual companion 및 floating HUD](./docs/voice-agent.png)
 
 ## macOS 빠른 시작
 
@@ -245,6 +247,26 @@ visual은 다음 상태를 표시합니다.
 - `error`
 
 `approval_pending`에서는 현재 로컬에 설정된 허용/거부/세션 허용/계속 허용 문구가 화면에 유지됩니다. References 입력줄은 터미널 `/add <text>`와 같은 참고자료 큐를 사용합니다. wake 명령이 인식되어 요청이 전송되면 참고자료가 자동으로 붙고 비워지며, `Clear Ref`로 직접 비울 수도 있습니다. `TTS Stop` 버튼은 `/tts-stop`과 같은 동작이고, `Exit` 버튼은 visual만 닫는 것이 아니라 harness 전체 종료를 요청합니다.
+
+### Floating HUD (macOS)
+
+![macOS floating HUD](./docs/floating-hud.png)
+
+macOS native visual companion은 전체 창을 열지 않아도 상태를 확인할 수 있는 floating HUD를 제공합니다. HUD는 현재 상태, 질문, 최근 command 출력, approval controls, usage 상태, TTS/STOP/SHOW 버튼, reference controls를 작은 always-on-top 패널에 표시합니다.
+
+HUD는 visual settings에서 켜고 끌 수 있습니다. 메뉴바 companion에서도 다시 열 수 있으므로 harness를 재시작하지 않고 화면 위로 복구할 수 있습니다.
+
+장점:
+
+- 다른 앱을 보고 있어도 listening, thinking, speaking, approval 상태를 확인할 수 있습니다.
+- 터미널로 돌아가지 않아도 권한 허용/거부와 긴급 중단을 누를 수 있습니다.
+- 다른 앱에서 작업 중에도 reference 입력과 queued reference 확인을 빠르게 할 수 있습니다.
+
+단점:
+
+- macOS AppKit visual companion 전용 기능입니다.
+- 작게 표시해도 화면 일부를 차지하므로 작은 창에서는 내용을 가릴 수 있습니다.
+- 전체화면 Space에서는 macOS window level과 Space 동작의 영향을 받습니다. 전체화면 앱이 별도 Space를 점유하면 메뉴바 companion에서 HUD를 다시 열거나 설정을 토글해야 할 수 있습니다.
 
 ## 로컬 설정
 

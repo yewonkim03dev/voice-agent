@@ -101,6 +101,7 @@ export class VoiceHarnessRunner {
     this.started = true;
     this.writeLine("  Voice input: /record to start, /record again to stop.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
+    this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
   }
 
@@ -137,6 +138,11 @@ export class VoiceHarnessRunner {
 
     if (addContext.matched) {
       this.textContext.queue(addContext.argument);
+      return "continue";
+    }
+
+    if (isShowContextCommand(text)) {
+      this.textContext.show();
       return "continue";
     }
 
@@ -243,6 +249,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ")}`);
     this.writeLine("  Manual fallback: /record to start, /record again to stop.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
+    this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
   }
 
@@ -280,6 +287,11 @@ export class AlwaysOnVoiceHarnessRunner {
 
     if (addContext.matched) {
       this.textContext.queue(addContext.argument);
+      return "continue";
+    }
+
+    if (isShowContextCommand(text)) {
+      this.textContext.show();
       return "continue";
     }
 
@@ -879,6 +891,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (visible.startsWith("[status]")) return true;
   if (visible.startsWith("[tts]")) return true;
   if (visible.startsWith("[visual] unavailable")) return true;
+  if (visible.startsWith("[voice:context]")) return true;
   if (visible.startsWith("[voice]")) return true;
   if (visible === "Harness stopped.") return true;
 
@@ -898,6 +911,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
     visible.startsWith("Wake phrases:") ||
     visible.startsWith("Manual fallback:") ||
     visible.startsWith("/add ") ||
+    visible.startsWith("/refs ") ||
     visible.startsWith("STT output ")
   ) {
     return true;
@@ -1068,6 +1082,14 @@ class SupplementalTextBuffer {
     this.emitChange();
   }
 
+  show(): void {
+    this.writeLine(formatSupplementalTextList(this.entries));
+  }
+
+  snapshot(): string[] {
+    return [...this.entries];
+  }
+
   apply(transcript: Transcript): Transcript {
     if (this.entries.length === 0) return transcript;
 
@@ -1093,6 +1115,12 @@ function bindVisualContextControls(textContext: SupplementalTextBuffer, visualBr
 
     if (event.action === "clear_context") {
       textContext.clear();
+      return;
+    }
+
+    if (event.action === "show_context") {
+      textContext.show();
+      sendVisualContextList(visualBridge, textContext.snapshot());
     }
   });
 }
@@ -1127,6 +1155,14 @@ function sendVisualContextEvent(visualBridge: VisualBridgeLike | undefined, entr
   });
 }
 
+function sendVisualContextList(visualBridge: VisualBridgeLike | undefined, entries: string[]): void {
+  visualBridge?.send({
+    op: "voice-agent-ui",
+    type: "command",
+    text: formatSupplementalTextList(entries)
+  });
+}
+
 function noopContextChange(_entries: string[]): void {}
 
 function appendSupplementalText(text: string, entries: string[]): string {
@@ -1157,6 +1193,19 @@ function parseAddContextCommand(text: string): { matched: boolean; argument: str
     matched: true,
     argument: (match[1] ?? "").trim()
   };
+}
+
+function isShowContextCommand(text: string): boolean {
+  return /^\/(?:refs?|references|context)$/iu.test(text.trim());
+}
+
+function formatSupplementalTextList(entries: readonly string[]): string {
+  if (entries.length === 0) return "[voice:context] No references queued.";
+
+  return [
+    "[voice:context] queued references:",
+    ...entries.map((entry, index) => `${index + 1}. ${entry}`)
+  ].join("\n");
 }
 
 function formatError(error: unknown): string {

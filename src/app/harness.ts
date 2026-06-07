@@ -1333,6 +1333,7 @@ export class TerminalHarness {
         return;
       case "add_context":
       case "clear_context":
+      case "show_context":
       case "update_wake_phrases":
         return;
       case "update_approval_phrases":

@@ -84,6 +84,11 @@ test("visual bridge parses allowed control events only", () => {
     action: "add_context",
     text: "README 참고"
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"show_context"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "show_context"
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"emergency_stop"}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -436,6 +441,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /References/u);
   assert.match(qml, /add_context/u);
   assert.match(qml, /clear_context/u);
+  assert.match(qml, /show_context/u);
+  assert.match(qml, /text: "Refs"/u);
   assert.match(qml, /contextEntries/u);
   assert.match(qml, /placeholderText: "reference text"/u);
   assert.match(qml, /Visual에서는 \/add를 붙이지 않아도/u);
@@ -605,6 +612,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /References/u);
   assert.match(swift, /add_context/u);
   assert.match(swift, /clear_context/u);
+  assert.match(swift, /show_context/u);
+  assert.match(swift, /showContextButton/u);
   assert.match(swift, /placeholderString = "reference text"/u);
   assert.match(swift, /hudContextField\.placeholderString = "reference text"/u);
   assert.match(swift, /hudContextField\.isEditable = true/u);

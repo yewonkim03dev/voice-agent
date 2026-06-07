@@ -960,6 +960,11 @@ ApplicationWindow {
                     }
 
                     Button {
+                        text: "Refs"
+                        onClicked: root.sendControl("show_context")
+                    }
+
+                    Button {
                         text: "Clear Ref"
                         onClicked: root.sendControl("clear_context")
                     }

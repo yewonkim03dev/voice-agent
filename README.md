@@ -1,14 +1,16 @@
 # Voice Agent
 
-Voice Agent aims to make Codex feel like a conversational local coding agent: wake it by voice, speak a natural Korean or English request, hear short spoken responses, and answer permission prompts without touching the keyboard.
+![Voice Agent visual companion and floating HUD](./docs/voice-agent.png)
+
+Voice Agent is built around always-on voice interaction: Codex stays ready in the background, you wake it by voice, speak a natural Korean or English request, hear short spoken responses, and answer permission prompts without touching the keyboard.
+
+The goal is to make a local coding agent feel present while you work, not like a command you have to stop and type. Voice Agent keeps the mic pipeline, wake phrase routing, TTS, visual feedback, and approval flow running as a lightweight layer around Codex.
 
 It is macOS-optimized today. It listens through the Mac microphone, transcribes Korean/English speech with the local Apple Speech path, routes wake commands to Codex, speaks short responses with Apple TTS, and shows a native visual companion window for listening, thinking, speaking, and approval states.
 
 The local layer is intentionally thin: it handles voice I/O, wake phrases, STT/TTS, visual feedback, and native approval bridging. It does not classify coding intent locally. Normal user commands are passed through to Codex.
 
 Korean documentation is available in [`README.ko.md`](./README.ko.md).
-
-![Voice Agent visual companion and floating HUD](./docs/voice-agent.png)
 
 ## macOS Quick Start
 
@@ -46,6 +48,26 @@ Useful checks:
 npm run tts:test -- --ko "코덱스 음성 출력 테스트야."
 npm test
 ```
+
+## Floating HUD (macOS)
+
+![Voice Agent floating HUD on macOS](./docs/floating-hud.png)
+
+The native macOS visual companion includes a floating HUD for keeping the voice agent visible without opening the full companion window. It shows the current state, question, recent command output, approval controls, usage status, TTS/STOP/SHOW controls, and reference controls in a compact always-on-top panel.
+
+The HUD can be toggled from the visual settings. The menu bar companion also exposes it, so it can be brought back without restarting the harness.
+
+Pros:
+
+- Keeps listening, thinking, speaking, and approval state visible while another app is in front.
+- Makes permission approval and emergency stop reachable without switching back to the terminal.
+- Gives a compact place for reference input and queued-reference checks while working in another app.
+
+Tradeoffs:
+
+- It is macOS-specific and depends on the native AppKit visual companion.
+- It uses screen space even when compact, so it can cover content in small windows.
+- Full-screen behavior depends on macOS window-level and Space behavior; if another app owns a full-screen Space, the HUD may need to be reopened or toggled from the menu bar companion.
 
 ## Additional Modes
 
