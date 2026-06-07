@@ -54,6 +54,7 @@ ApplicationWindow {
     property string codexThreadId: ""
     property string voiceGuideText: "한국어\n1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\nEnglish\n1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn."
     property string referenceHelpText: "한국어: 파일명, URL, 조건 같은 참고자료만 적고 Add를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.\nEnglish: Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request."
+    property string referenceListText: "No references queued."
 
     function argumentValue(name, fallback) {
         var args = Qt.application.arguments
@@ -244,6 +245,13 @@ ApplicationWindow {
         commandText = commands.map(function(command) { return "• " + command }).join("\n\n")
     }
 
+    function formatReferenceList(entries) {
+        if (!entries || entries.length === 0) return "No references queued."
+        return entries.map(function(entry, index) {
+            return (index + 1) + ". " + entry
+        }).join("\n")
+    }
+
     function pushChat(role, kind, text) {
         var trimmed = String(text || "").trim()
         if (trimmed.length === 0) return
@@ -393,6 +401,10 @@ ApplicationWindow {
             } else if (event.type === "context") {
                 root.contextEntries = event.entries || []
                 if (root.contextEntries.length === 0) contextInput.text = ""
+            } else if (event.type === "context_list") {
+                root.contextEntries = event.entries || []
+                root.referenceListText = root.formatReferenceList(root.contextEntries)
+                referenceListPopup.open()
             } else if (event.type === "settings") {
                 root.applyVisualSettings(event)
             }
@@ -565,6 +577,63 @@ ApplicationWindow {
             font.pixelSize: 13
             lineHeight: 1.16
             lineHeightMode: Text.ProportionalHeight
+        }
+    }
+
+    Popup {
+        id: referenceListPopup
+        x: Math.max(18, Math.min(root.width - width - 18, content.x + commandPanel.x + commandPanel.width - width - 12))
+        y: Math.max(18, Math.min(root.height - height - 18, content.y + commandPanel.y - height - 10))
+        width: Math.min(root.width - 36, 520)
+        height: Math.min(root.height - 72, 340)
+        padding: 12
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        z: 14
+        background: Rectangle {
+            radius: 8
+            color: "#0d131c"
+            border.color: "#3b4c64"
+            border.width: 1
+        }
+        contentItem: ColumnLayout {
+            spacing: 8
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Queued References"
+                    color: "#91a4bd"
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+
+                Button {
+                    text: "Close"
+                    onClicked: referenceListPopup.close()
+                }
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+
+                TextArea {
+                    text: root.referenceListText
+                    color: "#f4f7fb"
+                    font.pixelSize: 14
+                    font.family: "Menlo"
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.WrapAnywhere
+                    persistentSelection: true
+                    background: Rectangle {
+                        color: "transparent"
+                    }
+                }
+            }
         }
     }
 

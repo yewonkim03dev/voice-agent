@@ -1891,6 +1891,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             menuBarCompanion.updateUsage(usage)
         case "context":
             updateContext(event["entries"] as? [String] ?? [])
+        case "context_list":
+            updateContext(event["entries"] as? [String] ?? [])
+            showContextList(event["entries"] as? [String] ?? [])
         case "settings":
             if let tts = event["tts"] as? [String: Any] {
                 updateTtsSettings(tts)
@@ -1935,6 +1938,41 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         commandView.string = ""
         rootView?.resizeCommandTextView(scrollToTop: true)
         sendControl("clear_commands")
+    }
+
+    private func showContextList(_ entries: [String]) {
+        let alert = NSAlert()
+        alert.messageText = "Queued References"
+        alert.informativeText = entries.isEmpty
+            ? "No references queued."
+            : "References queued for the next routed request."
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
+        let textView = NSTextView(frame: scrollView.bounds)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = true
+        textView.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.09, blue: 0.13, alpha: 1)
+        textView.textColor = .white
+        textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.string = formatContextList(entries)
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: scrollView.bounds.width, height: CGFloat.greatestFiniteMagnitude)
+
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        alert.accessoryView = scrollView
+        alert.addButton(withTitle: "OK")
+
+        if let mainWindow {
+            alert.beginSheetModal(for: mainWindow)
+        } else {
+            alert.runModal()
+        }
     }
 
     @objc private func addContext() {
@@ -2364,6 +2402,15 @@ private func normalizedPhrases(_ values: [String]) -> [String] {
         }
     }
     return result
+}
+
+private func formatContextList(_ entries: [String]) -> String {
+    if entries.isEmpty {
+        return "No references queued."
+    }
+    return entries.enumerated().map { index, entry in
+        "\(index + 1). \(entry)"
+    }.joined(separator: "\n")
 }
 
 func argumentValue(_ name: String, _ fallback: String = "") -> String {

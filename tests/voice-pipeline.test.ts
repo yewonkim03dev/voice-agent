@@ -585,8 +585,9 @@ test("always-on voice runner shows visual reference context list", async () => {
 
   assert.equal(
     visualBridge.events.some((event) =>
-      event.type === "command" &&
-      event.text === "[voice:context] queued references:\n1. 관련 파일은 README.md야"
+      event.type === "context_list" &&
+      event.entries.length === 1 &&
+      event.entries[0] === "관련 파일은 README.md야"
     ),
     true
   );

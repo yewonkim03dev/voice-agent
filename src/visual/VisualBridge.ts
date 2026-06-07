@@ -121,6 +121,11 @@ export type VisualEvent =
     }
   | {
       op: "voice-agent-ui";
+      type: "context_list";
+      entries: string[];
+    }
+  | {
+      op: "voice-agent-ui";
       type: "settings";
       tts?: VisualTtsSettings;
       visual?: VisualRuntimeSettings;

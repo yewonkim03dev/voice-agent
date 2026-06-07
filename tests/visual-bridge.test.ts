@@ -442,6 +442,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /add_context/u);
   assert.match(qml, /clear_context/u);
   assert.match(qml, /show_context/u);
+  assert.match(qml, /context_list/u);
+  assert.match(qml, /referenceListPopup/u);
   assert.match(qml, /text: "Refs"/u);
   assert.match(qml, /contextEntries/u);
   assert.match(qml, /placeholderText: "reference text"/u);
@@ -613,7 +615,10 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /add_context/u);
   assert.match(swift, /clear_context/u);
   assert.match(swift, /show_context/u);
+  assert.match(swift, /context_list/u);
+  assert.match(swift, /showContextList/u);
   assert.match(swift, /showContextButton/u);
+  assert.match(swift, /Queued References/u);
   assert.match(swift, /placeholderString = "reference text"/u);
   assert.match(swift, /hudContextField\.placeholderString = "reference text"/u);
   assert.match(swift, /hudContextField\.isEditable = true/u);

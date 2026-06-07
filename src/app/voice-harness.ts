@@ -1158,8 +1158,8 @@ function sendVisualContextEvent(visualBridge: VisualBridgeLike | undefined, entr
 function sendVisualContextList(visualBridge: VisualBridgeLike | undefined, entries: string[]): void {
   visualBridge?.send({
     op: "voice-agent-ui",
-    type: "command",
-    text: formatSupplementalTextList(entries)
+    type: "context_list",
+    entries
   });
 }
 
