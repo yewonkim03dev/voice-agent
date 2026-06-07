@@ -720,6 +720,87 @@ test("routes generic Codex approval requests instead of silently ignoring them",
   });
 });
 
+test("routes MCP elicitation requests to approval flow and accepts with schema content", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const requests: PermissionRequest[] = [];
+  backend.onPermissionRequest((request) => requests.push(request));
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_elicitation_1",
+    method: "mcpServer/elicitation/request",
+    params: {
+      turnId: "turn_1",
+      serverName: "codex_apps",
+      request: {
+        title: "Google Calendar action",
+        message: "Create a Google Calendar event?",
+        schema: {
+          type: "object",
+          properties: {
+            confirmation: {
+              enum: ["Allow", "__codex_mcp_decline__"]
+            }
+          },
+          required: ["confirmation"]
+        }
+      }
+    }
+  });
+  await backend.sendPermission(permission("mcp_elicitation_1", "allow"));
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].id, "mcp_elicitation_1");
+  assert.equal(requests[0].tool, "codex_apps");
+  assert.equal(requests[0].action, "mcp_elicitation");
+  assert.equal(requests[0].rawText, "Google Calendar action\nCreate a Google Calendar event?");
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "mcp_elicitation_1",
+    result: {
+      action: "accept",
+      content: {
+        confirmation: "Allow"
+      },
+      _meta: {}
+    }
+  });
+});
+
+test("denies MCP elicitation requests with a decline action", async () => {
+  const { backend, child, socket } = createStartedBackend();
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_elicitation_deny",
+    method: "mcpServer/elicitation/request",
+    params: {
+      serverName: "codex_apps",
+      request: {
+        message: "Create a Google Calendar event?"
+      }
+    }
+  });
+  await backend.sendPermission(permission("mcp_elicitation_deny", "deny"));
+
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "mcp_elicitation_deny",
+    result: {
+      action: "decline",
+      _meta: {}
+    }
+  });
+});
+
 test("responds to unhandled Codex app-server requests instead of leaving the server waiting", async () => {
   const lines: string[] = [];
   const { backend, child, socket } = createStartedBackend({
@@ -815,6 +896,54 @@ test("terminal harness speaks app-server approvals and routes Korean allow decis
     id: "approval_1",
     result: {
       decision: "accept"
+    }
+  });
+});
+
+test("terminal harness surfaces MCP elicitation details and routes Korean allow decisions", async () => {
+  const { backend, child, socket } = createStartedBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = new TerminalHarness({
+    backend,
+    backendLabel: "real-test",
+    visualBridge,
+    now: () => 1000,
+    createId: createTestId()
+  });
+
+  const started = harness.start();
+  child.stderr.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  socket.receive({
+    id: "mcp_elicitation_harness",
+    method: "mcpServer/elicitation/request",
+    params: {
+      serverName: "codex_apps",
+      request: {
+        title: "Google Calendar action",
+        message: "Create a Google Calendar event?"
+      }
+    }
+  });
+  await flushAsync();
+
+  assert.equal(harness.voiceOutput.messages.at(-1)?.text, "작업 실행 권한 필요해. 허용할까?");
+  assert.match(
+    visualBridge.events.findLast((event) => event.type === "approval")?.text ?? "",
+    /사유: Google Calendar action\nCreate a Google Calendar event\?/u
+  );
+
+  await harness.processLine("허용");
+
+  assert.deepEqual(socket.sent.at(-1), {
+    id: "mcp_elicitation_harness",
+    result: {
+      action: "accept",
+      content: {},
+      _meta: {}
     }
   });
 });

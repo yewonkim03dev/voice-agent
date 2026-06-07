@@ -2225,6 +2225,10 @@ function approvalVisualText(
     const choices = describeNativeChoices(request?.native?.availableDecisions);
     if (choices) lines.push(`Codex 선택지: ${choices}`);
     lines.push(`네트워크 계속 허용: ${phrases.networkPolicyApprove.join(" / ")}`);
+  } else if (permissionTarget === "작업") {
+    if (request?.rawText) lines.push(`사유: ${request.rawText}`);
+    const choices = describeNativeChoices(request?.native?.availableDecisions);
+    if (choices) lines.push(`Codex 선택지: ${choices}`);
   }
 
   return lines.join("\n");

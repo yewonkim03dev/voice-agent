@@ -71,7 +71,7 @@ interface JsonRpcRequest {
 interface PendingCodexApproval {
   rpcId: RequestId;
   requestMethod: string;
-  responseKind: "decision" | "permissions";
+  responseKind: "decision" | "permissions" | "mcp_elicitation";
   availableDecisions?: unknown[];
   additionalPermissions?: unknown;
   networkApprovalContext?: unknown;
@@ -565,6 +565,9 @@ export class CodexAppServerBackend implements AgentBackend {
       case "item/permissions/requestApproval":
         this.handlePermissionsApprovalRequest(message);
         return;
+      case "mcpServer/elicitation/request":
+        this.handleMcpServerElicitationRequest(message);
+        return;
       case "item/agentMessage/delta":
       case "item/commandExecution/outputDelta":
         this.emitOutputForMessage(message, "stdout", String(message.params?.delta ?? ""));
@@ -597,6 +600,11 @@ export class CodexAppServerBackend implements AgentBackend {
 
     if (this.isApprovalRequest(message)) {
       this.handleApprovalRequest(message);
+      return;
+    }
+
+    if (this.isMcpElicitationRequest(message)) {
+      this.handleMcpServerElicitationRequest(message);
       return;
     }
 
@@ -656,6 +664,24 @@ export class CodexAppServerBackend implements AgentBackend {
     this.publishApprovalRequest(message, request, {
       responseKind: "permissions",
       requestedPermissions,
+      raw: params
+    });
+  }
+
+  private handleMcpServerElicitationRequest(message: JsonRpcRequest): void {
+    if (message.id === undefined) return;
+
+    const params = asRecord(message.params);
+    const serverName = parseOptionalString(params.serverName ?? params.server_name) ?? "mcp";
+    const request = this.createApprovalRequest(message, {
+      tool: serverName,
+      action: "mcp_elicitation",
+      rawText: mcpElicitationRawText(params, serverName),
+      riskLevel: "medium"
+    });
+
+    this.publishApprovalRequest(message, request, {
+      responseKind: "mcp_elicitation",
       raw: params
     });
   }
@@ -815,6 +841,16 @@ export class CodexAppServerBackend implements AgentBackend {
     return optionalUnknownArray(params.availableDecisions ?? params.available_decisions) !== undefined;
   }
 
+  private isMcpElicitationRequest(message: JsonRpcRequest): boolean {
+    if (message.id === undefined) return false;
+
+    const method = message.method ?? "";
+    if (!/elicitation\/request$/u.test(method)) return false;
+
+    const params = asRecord(message.params);
+    return params.request !== undefined || params.serverName !== undefined || params.server_name !== undefined;
+  }
+
   private emitCommandExecOutput(message: JsonRpcRequest): void {
     const params = asRecord(message.params);
     const stream = params.stream === "stderr" ? "stderr" : "stdout";
@@ -927,8 +963,27 @@ export class CodexAppServerBackend implements AgentBackend {
       return this.resolvePermissionsResponse(decision, pending);
     }
 
+    if (pending.responseKind === "mcp_elicitation") {
+      return this.resolveMcpElicitationResponse(decision, pending);
+    }
+
     return {
       decision: this.resolveNativeDecision(decision, pending)
+    };
+  }
+
+  private resolveMcpElicitationResponse(decision: PermissionDecision, pending: PendingCodexApproval): Record<string, unknown> {
+    if (decision.decision === "deny") {
+      return {
+        action: "decline",
+        _meta: {}
+      };
+    }
+
+    return {
+      action: "accept",
+      content: mcpElicitationAcceptContent(pending.raw),
+      _meta: {}
     };
   }
 
@@ -1132,6 +1187,10 @@ function optionalUnknownArray(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined;
 }
 
+function parseStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 function parseOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -1164,6 +1223,103 @@ function approvalRawText(params: Record<string, unknown>, command: string | unde
 
   if (command) return `Run command: ${command} ?`;
   return reason ?? "Codex requests approval.";
+}
+
+function mcpElicitationRawText(params: Record<string, unknown>, serverName: string): string {
+  const request = asRecord(params.request);
+  const schema = asRecord(request.schema ?? request.requestedSchema ?? request.requested_schema);
+  const title =
+    parseOptionalString(request.title ?? params.title) ??
+    parseOptionalString(schema.title);
+  const message =
+    parseOptionalString(request.message ?? request.prompt ?? request.description ?? params.message ?? params.reason) ??
+    parseOptionalString(schema.description);
+
+  if (title && message && title !== message) return `${title}\n${message}`;
+  if (message) return message;
+  if (title) return title;
+  return `MCP server ${serverName} requests input.`;
+}
+
+function mcpElicitationAcceptContent(raw: Record<string, unknown>): Record<string, unknown> {
+  const request = asRecord(raw.request);
+  const schema = asRecord(request.schema ?? request.requestedSchema ?? request.requested_schema);
+  const properties = asRecord(schema.properties);
+  const required = parseStringArray(schema.required);
+  const content: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(properties)) {
+    const propertySchema = asRecord(value);
+    const selected = mcpAcceptValue(propertySchema);
+    if (selected !== undefined || required.includes(key)) {
+      content[key] = selected ?? "";
+    }
+  }
+
+  return content;
+}
+
+function mcpAcceptValue(schema: Record<string, unknown>): unknown {
+  if (schema.const !== undefined) return schema.const;
+  if (schema.default !== undefined) return schema.default;
+
+  const enumValues = optionalUnknownArray(schema.enum);
+  if (enumValues && enumValues.length > 0) {
+    return (
+      enumValues.find(isPositiveMcpApprovalValue) ??
+      enumValues.find((value) => !isNegativeMcpApprovalValue(value)) ??
+      enumValues[0]
+    );
+  }
+
+  const option = selectMcpAcceptOption(optionalUnknownArray(schema.oneOf)) ?? selectMcpAcceptOption(optionalUnknownArray(schema.anyOf));
+  if (option !== undefined) return option;
+
+  switch (schema.type) {
+    case "boolean":
+      return true;
+    case "integer":
+    case "number":
+      return parseFiniteNumber(schema.minimum) ?? 0;
+    case "array":
+      return [];
+    case "object":
+      return {};
+    case "string":
+      return "";
+    default:
+      return undefined;
+  }
+}
+
+function selectMcpAcceptOption(options: unknown[] | undefined): unknown {
+  if (!options || options.length === 0) return undefined;
+
+  const records = options.map(asRecord).filter((option) => Object.keys(option).length > 0);
+  const positive = records.find((option) =>
+    isPositiveMcpApprovalValue(option.const) ||
+    isPositiveMcpApprovalValue(option.title) ||
+    isPositiveMcpApprovalValue(option.description)
+  );
+  const fallback = positive ?? records.find((option) =>
+    !isNegativeMcpApprovalValue(option.const) &&
+    !isNegativeMcpApprovalValue(option.title) &&
+    !isNegativeMcpApprovalValue(option.description)
+  ) ?? records[0];
+
+  if (fallback.const !== undefined) return fallback.const;
+  if (fallback.default !== undefined) return fallback.default;
+  return undefined;
+}
+
+function isPositiveMcpApprovalValue(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return /\b(allow|approve|accept|yes|confirm|ok)\b|허용|승인|동의|확인/iu.test(value);
+}
+
+function isNegativeMcpApprovalValue(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return /\b(deny|decline|reject|cancel|no)\b|거부|취소|반려|불허|거절/iu.test(value);
 }
 
 function isNetworkApprovalParams(params: Record<string, unknown>): boolean {
