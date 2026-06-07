@@ -4,7 +4,7 @@ Language / 언어: [English](./README.md) | 한국어
 
 코딩 에이전트를 호출하고, 지시하고, 듣고, 승인하는 흐름을 손 없이 이어 주는 항시 대기 음성 레이어입니다.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE) ![Desktop only](https://img.shields.io/badge/Desktop-only-blue.svg)
 
 ![Voice Agent visual companion 및 floating HUD](./docs/voice-agent.png)
 

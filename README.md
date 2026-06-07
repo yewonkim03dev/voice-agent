@@ -4,7 +4,7 @@ Language / 언어: English | [한국어](./README.ko.md)
 
 An always-on voice layer for waking, instructing, hearing, and approving a coding agent hands-free.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE) ![Desktop only](https://img.shields.io/badge/Desktop-only-blue.svg)
 
 ![Voice Agent visual companion and floating HUD](./docs/voice-agent.png)
 
