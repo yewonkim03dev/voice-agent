@@ -18,6 +18,7 @@ type WriteLine = (line: string) => void;
 export type CodexApprovalPolicy = "on-request" | "untrusted" | "on-failure" | "never";
 
 const MAX_TURN_SESSION_MAPPINGS = 200;
+const DENIED_APPROVAL_RECOVERY_MS = 30_000;
 
 interface ProcessReadable {
   on(event: "data", callback: (chunk: Buffer | string) => void): unknown;
@@ -107,6 +108,7 @@ export interface CodexAppServerBackendOptions {
   threadId?: string;
   threadStore?: CodexThreadStore;
   approvalPolicy?: CodexApprovalPolicy;
+  deniedApprovalRecoveryMs?: number;
 }
 
 export class CodexAppServerBackend implements AgentBackend {
@@ -124,6 +126,7 @@ export class CodexAppServerBackend implements AgentBackend {
   private readonly configuredThreadId: string | undefined;
   private readonly threadStore: CodexThreadStore | undefined;
   private readonly approvalPolicy: CodexApprovalPolicy;
+  private readonly deniedApprovalRecoveryMs: number;
   private readonly outputListeners: Array<(event: CodexOutputEvent) => void> = [];
   private readonly permissionListeners: Array<(request: PermissionRequest) => void> = [];
   private readonly statusListeners: Array<(status: CodexStatus) => void> = [];
@@ -140,6 +143,8 @@ export class CodexAppServerBackend implements AgentBackend {
   private readonly turnSessionOrder: string[] = [];
   private threadId: string | undefined;
   private turnId: string | undefined;
+  private deniedApprovalRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  private deniedApprovalRecoveryTurnId: string | undefined;
   private rateLimits: CodexRateLimits | undefined;
   private status: CodexStatus = {
     process: "not_started",
@@ -164,6 +169,7 @@ export class CodexAppServerBackend implements AgentBackend {
     this.configuredThreadId = parseOptionalString(options.threadId);
     this.threadStore = options.threadStore;
     this.approvalPolicy = options.approvalPolicy ?? "on-request";
+    this.deniedApprovalRecoveryMs = sanitizeRecoveryTimeout(options.deniedApprovalRecoveryMs);
   }
 
   async start(config?: CodexProcessConfig): Promise<void> {
@@ -219,6 +225,7 @@ export class CodexAppServerBackend implements AgentBackend {
   }
 
   async stop(): Promise<void> {
+    this.clearDeniedApprovalRecovery();
     this.socket?.close();
     this.socket = undefined;
     this.child?.stdin.end?.();
@@ -237,6 +244,7 @@ export class CodexAppServerBackend implements AgentBackend {
     }
 
     this.currentSessionId = prompt.sessionId;
+    this.clearDeniedApprovalRecovery();
     this.writeLine(`[codex-app] turn/start ${prompt.sessionId}: ${prompt.text}`);
     this.publishStatus({
       ...this.status,
@@ -271,14 +279,24 @@ export class CodexAppServerBackend implements AgentBackend {
     this.pendingApprovals.delete(decision.requestId);
     this.writeLine(`[codex-app] approval ${decision.decision}: ${decision.requestId}`);
     this.sendResponse(pending.rpcId, nativeResult);
+
+    const rejected = decision.decision === "deny" || decision.decision === "cancel";
+    if (rejected) {
+      this.scheduleDeniedApprovalRecovery(pending);
+    } else {
+      this.clearDeniedApprovalRecovery(pending.turnId);
+    }
+
     this.publishStatus({
       ...this.status,
-      task: "thinking"
+      task: "thinking",
+      currentTool: decision.decision === "allow" ? this.status.currentTool : undefined
     });
   }
 
   async interrupt(reason: string): Promise<void> {
     this.writeLine(`[codex-app] interrupt: ${reason}`);
+    this.clearDeniedApprovalRecovery();
 
     if (this.threadId && this.turnId) {
       await this.sendRequest("turn/interrupt", {
@@ -958,6 +976,7 @@ export class CodexAppServerBackend implements AgentBackend {
     });
 
     if (!turnId || turnId === this.turnId) {
+      this.clearDeniedApprovalRecovery(turnId);
       this.turnId = undefined;
       this.publishStatus({
         ...this.status,
@@ -1015,6 +1034,42 @@ export class CodexAppServerBackend implements AgentBackend {
       ...(this.rateLimits ? { rateLimits: this.rateLimits } : {})
     };
     this.statusListeners.forEach((listener) => listener(this.status));
+  }
+
+  private scheduleDeniedApprovalRecovery(pending: PendingCodexApproval): void {
+    this.clearDeniedApprovalRecovery();
+
+    const turnId = pending.turnId ?? this.turnId;
+    this.deniedApprovalRecoveryTurnId = turnId;
+    this.deniedApprovalRecoveryTimer = setTimeout(() => {
+      this.deniedApprovalRecoveryTimer = undefined;
+      this.deniedApprovalRecoveryTurnId = undefined;
+
+      if (this.pendingApprovals.size > 0) return;
+      if (turnId && this.turnId && this.turnId !== turnId) return;
+      if (this.status.task !== "thinking") return;
+
+      if (turnId && this.turnId === turnId) {
+        this.turnId = undefined;
+      }
+
+      this.writeLine(`[codex-app] denied approval recovery timeout after ${this.deniedApprovalRecoveryMs}ms`);
+      this.publishStatus({
+        ...this.status,
+        task: "idle",
+        currentTool: undefined
+      });
+    }, this.deniedApprovalRecoveryMs);
+    this.deniedApprovalRecoveryTimer.unref?.();
+  }
+
+  private clearDeniedApprovalRecovery(turnId?: string): void {
+    if (!this.deniedApprovalRecoveryTimer) return;
+    if (turnId && this.deniedApprovalRecoveryTurnId && this.deniedApprovalRecoveryTurnId !== turnId) return;
+
+    clearTimeout(this.deniedApprovalRecoveryTimer);
+    this.deniedApprovalRecoveryTimer = undefined;
+    this.deniedApprovalRecoveryTurnId = undefined;
   }
 
   private writeVisibleProcessOutput(type: "stdout" | "stderr", text: string): void {
@@ -1720,6 +1775,12 @@ function responseLanguagePolicyPrompt(language: CodexPrompt["responseLanguage"])
     default:
       return undefined;
   }
+}
+
+function sanitizeRecoveryTimeout(value: number | undefined): number {
+  if (value === undefined) return DENIED_APPROVAL_RECOVERY_MS;
+  if (!Number.isFinite(value) || value <= 0) return DENIED_APPROVAL_RECOVERY_MS;
+  return Math.max(1, Math.floor(value));
 }
 
 function noop(_line: string): void {}

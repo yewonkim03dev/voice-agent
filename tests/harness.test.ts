@@ -646,15 +646,22 @@ test("pass-through visual keeps approval choices visible after permission TTS", 
 
 test("pass-through approval speech can deny a native approval", async () => {
   const backend = new InMemoryAgentBackend();
-  const harness = createPassthroughHarness(backend);
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge);
 
   await harness.start();
   backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
-  await Promise.resolve();
+  await flushAsync();
   await harness.processLine("거부");
 
   assert.equal(backend.permissions.length, 1);
   assert.equal(backend.permissions[0].decision, "deny");
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
+  backend.emitStatus({
+    process: "running",
+    task: "idle"
+  });
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "idle");
 });
 
 test("pass-through approval speech uses configured visual approval phrases", async () => {

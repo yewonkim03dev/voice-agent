@@ -524,6 +524,7 @@ export class TerminalHarness {
       void this.handlePassthroughPermissionRequest(request);
     });
     this.backend.onStatus((status) => {
+      const wasWaitingForCodex = this.passthroughState === "WAITING_CODEX" || this.passthroughState === "EXECUTING";
       this.codexStatus = status;
       if (status.rateLimits) {
         this.sendVisualUsage(status.rateLimits);
@@ -531,6 +532,16 @@ export class TerminalHarness {
       if (status.threadId && status.threadId !== this.codexThreadId) {
         this.codexThreadId = status.threadId;
         this.sendVisualTtsSettings();
+      }
+      if (
+        wasWaitingForCodex &&
+        status.process === "running" &&
+        status.task === "idle" &&
+        !this.pendingPermission &&
+        this.pendingPermissionQueue.length === 0
+      ) {
+        this.passthroughState = "IDLE";
+        this.sendVisualQuestion("");
       }
       this.sendVisualState(status.task === "waiting_permission" ? "approval_pending" : statusToVisualState(status.task));
     });
@@ -657,11 +668,14 @@ export class TerminalHarness {
       return;
     }
 
+    const nextTask = this.codexStatus.task === "waiting_permission" ? "thinking" : this.codexStatus.task;
     this.codexStatus = {
       ...this.codexStatus,
-      task: "thinking"
+      task: nextTask,
+      currentTool: decision.decision === "allow" ? this.codexStatus.currentTool : undefined
     };
-    this.passthroughState = "WAITING_CODEX";
+    this.passthroughState = nextTask === "idle" ? "IDLE" : "WAITING_CODEX";
+    this.sendVisualState(statusToVisualState(nextTask));
   }
 
   private async handlePassthroughPermissionRequest(request: PermissionRequest): Promise<void> {

@@ -665,7 +665,13 @@ test("maps session speech to session-scoped permissions approval", async () => {
 });
 
 test("denies permissions approval requests with an empty turn grant", async () => {
-  const { backend, child, socket } = createStartedBackend();
+  const lines: string[] = [];
+  const { backend, child, socket } = createStartedBackend({
+    deniedApprovalRecoveryMs: 5,
+    writeLine: (line) => lines.push(line)
+  });
+  const statuses: string[] = [];
+  backend.onStatus((status) => statuses.push(status.task));
 
   const started = backend.start();
   child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
@@ -693,10 +699,18 @@ test("denies permissions approval requests with an empty turn grant", async () =
       scope: "turn"
     }
   });
+  assert.equal(statuses.at(-1), "thinking");
+  await waitMs(20);
+  assert.equal(statuses.at(-1), "idle");
+  assert.equal(lines.some((line) => line.includes("denied approval recovery timeout")), true);
 });
 
 test("maps deny approval to cancel when Codex offers cancel as the native decision", async () => {
-  const { backend, child, socket } = createStartedBackend();
+  const { backend, child, socket } = createStartedBackend({
+    deniedApprovalRecoveryMs: 20
+  });
+  const statuses: string[] = [];
+  backend.onStatus((status) => statuses.push(status.task));
 
   const started = backend.start();
   child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
@@ -719,6 +733,12 @@ test("maps deny approval to cancel when Codex offers cancel as the native decisi
       decision: "cancel"
     }
   });
+  assert.equal(statuses.at(-1), "thinking");
+  socket.receive({
+    method: "turn/completed",
+    params: {}
+  });
+  assert.equal(statuses.at(-1), "idle");
 });
 
 test("routes generic Codex approval requests instead of silently ignoring them", async () => {
@@ -1486,12 +1506,19 @@ async function flushAsync(): Promise<void> {
   });
 }
 
+async function waitMs(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function createStartedBackend(options: {
   voiceAgentProtocol?: boolean;
   voiceAgentProtocolPrompt?: string;
   writeLine?: (line: string) => void;
   approvalPolicy?: CodexApprovalPolicy;
   now?: () => number;
+  deniedApprovalRecoveryMs?: number;
 } = {}): {
   backend: CodexAppServerBackend;
   child: FakeAppServerProcess;
@@ -1508,6 +1535,7 @@ function createStartedBackend(options: {
       writeLine: options.writeLine,
       approvalPolicy: options.approvalPolicy,
       now: options.now,
+      deniedApprovalRecoveryMs: options.deniedApprovalRecoveryMs,
       spawnProcess: () => child,
       createWebSocket: () => socket
     }),
