@@ -2,3 +2,4 @@
 node_modules/
 coverage/
 dist/
+.voice-agent.local.json

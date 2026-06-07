@@ -1,4 +1,5 @@
 import type { ActivationEvent } from "../wake/ActivationEvent.ts";
+import type { AudioFormat } from "../audio/AudioFrame.ts";
 
 export interface UtteranceAudio {
   id: string;
@@ -7,7 +8,10 @@ export interface UtteranceAudio {
   endedAt: number;
   sampleRate: number;
   channels: number;
+  format?: AudioFormat;
   data: ArrayBuffer;
+  rms?: number;
+  peak?: number;
   vadSegments: Array<{
     startMs: number;
     endMs: number;

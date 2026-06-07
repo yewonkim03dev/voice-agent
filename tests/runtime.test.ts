@@ -40,6 +40,7 @@ test("turns a Codex permission prompt into a voice-approved decision", async () 
 
   assert.equal(runtime.getContext().state, "CONFIRMING");
   assert.equal(runtime.getContext().pendingPermission?.riskLevel, "low");
+  assert.equal(voice.messages.at(-1)?.text, "명령 실행 권한 필요해. 허용할까?");
 
   await runtime.handleTranscript(transcript("허용", "ko", 0.96));
 
