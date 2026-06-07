@@ -2,11 +2,11 @@
 
 ![Voice Agent visual companion 및 floating HUD](./docs/voice-agent.png)
 
-Voice Agent의 핵심은 항시 대기하는 음성 상호작용입니다. Codex가 백그라운드에서 준비된 상태로 있고, 사용자는 호출어로 깨운 뒤 한국어/영어 자연어로 작업을 말하고, 짧은 음성 응답을 들으며, Codex가 묻는 권한도 키보드 없이 음성으로 허용/거부합니다.
+Voice Agent의 핵심은 코딩 에이전트를 위한 항시 대기 음성 상호작용입니다. 로컬 에이전트가 백그라운드에서 준비된 상태로 사용자의 목소리를 듣고, 호출어로 깨어난 뒤 한국어/영어 자연어 요청을 받아들이며, 짧은 음성 응답과 권한 허용/거부까지 키보드 없이 처리하는 흐름을 지향합니다.
 
-목표는 코딩 에이전트를 매번 터미널에 입력해서 부르는 명령이 아니라, 작업 흐름 옆에 계속 대기하는 로컬 음성 동료처럼 느끼게 만드는 것입니다. Voice Agent는 마이크 파이프라인, wake phrase routing, TTS, visual feedback, approval flow를 Codex 주변의 얇은 로컬 레이어로 유지합니다.
+목표는 코딩 에이전트를 매번 터미널에 입력해서 부르는 명령이 아니라, 작업 흐름 옆에서 계속 대기하는 로컬 음성 레이어처럼 느끼게 만드는 것입니다. Voice Agent는 마이크 파이프라인, wake phrase routing, TTS, visual feedback, approval flow를 코딩 에이전트 주변의 얇은 로컬 레이어로 유지합니다.
 
-현재 구현은 macOS에 최적화되어 있습니다. Mac 마이크로 음성을 받고, Apple Speech 기반 STT로 전사한 뒤, wake 명령을 Codex로 전달하고, Apple TTS와 native visual companion으로 응답/상태/권한 대기를 보여줍니다.
+현재 구현은 Codex 중심이며 macOS에 최적화되어 있습니다. Mac 마이크로 음성을 받고, Apple Speech 기반 STT로 전사한 뒤, wake 명령을 Codex로 전달하고, Apple TTS와 native visual companion으로 응답/상태/권한 대기를 보여줍니다.
 
 핵심 원칙은 pass-through입니다. 로컬 레이어는 코딩 의도를 직접 분류하지 않고, wake/STT/TTS/visual/approval bridge만 담당합니다. 일반 명령은 그대로 Codex 또는 Claude backend로 전달됩니다.
 

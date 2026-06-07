@@ -2,11 +2,11 @@
 
 ![Voice Agent visual companion and floating HUD](./docs/voice-agent.png)
 
-Voice Agent is built around always-on voice interaction: Codex stays ready in the background, you wake it by voice, speak a natural Korean or English request, hear short spoken responses, and answer permission prompts without touching the keyboard.
+Voice Agent is built around always-on voice interaction for coding agents. A local agent stays ready in the background, listens for your voice, wakes on a phrase, accepts natural Korean or English requests, speaks short responses, and lets you answer approval prompts without touching the keyboard.
 
-The goal is to make a local coding agent feel present while you work, not like a command you have to stop and type. Voice Agent keeps the mic pipeline, wake phrase routing, TTS, visual feedback, and approval flow running as a lightweight layer around Codex.
+The goal is to make an agent feel present in your workflow, not like a command you have to stop and type. Voice Agent keeps the mic pipeline, wake phrase routing, TTS, visual feedback, and approval flow running as a lightweight voice layer around a coding agent.
 
-It is macOS-optimized today. It listens through the Mac microphone, transcribes Korean/English speech with the local Apple Speech path, routes wake commands to Codex, speaks short responses with Apple TTS, and shows a native visual companion window for listening, thinking, speaking, and approval states.
+The current implementation is Codex-focused and macOS-optimized. It listens through the Mac microphone, transcribes Korean/English speech with the local Apple Speech path, routes wake commands to Codex, speaks short responses with Apple TTS, and shows a native visual companion window for listening, thinking, speaking, and approval states.
 
 The local layer is intentionally thin: it handles voice I/O, wake phrases, STT/TTS, visual feedback, and native approval bridging. It does not classify coding intent locally. Normal user commands are passed through to Codex.
 
