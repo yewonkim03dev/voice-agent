@@ -1,3 +1,5 @@
+Language / 언어: English | [한국어](./CONTRIBUTING.ko.md)
+
 # Contributing
 
 Thanks for helping improve Voice Agent.
