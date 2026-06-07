@@ -2,6 +2,8 @@ Language / 언어: English | [한국어](./README.ko.md)
 
 # Voice Agent
 
+An always-on voice layer for waking, instructing, hearing, and approving a coding agent hands-free.
+
 ![Voice Agent visual companion and floating HUD](./docs/voice-agent.png)
 
 Voice Agent is built around always-on voice interaction for coding agents. A local agent stays ready in the background, listens for your voice, wakes on a phrase, accepts natural Korean or English requests, speaks short responses, and lets you answer approval prompts without touching the keyboard.

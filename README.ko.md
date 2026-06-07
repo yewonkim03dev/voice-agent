@@ -2,6 +2,8 @@ Language / 언어: [English](./README.md) | 한국어
 
 # Voice Agent
 
+코딩 에이전트를 호출하고, 지시하고, 듣고, 승인하는 흐름을 손 없이 이어 주는 항시 대기 음성 레이어입니다.
+
 ![Voice Agent visual companion 및 floating HUD](./docs/voice-agent.png)
 
 Voice Agent의 핵심은 코딩 에이전트를 위한 항시 대기 음성 상호작용입니다. 로컬 에이전트가 백그라운드에서 준비된 상태로 사용자의 목소리를 듣고, 호출어로 깨어난 뒤 한국어/영어 자연어 요청을 받아들이며, 짧은 음성 응답과 권한 허용/거부까지 키보드 없이 처리하는 흐름을 지향합니다.
