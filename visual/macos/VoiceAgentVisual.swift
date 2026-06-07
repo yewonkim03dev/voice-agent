@@ -1657,6 +1657,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
     private let settingsHudCheckbox = NSButton(checkboxWithTitle: "Show floating HUD", target: nil, action: nil)
     private let settingsWakeRejectedWarningCheckbox = NSButton(checkboxWithTitle: "Speak wake warning", target: nil, action: nil)
+    private let settingsNewThreadCheckbox = NSButton(checkboxWithTitle: "Always start new thread", target: nil, action: nil)
     private let settingsCodexThreadField = NSTextField(string: "")
     private let settingsWakePhrasesView = NSTextView(frame: .zero)
     private let settingsApprovalOncePhrasesView = NSTextView(frame: .zero)
@@ -1674,6 +1675,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var chatHistoryEnabled = true
     private var hudEnabled = true
     private var speakWakeRejectedWarnings = true
+    private var codexAlwaysStartNewThread = false
     private var wakePhrases: [String] = []
     private var approvalOncePhrases: [String] = []
     private var approvalDenyPhrases: [String] = []
@@ -1910,6 +1912,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             if let threadId = event["codexThreadId"] as? String {
                 updateCodexThreadId(threadId)
             }
+            if let alwaysNewThread = event["codexAlwaysStartNewThread"] as? Bool {
+                updateCodexAlwaysStartNewThread(alwaysNewThread)
+            }
         default:
             break
         }
@@ -2018,6 +2023,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
         hudEnabled = settingsHudCheckbox.state == .on
         speakWakeRejectedWarnings = settingsWakeRejectedWarningCheckbox.state == .on
+        codexAlwaysStartNewThread = settingsNewThreadCheckbox.state == .on
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: chatHistoryEnabled)
         menuBarCompanion.setHudEnabled(hudEnabled)
@@ -2039,6 +2045,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         chatHistoryEnabled = true
         hudEnabled = true
         speakWakeRejectedWarnings = true
+        codexAlwaysStartNewThread = false
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: true)
         menuBarCompanion.setHudEnabled(true)
@@ -2127,6 +2134,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         syncSettingsControls()
     }
 
+    private func updateCodexAlwaysStartNewThread(_ value: Bool) {
+        codexAlwaysStartNewThread = value
+        syncSettingsControls()
+    }
+
     private func makeSettingsWindow() -> NSWindow {
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 820),
@@ -2187,23 +2199,26 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         addSettingsHelp(view, y: 290, text: "한국어: 한 번에 받을 always-on 발화 최대 길이입니다. 5초에서 55초 사이입니다.\n\nEnglish: Maximum always-on utterance length, from 5 to 55 seconds.")
         addSettingsRow(view, label: "Codex Thread", control: settingsCodexThreadField, y: 250)
         addSettingsHelp(view, y: 250, text: "한국어: 다음 재시작 때 이어갈 Codex thread id입니다.\n\nEnglish: Codex thread id to resume on next restart.")
-        settingsChatHistoryCheckbox.frame = NSRect(x: 132, y: 220, width: 216, height: 22)
+        settingsNewThreadCheckbox.frame = NSRect(x: 132, y: 220, width: 216, height: 22)
+        view.addSubview(settingsNewThreadCheckbox)
+        addSettingsHelp(view, y: 218, text: "한국어: 체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다.\n\nEnglish: Starts a new Codex thread on restart when checked; resumes the last thread when unchecked.")
+        settingsChatHistoryCheckbox.frame = NSRect(x: 132, y: 198, width: 216, height: 22)
         view.addSubview(settingsChatHistoryCheckbox)
-        addSettingsHelp(view, y: 218, text: "한국어: 최근 질문과 답변 패널 표시 여부입니다.\n\nEnglish: Shows or hides the Recent Q/A panel.")
-        settingsHudCheckbox.frame = NSRect(x: 132, y: 198, width: 216, height: 22)
+        addSettingsHelp(view, y: 196, text: "한국어: 최근 질문과 답변 패널 표시 여부입니다.\n\nEnglish: Shows or hides the Recent Q/A panel.")
+        settingsHudCheckbox.frame = NSRect(x: 132, y: 176, width: 216, height: 22)
         view.addSubview(settingsHudCheckbox)
-        addSettingsHelp(view, y: 196, text: "한국어: 다른 앱 위에 뜨는 floating HUD 표시 여부입니다.\n\nEnglish: Shows or hides the floating HUD above other apps.")
-        settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 176, width: 216, height: 22)
+        addSettingsHelp(view, y: 174, text: "한국어: 다른 앱 위에 뜨는 floating HUD 표시 여부입니다.\n\nEnglish: Shows or hides the floating HUD above other apps.")
+        settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 154, width: 216, height: 22)
         view.addSubview(settingsWakeRejectedWarningCheckbox)
-        addSettingsHelp(view, y: 174, text: "한국어: wake 명령어 불일치 안내를 TTS로 읽을지 정합니다.\n\nEnglish: Controls whether wake mismatch warnings are spoken aloud.")
+        addSettingsHelp(view, y: 152, text: "한국어: wake 명령어 불일치 안내를 TTS로 읽을지 정합니다.\n\nEnglish: Controls whether wake mismatch warnings are spoken aloud.")
 
         let wakeLabel = NSTextField(labelWithString: "Wake")
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        wakeLabel.frame = NSRect(x: 26, y: 146, width: 96, height: 20)
+        wakeLabel.frame = NSRect(x: 26, y: 124, width: 96, height: 20)
         view.addSubview(wakeLabel)
-        addSettingsHelp(view, y: 142, text: "한국어: 호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.\n\nEnglish: Wake phrase list. One phrase per line replaces the current list.")
+        addSettingsHelp(view, y: 120, text: "한국어: 호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.\n\nEnglish: Wake phrase list. One phrase per line replaces the current list.")
 
-        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 86, width: 216, height: 72))
+        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 64, width: 216, height: 72))
         wakeScroll.borderType = .bezelBorder
         wakeScroll.hasVerticalScroller = true
         settingsWakePhrasesView.isVerticallyResizable = true
@@ -2279,6 +2294,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
         settingsHudCheckbox.state = hudEnabled ? .on : .off
         settingsWakeRejectedWarningCheckbox.state = speakWakeRejectedWarnings ? .on : .off
+        settingsNewThreadCheckbox.state = codexAlwaysStartNewThread ? .on : .off
         settingsCodexThreadField.stringValue = codexThreadId
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
         settingsApprovalOncePhrasesView.string = approvalOncePhrases.joined(separator: "\n")
@@ -2354,7 +2370,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             "op": "voice-agent-ui",
             "type": "control",
             "action": "update_codex_thread_id",
-            "codexThreadId": codexThreadId
+            "codexThreadId": codexThreadId,
+            "codexAlwaysStartNewThread": codexAlwaysStartNewThread
         ])
     }
 

@@ -106,6 +106,7 @@ export interface CodexAppServerBackendOptions {
   createWebSocket?: CreateWebSocket;
   startupTimeoutMs?: number;
   threadId?: string;
+  alwaysStartNewThread?: boolean;
   threadStore?: CodexThreadStore;
   approvalPolicy?: CodexApprovalPolicy;
   deniedApprovalRecoveryMs?: number;
@@ -124,6 +125,7 @@ export class CodexAppServerBackend implements AgentBackend {
   private readonly createWebSocket: CreateWebSocket;
   private readonly startupTimeoutMs: number;
   private readonly configuredThreadId: string | undefined;
+  private readonly alwaysStartNewThread: boolean;
   private readonly threadStore: CodexThreadStore | undefined;
   private readonly approvalPolicy: CodexApprovalPolicy;
   private readonly deniedApprovalRecoveryMs: number;
@@ -167,6 +169,7 @@ export class CodexAppServerBackend implements AgentBackend {
     this.createWebSocket = options.createWebSocket ?? createDefaultWebSocket;
     this.startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
     this.configuredThreadId = parseOptionalString(options.threadId);
+    this.alwaysStartNewThread = options.alwaysStartNewThread === true;
     this.threadStore = options.threadStore;
     this.approvalPolicy = options.approvalPolicy ?? "on-request";
     this.deniedApprovalRecoveryMs = sanitizeRecoveryTimeout(options.deniedApprovalRecoveryMs);
@@ -392,6 +395,12 @@ export class CodexAppServerBackend implements AgentBackend {
   }
 
   private async openThread(cwd: string): Promise<void> {
+    if (this.alwaysStartNewThread) {
+      this.writeLine("[codex-app] alwaysStartNewThread enabled. Starting a new thread.");
+      await this.startThread(cwd);
+      return;
+    }
+
     const threadId = this.configuredThreadId ?? await this.loadStoredThreadId();
 
     if (threadId) {

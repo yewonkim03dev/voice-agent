@@ -40,6 +40,7 @@ export interface VoiceLocalSettingsOverride {
   tts?: VoiceTtsFileConfig;
   visual?: VoiceVisualFileConfig;
   codexThreadId?: string | null;
+  codexAlwaysStartNewThread?: boolean;
 }
 
 export interface VoiceSettingsPersistence {
@@ -256,14 +257,25 @@ export async function updateVoiceLocalSettings(
     };
   }
 
-  if (overrides.codexThreadId !== undefined) {
+  if (overrides.codexThreadId !== undefined || overrides.codexAlwaysStartNewThread !== undefined) {
     const codex = readNestedObject(existing.codex);
-    const threadId = parseOptionalString(overrides.codexThreadId);
 
-    if (threadId) {
-      codex.threadId = threadId;
-    } else {
-      delete codex.threadId;
+    if (overrides.codexThreadId !== undefined) {
+      const threadId = parseOptionalString(overrides.codexThreadId);
+
+      if (threadId) {
+        codex.threadId = threadId;
+      } else {
+        delete codex.threadId;
+      }
+    }
+
+    if (overrides.codexAlwaysStartNewThread !== undefined) {
+      if (overrides.codexAlwaysStartNewThread) {
+        codex.alwaysStartNewThread = true;
+      } else {
+        delete codex.alwaysStartNewThread;
+      }
     }
 
     if (Object.keys(codex).length > 0) {
@@ -297,10 +309,19 @@ export async function resetVoiceLocalSettings(options: {
   delete visual.speakWakeRejectedWarnings;
   delete visual.maxUtteranceSeconds;
 
+  const codex = readNestedObject(existing.codex);
+  delete codex.alwaysStartNewThread;
+
   if (Object.keys(visual).length > 0) {
     next.visual = visual;
   } else {
     delete next.visual;
+  }
+
+  if (Object.keys(codex).length > 0) {
+    next.codex = codex;
+  } else {
+    delete next.codex;
   }
 
   await writeJsonObject(fullPath, next);

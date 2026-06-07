@@ -76,6 +76,39 @@ test("resumes a stored Codex app-server thread when available", async () => {
   assert.deepEqual(saved, ["thread_saved"]);
 });
 
+test("starts a new Codex app-server thread when always-start-new is enabled", async () => {
+  const child = new FakeAppServerProcess();
+  const socket = new FakeWebSocket();
+  const saved: string[] = [];
+  const lines: string[] = [];
+  const backend = new CodexAppServerBackend({
+    cwd: "/repo",
+    alwaysStartNewThread: true,
+    threadStore: {
+      async load() {
+        return "thread_saved";
+      },
+      async save(threadId) {
+        saved.push(threadId);
+      }
+    },
+    writeLine: (line) => lines.push(line),
+    spawnProcess: () => child,
+    createWebSocket: () => socket
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  assert.equal(socket.sent[1].method, "thread/start");
+  assert.equal(socket.sent.some((message) => message.method === "thread/resume"), false);
+  assert.deepEqual(saved, ["thread_1"]);
+  assert.equal(lines.some((line) => line.includes("alwaysStartNewThread enabled")), true);
+});
+
 test("applies configured Codex approval policy to threads and turns", async () => {
   const { backend, child, socket } = createStartedBackend({
     approvalPolicy: "on-failure"

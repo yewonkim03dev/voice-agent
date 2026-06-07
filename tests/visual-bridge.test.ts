@@ -115,11 +115,12 @@ test("visual bridge parses allowed control events only", () => {
       sessionApprove: ["오늘만"]
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_codex_thread_id","codexThreadId":" 019e-session "}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_codex_thread_id","codexThreadId":" 019e-session ","codexAlwaysStartNewThread":true}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_codex_thread_id",
-    codexThreadId: "019e-session"
+    codexThreadId: "019e-session",
+    codexAlwaysStartNewThread: true
   });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_tts_settings","tts":{"language":"ko","gender":"female","rate":0.61,"pitch":1.1,"volume":0.8,"voiceName":"Yuna"}}'), {
     op: "voice-agent-ui",
@@ -165,6 +166,7 @@ test("visual bridge replays latest settings to late visual clients", async () =>
   assert.match(source, /event\.tts !== undefined/u);
   assert.match(source, /event\.visual !== undefined/u);
   assert.match(source, /event\.codexThreadId !== undefined/u);
+  assert.match(source, /event\.codexAlwaysStartNewThread !== undefined/u);
 });
 
 test("visual bridge accepts websocket clients, sends events, and receives controls", async (context) => {

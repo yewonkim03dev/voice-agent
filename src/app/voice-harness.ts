@@ -20,9 +20,10 @@ import type { VisualProvider } from "../visual/VisualConfig.ts";
 import { VisualBridge, type VisualBridgeLike } from "../visual/VisualBridge.ts";
 import { launchVisualCompanion } from "../visual/run-visual.ts";
 import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
-import { createCodexThreadStore } from "./codex-thread-config.ts";
+import { readCodexThreadSettings } from "./codex-thread-config.ts";
 import { createTerminalHarnessFromArgs, parseHarnessCliArgs, TerminalHarness } from "./harness.ts";
 import {
+  defaultVoiceConfigPath,
   defaultMaxUtteranceSeconds,
   VoiceLocalSettingsStore,
   resolveVoiceHarnessConfig,
@@ -691,6 +692,7 @@ export function createVoiceHarnessRunnerFromConfig(
     visualBridge?: VisualBridgeLike;
     settingsPersistence?: VoiceSettingsPersistence;
     codexThreadId?: string;
+    codexAlwaysStartNewThread?: boolean;
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
@@ -709,6 +711,7 @@ export function createVoiceHarnessRunnerFromConfig(
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
     codexThreadId: options.codexThreadId,
+    codexAlwaysStartNewThread: options.codexAlwaysStartNewThread,
     onExitRequest: options.onExitRequest
   });
   const gate = new ManualRecordingGate({
@@ -765,6 +768,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     visualBridge?: VisualBridgeLike;
     settingsPersistence?: VoiceSettingsPersistence;
     codexThreadId?: string;
+    codexAlwaysStartNewThread?: boolean;
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
@@ -782,6 +786,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
     codexThreadId: options.codexThreadId,
+    codexAlwaysStartNewThread: options.codexAlwaysStartNewThread,
     onExitRequest: options.onExitRequest
   });
   const audioInput =
@@ -941,7 +946,7 @@ export async function runVoiceHarness(): Promise<void> {
   const args = defaultCodexArgs(cli.harnessArgs);
   const visualBridge = cli.visual ? new VisualBridge({ writeLine }) : undefined;
   const settingsPersistence = new VoiceLocalSettingsStore();
-  const codexThreadId = await loadCodexThreadIdForVisual(writeLine, parseHarnessCliArgs(args).cwd);
+  const codexThreadSettings = await loadCodexThreadSettingsForVisual(writeLine, parseHarnessCliArgs(args).cwd);
   let shutdownRequested = false;
   let readline: ReturnType<typeof createInterface> | undefined;
   const requestShutdown = (): void => {
@@ -967,7 +972,8 @@ export async function runVoiceHarness(): Promise<void> {
         debug: cli.debug,
         visualBridge,
         settingsPersistence,
-        codexThreadId,
+        codexThreadId: codexThreadSettings.threadId,
+        codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
         onExitRequest: requestShutdown
       })
     : createVoiceHarnessRunnerFromConfig(resolution.config, args, {
@@ -975,7 +981,8 @@ export async function runVoiceHarness(): Promise<void> {
         debug: cli.debug,
         visualBridge,
         settingsPersistence,
-        codexThreadId,
+        codexThreadId: codexThreadSettings.threadId,
+        codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
         onExitRequest: requestShutdown
       });
 
@@ -1018,12 +1025,17 @@ function defaultCodexArgs(args: string[]): string[] {
   return ["--codex", ...args];
 }
 
-async function loadCodexThreadIdForVisual(writeLine: WriteLine, cwd: string): Promise<string | undefined> {
+async function loadCodexThreadSettingsForVisual(
+  writeLine: WriteLine,
+  cwd: string
+): Promise<{ threadId?: string; alwaysStartNewThread: boolean }> {
   try {
-    return await createCodexThreadStore({ cwd }).load();
+    return await readCodexThreadSettings(resolve(cwd, defaultVoiceConfigPath));
   } catch (error) {
     writeLine(`[settings:error] ${formatError(error)}`);
-    return undefined;
+    return {
+      alwaysStartNewThread: false
+    };
   }
 }
 

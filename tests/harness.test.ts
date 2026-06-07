@@ -243,6 +243,7 @@ test("visual settings expose and persist Codex thread id for next restart", asyn
     visualBridge,
     settingsPersistence,
     codexThreadId: "thread_existing",
+    codexAlwaysStartNewThread: false,
     now: () => 1000,
     createId: createTestId()
   });
@@ -253,16 +254,25 @@ test("visual settings expose and persist Codex thread id for next restart", asyn
     visualBridge.events.find((event) => event.type === "settings")?.codexThreadId,
     "thread_existing"
   );
+  assert.equal(
+    visualBridge.events.find((event) => event.type === "settings")?.codexAlwaysStartNewThread,
+    false
+  );
 
-  visualBridge.emitCodexThreadControl(" thread_next ");
+  visualBridge.emitCodexThreadControl(" thread_next ", true);
   await flushAsync();
 
   assert.deepEqual(settingsPersistence.updates.at(-1), {
-    codexThreadId: "thread_next"
+    codexThreadId: "thread_next",
+    codexAlwaysStartNewThread: true
   });
   assert.equal(
     visualBridge.events.findLast((event) => event.type === "settings")?.codexThreadId,
     "thread_next"
+  );
+  assert.equal(
+    visualBridge.events.findLast((event) => event.type === "settings")?.codexAlwaysStartNewThread,
+    true
   );
 });
 
@@ -1578,13 +1588,14 @@ class FakeVisualBridge implements VisualBridgeLike {
     );
   }
 
-  emitCodexThreadControl(codexThreadId: string): void {
+  emitCodexThreadControl(codexThreadId: string, codexAlwaysStartNewThread?: boolean): void {
     this.controlListeners.forEach((listener) =>
       listener({
         op: "voice-agent-ui",
         type: "control",
         action: "update_codex_thread_id",
-        codexThreadId
+        codexThreadId,
+        ...(codexAlwaysStartNewThread !== undefined ? { codexAlwaysStartNewThread } : {})
       })
     );
   }

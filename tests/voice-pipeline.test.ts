@@ -6,7 +6,12 @@ import test from "node:test";
 
 import type { AudioFrame, AudioInput } from "../src/audio/AudioFrame.ts";
 import { InMemoryAgentBackend, TerminalHarness } from "../src/app/harness.ts";
-import { readCodexThreadId, writeCodexThreadId } from "../src/app/codex-thread-config.ts";
+import {
+  createCodexThreadStore,
+  readCodexThreadId,
+  readCodexThreadSettings,
+  writeCodexThreadId
+} from "../src/app/codex-thread-config.ts";
 import {
   VoiceLocalSettingsStore,
   detectVoiceSetup,
@@ -1404,16 +1409,22 @@ test("voice local settings store persists overrides and reset restores factory d
         speakWakeRejectedWarnings: false,
         maxUtteranceSeconds: 55
       },
-      codexThreadId: "thread_456"
+      codexThreadId: "thread_456",
+      codexAlwaysStartNewThread: true
     });
 
     const updated = JSON.parse(await readFile(join(cwd, configPath), "utf8")) as Record<string, unknown>;
     assert.equal(updated.recorderCommand, "file-recorder");
     assert.equal(updated.sttCommand, "file-stt {audio}");
     assert.deepEqual(updated.codex, {
-      threadId: "thread_456"
+      threadId: "thread_456",
+      alwaysStartNewThread: true
     });
     assert.equal(await readCodexThreadId(join(cwd, configPath)), "thread_456");
+    assert.deepEqual(await readCodexThreadSettings(join(cwd, configPath)), {
+      threadId: "thread_456",
+      alwaysStartNewThread: true
+    });
     assert.deepEqual(updated.wakePhrases, ["hey jarvis", "자비스"]);
     assert.deepEqual(updated.approvalPhrases, {
       onceApprove: ["진행"],
@@ -1479,6 +1490,39 @@ test("voice local settings store persists overrides and reset restores factory d
     assert.deepEqual(resolution.config?.wakePhrases, defaultWakePhrases);
     assert.equal(resolution.config?.approvalPhrases, undefined);
     assert.equal(resolution.config?.tts, undefined);
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("codex thread store skips resume when always-start-new is enabled", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+  const configPath = ".voice-agent.local.json";
+
+  try {
+    await writeFile(join(cwd, configPath), JSON.stringify({
+      codex: {
+        threadId: "thread_saved",
+        alwaysStartNewThread: true
+      }
+    }), "utf8");
+
+    const store = createCodexThreadStore({
+      cwd,
+      configPath
+    });
+
+    assert.equal(await store.load(), undefined);
+    await store.save("thread_new");
+
+    const settings = await readCodexThreadSettings(join(cwd, configPath));
+    assert.deepEqual(settings, {
+      threadId: "thread_new",
+      alwaysStartNewThread: true
+    });
   } finally {
     await rm(cwd, {
       force: true,

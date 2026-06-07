@@ -235,6 +235,7 @@ export interface TerminalHarnessOptions {
   settingsPersistence?: VoiceSettingsPersistence;
   approvalPhrases?: ApprovalPhraseConfig;
   codexThreadId?: string;
+  codexAlwaysStartNewThread?: boolean;
   onExitRequest?: () => void | Promise<void>;
 }
 
@@ -256,6 +257,7 @@ export class TerminalHarness {
   private visualSettings: VisualRuntimeSettings;
   private approvalPhrases: ApprovalPhraseSet;
   private codexThreadId: string | undefined;
+  private codexAlwaysStartNewThread: boolean;
   private idSequence = 0;
   private started = false;
   private exitRequested = false;
@@ -290,6 +292,7 @@ export class TerminalHarness {
     this.visualSettings = visualRuntimeSettingsFromFile(options.visualConfig);
     this.approvalPhrases = approvalPhraseSet(options.approvalPhrases);
     this.codexThreadId = parseOptionalThreadId(options.codexThreadId);
+    this.codexAlwaysStartNewThread = options.codexAlwaysStartNewThread === true;
     this.routingMode =
       options.routingMode ??
       (options.backend && this.backendLabel !== "mock" ? "passthrough" : "runtime");
@@ -1382,7 +1385,7 @@ export class TerminalHarness {
         await this.resetVisualSettings();
         return;
       case "update_codex_thread_id":
-        await this.updateCodexThreadId(event.codexThreadId ?? event.text ?? "");
+        await this.updateCodexThreadSettings(event.codexThreadId ?? event.text ?? "", event.codexAlwaysStartNewThread);
         return;
       case "update_tts_settings":
         await this.updateTtsSettings(event.tts ?? {});
@@ -1477,7 +1480,8 @@ export class TerminalHarness {
       tts: this.currentVisualTtsSettings(),
       visual: this.currentVisualRuntimeSettings(),
       approvalPhrases: this.currentVisualApprovalPhrases(),
-      codexThreadId: this.codexThreadId ?? ""
+      codexThreadId: this.codexThreadId ?? "",
+      codexAlwaysStartNewThread: this.codexAlwaysStartNewThread
     });
   }
 
@@ -1519,13 +1523,15 @@ export class TerminalHarness {
     const applied = this.voiceOutput.updateSettings?.(defaultVisualTtsSettings()) ?? defaultVisualTtsSettings();
     this.visualSettings = defaultVisualRuntimeSettings();
     this.approvalPhrases = approvalPhraseSet();
+    this.codexAlwaysStartNewThread = false;
     await this.persistResetSettings();
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "settings",
       tts: visualTtsSettingsFromVoiceOutput(applied),
       visual: this.currentVisualRuntimeSettings(),
-      approvalPhrases: this.currentVisualApprovalPhrases()
+      approvalPhrases: this.currentVisualApprovalPhrases(),
+      codexAlwaysStartNewThread: this.codexAlwaysStartNewThread
     });
     this.sendVisualEvent({
       op: "voice-agent-ui",
@@ -1562,20 +1568,29 @@ export class TerminalHarness {
     }
   }
 
-  private async updateCodexThreadId(threadId: string): Promise<void> {
+  private async updateCodexThreadSettings(threadId: string, alwaysStartNewThread?: boolean): Promise<void> {
     this.codexThreadId = parseOptionalThreadId(threadId);
+    if (alwaysStartNewThread !== undefined) {
+      this.codexAlwaysStartNewThread = alwaysStartNewThread;
+    }
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "settings",
-      codexThreadId: this.codexThreadId ?? ""
+      codexThreadId: this.codexThreadId ?? "",
+      codexAlwaysStartNewThread: this.codexAlwaysStartNewThread
     });
     await this.persistSettings({
-      codexThreadId: this.codexThreadId ?? null
+      codexThreadId: this.codexThreadId ?? null,
+      codexAlwaysStartNewThread: this.codexAlwaysStartNewThread
     });
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "status",
-      text: this.codexThreadId ? "Codex thread id saved for next restart" : "Codex thread id cleared"
+      text: this.codexAlwaysStartNewThread
+        ? "Codex will start a new thread on next restart"
+        : this.codexThreadId
+          ? "Codex will resume the saved thread on next restart"
+          : "Codex thread id cleared"
     });
   }
 
@@ -1610,6 +1625,7 @@ export class TerminalHarness {
     visual?: VoiceVisualFileConfig;
     approvalPhrases?: ApprovalPhraseConfig;
     codexThreadId?: string | null;
+    codexAlwaysStartNewThread?: boolean;
   }): Promise<void> {
     try {
       await this.settingsPersistence?.update(overrides);
@@ -1755,12 +1771,15 @@ export function createTerminalHarnessFromArgs(
   const cli = parseHarnessCliArgs(args);
 
   if (cli.backendMode === "codex") {
-    const codexThreadId = parseOptionalThreadId(cli.codexThreadId ?? options.codexThreadId);
+    const envCodexThreadId = parseOptionalThreadId((options.env ?? process.env).VOICE_AGENT_CODEX_THREAD_ID);
+    const codexThreadId = parseOptionalThreadId(cli.codexThreadId ?? envCodexThreadId ?? options.codexThreadId);
+    const codexAlwaysStartNewThread = options.codexAlwaysStartNewThread === true && !cli.codexThreadId && !envCodexThreadId;
     const codexApprovalPolicy = resolveCodexApprovalPolicy(cli.codexApprovalPolicy, options.env);
 
     return new TerminalHarness({
       ...options,
       codexThreadId,
+      codexAlwaysStartNewThread,
       ttsCli: cli.tts,
       cwd: cli.cwd,
       backendLabel: "codex",
@@ -1773,7 +1792,8 @@ export function createTerminalHarnessFromArgs(
         voiceAgentProtocol: true,
         now: options.now,
         writeLine: options.writeLine,
-        threadId: codexThreadId,
+        threadId: codexAlwaysStartNewThread ? undefined : codexThreadId,
+        alwaysStartNewThread: codexAlwaysStartNewThread,
         approvalPolicy: codexApprovalPolicy,
         threadStore: createCodexThreadStore({
           cwd: cli.cwd,

@@ -8,6 +8,11 @@ export interface CodexThreadStore {
   save(threadId: string): Promise<void>;
 }
 
+export interface CodexThreadSettings {
+  threadId?: string;
+  alwaysStartNewThread: boolean;
+}
+
 export function createCodexThreadStore(options: {
   cwd?: string;
   configPath?: string;
@@ -21,7 +26,9 @@ export function createCodexThreadStore(options: {
 
   return {
     async load(): Promise<string | undefined> {
-      return envThreadId ?? readCodexThreadId(fullPath);
+      if (envThreadId) return envThreadId;
+      const settings = await readCodexThreadSettings(fullPath);
+      return settings.alwaysStartNewThread ? undefined : settings.threadId;
     },
     async save(threadId: string): Promise<void> {
       if (envThreadId) return;
@@ -31,14 +38,26 @@ export function createCodexThreadStore(options: {
 }
 
 export async function readCodexThreadId(configPath: string): Promise<string | undefined> {
+  return (await readCodexThreadSettings(configPath)).threadId;
+}
+
+export async function readCodexThreadSettings(configPath: string): Promise<CodexThreadSettings> {
   const parsed = await readJsonObject(configPath);
   const codex = parsed.codex;
 
   if (!codex || typeof codex !== "object" || Array.isArray(codex)) {
-    return undefined;
+    return {
+      alwaysStartNewThread: false
+    };
   }
 
-  return parseCodexThreadId((codex as Record<string, unknown>).threadId);
+  const record = codex as Record<string, unknown>;
+  const threadId = parseCodexThreadId(record.threadId);
+
+  return {
+    ...(threadId ? { threadId } : {}),
+    alwaysStartNewThread: record.alwaysStartNewThread === true
+  };
 }
 
 export async function writeCodexThreadId(configPath: string, threadId: string): Promise<void> {

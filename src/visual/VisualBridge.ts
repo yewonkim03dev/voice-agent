@@ -133,6 +133,7 @@ export type VisualEvent =
       approvalPhrases?: VisualApprovalPhrases;
       wakePhrases?: string[];
       codexThreadId?: string;
+      codexAlwaysStartNewThread?: boolean;
     };
 
 export interface VisualControlEvent {
@@ -145,6 +146,7 @@ export interface VisualControlEvent {
   approvalPhrases?: VisualApprovalPhrases;
   wakePhrases?: string[];
   codexThreadId?: string;
+  codexAlwaysStartNewThread?: boolean;
 }
 
 export interface VisualBridgeLike {
@@ -267,11 +269,13 @@ export class VisualBridge implements VisualBridgeLike {
       ...(this.latestSettings?.approvalPhrases !== undefined ? { approvalPhrases: cloneApprovalPhrases(this.latestSettings.approvalPhrases) } : {}),
       ...(this.latestSettings?.wakePhrases !== undefined ? { wakePhrases: [...this.latestSettings.wakePhrases] } : {}),
       ...(this.latestSettings?.codexThreadId !== undefined ? { codexThreadId: this.latestSettings.codexThreadId } : {}),
+      ...(this.latestSettings?.codexAlwaysStartNewThread !== undefined ? { codexAlwaysStartNewThread: this.latestSettings.codexAlwaysStartNewThread } : {}),
       ...(event.tts !== undefined ? { tts: { ...event.tts } } : {}),
       ...(event.visual !== undefined ? { visual: { ...event.visual } } : {}),
       ...(event.approvalPhrases !== undefined ? { approvalPhrases: cloneApprovalPhrases(event.approvalPhrases) } : {}),
       ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {}),
-      ...(event.codexThreadId !== undefined ? { codexThreadId: event.codexThreadId } : {})
+      ...(event.codexThreadId !== undefined ? { codexThreadId: event.codexThreadId } : {}),
+      ...(event.codexAlwaysStartNewThread !== undefined ? { codexAlwaysStartNewThread: event.codexAlwaysStartNewThread } : {})
     };
   }
 
@@ -330,7 +334,8 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     ...(isRecord(record.visual) ? { visual: parseVisualRuntimeSettings(record.visual) } : {}),
     ...(isRecord(record.approvalPhrases) ? { approvalPhrases: parseVisualApprovalPhrases(record.approvalPhrases) } : {}),
     ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {}),
-    ...(typeof record.codexThreadId === "string" ? { codexThreadId: record.codexThreadId.trim() } : {})
+    ...(typeof record.codexThreadId === "string" ? { codexThreadId: record.codexThreadId.trim() } : {}),
+    ...(typeof record.codexAlwaysStartNewThread === "boolean" ? { codexAlwaysStartNewThread: record.codexAlwaysStartNewThread } : {})
   };
 }
 

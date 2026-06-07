@@ -52,6 +52,7 @@ ApplicationWindow {
     property var approvalDenyPhrases: []
     property var approvalSessionPhrases: []
     property string codexThreadId: ""
+    property bool codexAlwaysStartNewThread: false
     property string voiceGuideText: "한국어\n1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\nEnglish\n1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn."
     property string referenceHelpText: "한국어: 파일명, URL, 조건 같은 참고자료만 적고 Add를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.\nEnglish: Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request."
     property string referenceListText: "No references queued."
@@ -118,7 +119,8 @@ ApplicationWindow {
                 op: "voice-agent-ui",
                 type: "control",
                 action: "update_codex_thread_id",
-                codexThreadId: codexThreadField.text.trim()
+                codexThreadId: codexThreadField.text.trim(),
+                codexAlwaysStartNewThread: newThreadCheck.checked
             }))
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
@@ -141,11 +143,13 @@ ApplicationWindow {
         root.maxUtteranceSeconds = 15
         root.chatHistoryEnabled = true
         root.speakWakeRejectedWarnings = true
+        root.codexAlwaysStartNewThread = false
         root.chatPanelOpen = true
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (maxUtteranceSlider) maxUtteranceSlider.value = root.maxUtteranceSeconds
         if (chatHistoryCheck) chatHistoryCheck.checked = true
         if (wakeWarningCheck) wakeWarningCheck.checked = true
+        if (newThreadCheck) newThreadCheck.checked = false
         if (socket.status === WebSocket.Open) {
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
@@ -197,6 +201,7 @@ ApplicationWindow {
         if (event.wakePhrases) root.applyWakePhrases(event.wakePhrases)
         if (event.approvalPhrases) root.applyApprovalPhrases(event.approvalPhrases)
         if (event.codexThreadId !== undefined) root.applyCodexThreadId(event.codexThreadId)
+        if (event.codexAlwaysStartNewThread !== undefined) root.applyCodexAlwaysStartNewThread(event.codexAlwaysStartNewThread)
     }
 
     function applyRuntimeVisualSettings(settings) {
@@ -216,6 +221,11 @@ ApplicationWindow {
     function applyCodexThreadId(threadId) {
         root.codexThreadId = threadId || ""
         if (codexThreadField) codexThreadField.text = root.codexThreadId
+    }
+
+    function applyCodexAlwaysStartNewThread(value) {
+        root.codexAlwaysStartNewThread = !!value
+        if (newThreadCheck) newThreadCheck.checked = root.codexAlwaysStartNewThread
     }
 
     function parseWakePhrases(text) {
@@ -1666,6 +1676,28 @@ ApplicationWindow {
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
                         ToolTip.text: "한국어: 다음 재시작 때 이어갈 Codex thread id입니다.\nEnglish: Codex thread id to resume after restart."
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    CheckBox {
+                        id: newThreadCheck
+                        Layout.fillWidth: true
+                        text: "Always start new thread"
+                        checked: root.codexAlwaysStartNewThread
+                        onCheckedChanged: root.codexAlwaysStartNewThread = checked
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: "한국어: 체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다.\nEnglish: Starts a new Codex thread on restart when checked; resumes the last thread when unchecked."
                     }
                 }
 
