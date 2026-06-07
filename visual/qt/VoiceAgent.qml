@@ -53,9 +53,209 @@ ApplicationWindow {
     property var approvalSessionPhrases: []
     property string codexThreadId: ""
     property bool codexAlwaysStartNewThread: false
-    property string voiceGuideText: "한국어\n1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\nEnglish\n1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn."
-    property string referenceHelpText: "한국어: 파일명, URL, 조건 같은 참고자료만 적고 Add를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.\nEnglish: Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request."
-    property string referenceListText: "No references queued."
+    property string uiLanguage: "en"
+    property bool uiLanguageInitialized: false
+    property string voiceGuideText: root.uiText("voiceGuide")
+    property string referenceHelpText: root.uiText("referenceHelp")
+    property string referenceListText: root.uiText("noReferencesQueued") + "."
+
+    function uiText(key) {
+        var ko = {
+            connecting: "연결 중",
+            waitingForBridge: "브리지 대기 중",
+            connected: "연결됨",
+            disconnected: "연결 끊김",
+            bridgeError: "브리지 오류",
+            bridgeDisconnected: "브리지 연결 끊김",
+            idle: "대기 중",
+            listening: "듣는 중",
+            wakeMatched: "호출됨",
+            wakeRejected: "호출어 불일치",
+            sttProcessing: "음성 인식 중",
+            submitting: "전송 중",
+            thinking: "생각 중",
+            running: "실행 중",
+            speaking: "말하는 중",
+            approvalPending: "권한 대기 중",
+            error: "오류",
+            shutdown: "종료 중",
+            wakePrefix: "호출어: ",
+            sessionNew: "세션: 새 세션",
+            sessionPrefix: "세션: ",
+            usagePrefix: "사용량: ",
+            queuedReferences: "대기 중인 참고자료",
+            close: "닫기",
+            references: "참고자료",
+            referenceText: "참고자료 텍스트",
+            add: "추가",
+            refs: "목록",
+            clearRef: "참고 지우기",
+            noReferencesQueued: "대기 중인 참고자료 없음",
+            referenceCountSuffix: "개 참고자료 대기 중",
+            commands: "명령",
+            recentQa: "최근 Q/A",
+            hide: "숨기기",
+            settings: "설정",
+            language: "언어",
+            gender: "성별",
+            voice: "음성",
+            rate: "속도 ",
+            pitch: "음높이 ",
+            volume: "볼륨 ",
+            thinkingSound: "작업 효과음 ",
+            maxSpeech: "최대 발화 ",
+            showRecentQa: "최근 Q/A 패널 표시",
+            speakWakeWarning: "호출어 경고 말하기",
+            wakePhrasesReplace: "호출어 목록 교체",
+            approvalAllowPhrases: "허용 문구",
+            approvalDenyPhrases: "거부 문구",
+            sessionAllowPhrases: "세션 허용 문구",
+            codexThreadRestart: "Codex thread id (재시작 후 적용)",
+            alwaysStartNewThread: "항상 새 스레드로 시작",
+            restoreDefaults: "기본값 복원",
+            apply: "적용",
+            stop: "정지",
+            ttsStop: "TTS 정지",
+            clearCmds: "명령 지우기",
+            exit: "종료",
+            speech: "음성",
+            command: "명령",
+            status: "상태",
+            voiceGuide: "1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. 참고자료는 다음 요청 한 번에만 붙습니다.\n5. 정지는 현재 에이전트 작업을 즉시 중단합니다.",
+            referenceHelp: "파일명, URL, 조건 같은 참고자료만 적고 추가를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.",
+            languageHelp: "TTS와 응답 언어를 선택합니다. Visual UI 언어는 다음 재시작 때 적용됩니다.",
+            genderHelp: "가능한 경우 남성/여성 음성 선호도를 적용합니다.",
+            voiceHelp: "설치된 macOS 음성 이름을 직접 지정합니다.",
+            rateHelp: "TTS 말하기 속도입니다.",
+            pitchHelp: "TTS 음높이입니다.",
+            volumeHelp: "TTS 출력 볼륨입니다.",
+            thinkingHelp: "작업 중 반복 효과음 볼륨입니다.",
+            maxSpeechHelp: "한 번에 받을 발화 최대 길이입니다. 5초에서 55초 사이입니다.",
+            chatHelp: "최근 질문과 답변 패널 표시 여부입니다.",
+            wakeWarningHelp: "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
+            wakePhrasesHelp: "줄마다 하나씩 호출어를 입력하면 기존 목록을 대체합니다.",
+            approvalAllowHelp: "권한 요청에서 한 번 허용으로 처리할 문구입니다.",
+            approvalDenyHelp: "권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 unknown으로 처리될 수 있습니다.",
+            sessionAllowHelp: "현재 세션 동안 허용으로 처리할 문구입니다.",
+            threadHelp: "다음 재시작 때 이어갈 Codex thread id입니다.",
+            newThreadHelp: "체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다."
+        }
+        var en = {
+            connecting: "connecting",
+            waitingForBridge: "waiting for bridge",
+            connected: "connected",
+            disconnected: "disconnected",
+            bridgeError: "bridge error",
+            bridgeDisconnected: "bridge disconnected",
+            idle: "idle",
+            listening: "listening",
+            wakeMatched: "wake matched",
+            wakeRejected: "wake rejected",
+            sttProcessing: "transcribing",
+            submitting: "submitting",
+            thinking: "thinking",
+            running: "running",
+            speaking: "speaking",
+            approvalPending: "approval pending",
+            error: "error",
+            shutdown: "shutting down",
+            wakePrefix: "wake: ",
+            sessionNew: "session: new",
+            sessionPrefix: "session: ",
+            usagePrefix: "usage: ",
+            queuedReferences: "Queued References",
+            close: "Close",
+            references: "References",
+            referenceText: "reference text",
+            add: "Add",
+            refs: "Refs",
+            clearRef: "Clear Ref",
+            noReferencesQueued: "No references queued",
+            referenceCountSuffix: " reference item(s) queued",
+            commands: "Commands",
+            recentQa: "Recent Q/A",
+            hide: "Hide",
+            settings: "Settings",
+            language: "Language",
+            gender: "Gender",
+            voice: "Voice",
+            rate: "Rate ",
+            pitch: "Pitch ",
+            volume: "Volume ",
+            thinkingSound: "Thinking sound ",
+            maxSpeech: "Max speech ",
+            showRecentQa: "Show Recent Q/A panel",
+            speakWakeWarning: "Speak wake warning",
+            wakePhrasesReplace: "Wake phrases replace list",
+            approvalAllowPhrases: "Approval allow phrases",
+            approvalDenyPhrases: "Approval deny phrases",
+            sessionAllowPhrases: "Session allow phrases",
+            codexThreadRestart: "Codex thread id (applies after restart)",
+            alwaysStartNewThread: "Always start new thread",
+            restoreDefaults: "Restore Defaults",
+            apply: "Apply",
+            stop: "STOP",
+            ttsStop: "TTS Stop",
+            clearCmds: "Clear Cmds",
+            exit: "Exit",
+            speech: "speech",
+            command: "command",
+            status: "status",
+            voiceGuide: "1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn.",
+            referenceHelp: "Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request.",
+            languageHelp: "Choose TTS and response language. Visual UI language applies after restart.",
+            genderHelp: "Sets preferred voice gender when available.",
+            voiceHelp: "Overrides the installed macOS voice name.",
+            rateHelp: "TTS speaking rate.",
+            pitchHelp: "TTS voice pitch.",
+            volumeHelp: "TTS output volume.",
+            thinkingHelp: "Thinking-loop sound volume.",
+            maxSpeechHelp: "Maximum utterance length, from 5 to 55 seconds.",
+            chatHelp: "Shows or hides the Recent Q/A panel.",
+            wakeWarningHelp: "Speaks or mutes wake mismatch warnings.",
+            wakePhrasesHelp: "One wake phrase per line replaces the current list.",
+            approvalAllowHelp: "Phrases that approve once during permission prompts.",
+            approvalDenyHelp: "Phrases that deny permission prompts. Overlaps can be treated as unknown.",
+            sessionAllowHelp: "Phrases that approve for the current session.",
+            threadHelp: "Codex thread id to resume after restart.",
+            newThreadHelp: "Starts a new Codex thread on restart when checked; resumes the last thread when unchecked."
+        }
+        var table = root.uiLanguage === "ko" ? ko : en
+        return table[key] || en[key] || key
+    }
+
+    function stateText(state) {
+        if (state === "idle") return root.uiText("idle")
+        if (state === "listening") return root.uiText("listening")
+        if (state === "wake_matched") return root.uiText("wakeMatched")
+        if (state === "wake_rejected") return root.uiText("wakeRejected")
+        if (state === "stt_processing") return root.uiText("sttProcessing")
+        if (state === "submitting") return root.uiText("submitting")
+        if (state === "thinking") return root.uiText("thinking")
+        if (state === "running") return root.uiText("running")
+        if (state === "speaking") return root.uiText("speaking")
+        if (state === "approval_pending") return root.uiText("approvalPending")
+        if (state === "error") return root.uiText("error")
+        if (state === "shutdown") return root.uiText("shutdown")
+        return state
+    }
+
+    function normalizeUiLanguage(value) {
+        return value === "ko" ? "ko" : "en"
+    }
+
+    function initializeUiLanguage(event) {
+        if (root.uiLanguageInitialized) return
+        var language = ""
+        if (event && event.visual && event.visual.responseLanguage) language = event.visual.responseLanguage
+        else if (event && event.tts && event.tts.language) language = event.tts.language
+        root.uiLanguage = root.normalizeUiLanguage(language)
+        root.uiLanguageInitialized = true
+        root.referenceListText = root.formatReferenceList(root.contextEntries)
+        if (root.statusText === "connecting" || root.statusText === "waiting for bridge" || root.statusText === "connected" || root.statusText === "idle") {
+            root.statusText = root.stateText(root.uiState)
+        }
+    }
 
     function argumentValue(name, fallback) {
         var args = Qt.application.arguments
@@ -256,7 +456,7 @@ ApplicationWindow {
     }
 
     function formatReferenceList(entries) {
-        if (!entries || entries.length === 0) return "No references queued."
+        if (!entries || entries.length === 0) return root.uiText("noReferencesQueued") + "."
         return entries.map(function(entry, index) {
             return (index + 1) + ". " + entry
         }).join("\n")
@@ -292,10 +492,10 @@ ApplicationWindow {
 
     function chatLabel(kind) {
         if (kind === "question") return "Q"
-        if (kind === "speech") return "speech"
-        if (kind === "command") return "command"
-        if (kind === "status") return "status"
-        if (kind === "error") return "error"
+        if (kind === "speech") return root.uiText("speech")
+        if (kind === "command") return root.uiText("command")
+        if (kind === "status") return root.uiText("status")
+        if (kind === "error") return root.uiText("error")
         return kind
     }
 
@@ -354,9 +554,9 @@ ApplicationWindow {
         active: root.bridgeUrl.length > 0
 
         onStatusChanged: {
-            if (status === WebSocket.Open) root.statusText = "connected"
-            else if (status === WebSocket.Closed) root.statusText = "disconnected"
-            else if (status === WebSocket.Error) root.statusText = "bridge error"
+            if (status === WebSocket.Open) root.statusText = root.uiText("connected")
+            else if (status === WebSocket.Closed) root.statusText = root.uiText("disconnected")
+            else if (status === WebSocket.Error) root.statusText = root.uiText("bridgeError")
         }
 
         onTextMessageReceived: function(message) {
@@ -366,7 +566,7 @@ ApplicationWindow {
 
             if (event.type === "state") {
                 root.uiState = event.state
-                root.statusText = event.text || event.state
+                root.statusText = event.text || root.stateText(event.state)
                 if (root.isThinkingAudioState(event.state) && !root.isThinkingAudioState(previousState)) {
                     root.glow = Math.max(root.glow, 0.18)
                     thinkingEffect.play()
@@ -381,7 +581,7 @@ ApplicationWindow {
                 root.peak = Math.min(1, Math.max(0, event.peak * 5))
             } else if (event.type === "wake") {
                 root.uiState = "wake_matched"
-                root.statusText = "wake: " + event.phrase
+                root.statusText = root.uiText("wakePrefix") + event.phrase
                 root.glow = 1
                 wakeEffect.play()
                 glowReset.restart()
@@ -416,6 +616,7 @@ ApplicationWindow {
                 root.referenceListText = root.formatReferenceList(root.contextEntries)
                 referenceListPopup.open()
             } else if (event.type === "settings") {
+                root.initializeUiLanguage(event)
                 root.applyVisualSettings(event)
             }
         }
@@ -464,7 +665,7 @@ ApplicationWindow {
         onTriggered: {
             if (root.uiState === "wake_rejected") {
                 root.uiState = "idle"
-                root.statusText = "idle"
+                root.statusText = root.stateText("idle")
                 root.glow = 0
             }
         }
@@ -512,7 +713,7 @@ ApplicationWindow {
             anchors.leftMargin: 10
             anchors.rightMargin: 10
             verticalAlignment: Text.AlignVCenter
-            text: root.codexThreadId.length > 0 ? "session: " + root.codexThreadId : "session: new"
+            text: root.codexThreadId.length > 0 ? root.uiText("sessionPrefix") + root.codexThreadId : root.uiText("sessionNew")
             color: "#9fb0c7"
             font.pixelSize: 12
             elide: Text.ElideMiddle
@@ -534,7 +735,7 @@ ApplicationWindow {
             anchors.fill: parent
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: Text.AlignLeft
-            text: root.usageText.length > 0 ? "usage: " + root.usageText : ""
+            text: root.usageText.length > 0 ? root.uiText("usagePrefix") + root.usageText : ""
             color: "#b8ccec"
             font.pixelSize: 11
             font.family: "Menlo"
@@ -613,14 +814,14 @@ ApplicationWindow {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Queued References"
+                    text: root.uiText("queuedReferences")
                     color: "#91a4bd"
                     font.pixelSize: 13
                     font.bold: true
                 }
 
                 Button {
-                    text: "Close"
+                    text: root.uiText("close")
                     onClicked: referenceListPopup.close()
                 }
             }
@@ -1003,7 +1204,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "References"
+                        text: root.uiText("references")
                         color: "#91a4bd"
                         font.pixelSize: 13
                         font.bold: true
@@ -1028,37 +1229,37 @@ ApplicationWindow {
                     TextField {
                         id: contextInput
                         Layout.fillWidth: true
-                        placeholderText: "reference text"
+                        placeholderText: root.uiText("referenceText")
                         selectByMouse: true
                         onAccepted: root.addContextFromInput()
                     }
 
                     Button {
-                        text: "Add"
+                        text: root.uiText("add")
                         onClicked: root.addContextFromInput()
                     }
 
                     Button {
-                        text: "Refs"
+                        text: root.uiText("refs")
                         onClicked: root.sendControl("show_context")
                     }
 
                     Button {
-                        text: "Clear Ref"
+                        text: root.uiText("clearRef")
                         onClicked: root.sendControl("clear_context")
                     }
                 }
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.contextEntries.length > 0 ? root.contextEntries.length + " reference item(s) queued" : "No references queued"
+                    text: root.contextEntries.length > 0 ? root.contextEntries.length + root.uiText("referenceCountSuffix") : root.uiText("noReferencesQueued")
                     color: root.contextEntries.length > 0 ? "#ffd166" : "#68778b"
                     font.pixelSize: 12
                     elide: Text.ElideRight
                 }
 
                 Text {
-                    text: "Commands"
+                    text: root.uiText("commands")
                     color: "#91a4bd"
                     font.pixelSize: 13
                     font.bold: true
@@ -1112,14 +1313,14 @@ ApplicationWindow {
 
                     Text {
                         id: chatTitle
-                        text: "Recent Q/A"
+                        text: root.uiText("recentQa")
                         color: "#e7edf7"
                         font.pixelSize: 15
                         font.bold: true
                     }
 
                     Button {
-                        text: "Hide"
+                        text: root.uiText("hide")
                         onClicked: root.chatPanelOpen = false
                     }
 
@@ -1228,14 +1429,14 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Settings"
+                        text: root.uiText("settings")
                         color: "#f4f7fb"
                         font.pixelSize: 16
                         font.bold: true
                     }
 
                     Button {
-                        text: "Close"
+                        text: root.uiText("close")
                         onClicked: root.settingsOpen = false
                     }
                 }
@@ -1245,7 +1446,7 @@ ApplicationWindow {
                     spacing: 10
 
                     Text {
-                        text: "Language"
+                        text: root.uiText("language")
                         color: "#91a4bd"
                         Layout.preferredWidth: 76
                     }
@@ -1264,7 +1465,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: TTS와 응답 언어를 선택합니다.\nEnglish: Choose TTS and response language."
+                        ToolTip.text: root.uiText("languageHelp")
                     }
                 }
 
@@ -1273,7 +1474,7 @@ ApplicationWindow {
                     spacing: 10
 
                     Text {
-                        text: "Gender"
+                        text: root.uiText("gender")
                         color: "#91a4bd"
                         Layout.preferredWidth: 76
                     }
@@ -1292,7 +1493,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 가능한 경우 남성/여성 음성 선호도를 적용합니다.\nEnglish: Sets preferred voice gender when available."
+                        ToolTip.text: root.uiText("genderHelp")
                     }
                 }
 
@@ -1301,7 +1502,7 @@ ApplicationWindow {
                     spacing: 10
 
                     Text {
-                        text: "Voice"
+                        text: root.uiText("voice")
                         color: "#91a4bd"
                         Layout.preferredWidth: 76
                     }
@@ -1321,7 +1522,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 설치된 macOS 음성 이름을 직접 지정합니다.\nEnglish: Overrides the installed voice name."
+                        ToolTip.text: root.uiText("voiceHelp")
                     }
                 }
 
@@ -1330,7 +1531,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Rate " + rateSlider.value.toFixed(2)
+                        text: root.uiText("rate") + rateSlider.value.toFixed(2)
                         color: "#91a4bd"
                     }
 
@@ -1341,7 +1542,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: TTS 말하기 속도입니다.\nEnglish: TTS speaking rate."
+                        ToolTip.text: root.uiText("rateHelp")
                     }
                 }
 
@@ -1359,7 +1560,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Pitch " + pitchSlider.value.toFixed(2)
+                        text: root.uiText("pitch") + pitchSlider.value.toFixed(2)
                         color: "#91a4bd"
                     }
 
@@ -1370,7 +1571,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: TTS 음높이입니다.\nEnglish: TTS voice pitch."
+                        ToolTip.text: root.uiText("pitchHelp")
                     }
                 }
 
@@ -1388,7 +1589,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Volume " + volumeSlider.value.toFixed(2)
+                        text: root.uiText("volume") + volumeSlider.value.toFixed(2)
                         color: "#91a4bd"
                     }
 
@@ -1399,7 +1600,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: TTS 출력 볼륨입니다.\nEnglish: TTS output volume."
+                        ToolTip.text: root.uiText("volumeHelp")
                     }
                 }
 
@@ -1417,7 +1618,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Thinking sound " + thinkingVolumeSlider.value.toFixed(2)
+                        text: root.uiText("thinkingSound") + thinkingVolumeSlider.value.toFixed(2)
                         color: "#91a4bd"
                     }
 
@@ -1428,7 +1629,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 작업 중 반복 효과음 볼륨입니다.\nEnglish: Thinking-loop sound volume."
+                        ToolTip.text: root.uiText("thinkingHelp")
                     }
                 }
 
@@ -1447,7 +1648,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Max speech " + Math.round(maxUtteranceSlider.value) + "s"
+                        text: root.uiText("maxSpeech") + Math.round(maxUtteranceSlider.value) + "s"
                         color: "#91a4bd"
                     }
 
@@ -1458,7 +1659,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 한 번에 받을 발화 최대 길이입니다. 5초에서 55초 사이입니다.\nEnglish: Maximum utterance length, from 5 to 55 seconds."
+                        ToolTip.text: root.uiText("maxSpeechHelp")
                     }
                 }
 
@@ -1478,7 +1679,7 @@ ApplicationWindow {
                     CheckBox {
                         id: chatHistoryCheck
                         Layout.fillWidth: true
-                        text: "Show Recent Q/A panel"
+                        text: root.uiText("showRecentQa")
                         checked: root.chatHistoryEnabled
                         onCheckedChanged: root.chatHistoryEnabled = checked
                     }
@@ -1490,7 +1691,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 최근 질문과 답변 패널 표시 여부입니다.\nEnglish: Shows or hides the Recent Q/A panel."
+                        ToolTip.text: root.uiText("chatHelp")
                     }
                 }
 
@@ -1500,7 +1701,7 @@ ApplicationWindow {
                     CheckBox {
                         id: wakeWarningCheck
                         Layout.fillWidth: true
-                        text: "Speak wake warning"
+                        text: root.uiText("speakWakeWarning")
                         checked: root.speakWakeRejectedWarnings
                         onCheckedChanged: root.speakWakeRejectedWarnings = checked
                     }
@@ -1512,7 +1713,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: wake 명령어 불일치 안내를 TTS로 읽을지 정합니다.\nEnglish: Speaks or mutes wake mismatch warnings."
+                        ToolTip.text: root.uiText("wakeWarningHelp")
                     }
                 }
 
@@ -1521,7 +1722,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Wake phrases replace list"
+                        text: root.uiText("wakePhrasesReplace")
                         color: "#91a4bd"
                     }
 
@@ -1532,7 +1733,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 줄마다 하나씩 호출어를 입력하면 기존 목록을 대체합니다.\nEnglish: One wake phrase per line replaces the current list."
+                        ToolTip.text: root.uiText("wakePhrasesHelp")
                     }
                 }
 
@@ -1555,7 +1756,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Approval allow phrases"
+                        text: root.uiText("approvalAllowPhrases")
                         color: "#91a4bd"
                     }
 
@@ -1566,7 +1767,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 권한 요청에서 한 번 허용으로 처리할 문구입니다.\nEnglish: Phrases that approve once during permission prompts."
+                        ToolTip.text: root.uiText("approvalAllowHelp")
                     }
                 }
 
@@ -1589,7 +1790,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Approval deny phrases"
+                        text: root.uiText("approvalDenyPhrases")
                         color: "#91a4bd"
                     }
 
@@ -1600,7 +1801,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 unknown으로 처리될 수 있습니다.\nEnglish: Phrases that deny permission prompts. Overlaps can be treated as unknown."
+                        ToolTip.text: root.uiText("approvalDenyHelp")
                     }
                 }
 
@@ -1623,7 +1824,7 @@ ApplicationWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Session allow phrases"
+                        text: root.uiText("sessionAllowPhrases")
                         color: "#91a4bd"
                     }
 
@@ -1634,7 +1835,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 현재 세션 동안 허용으로 처리할 문구입니다.\nEnglish: Phrases that approve for the current session."
+                        ToolTip.text: root.uiText("sessionAllowHelp")
                     }
                 }
 
@@ -1653,7 +1854,7 @@ ApplicationWindow {
                 }
 
                 Text {
-                    text: "Codex thread id (applies after restart)"
+                    text: root.uiText("codexThreadRestart")
                     color: "#91a4bd"
                 }
 
@@ -1675,7 +1876,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 다음 재시작 때 이어갈 Codex thread id입니다.\nEnglish: Codex thread id to resume after restart."
+                        ToolTip.text: root.uiText("threadHelp")
                     }
                 }
 
@@ -1685,7 +1886,7 @@ ApplicationWindow {
                     CheckBox {
                         id: newThreadCheck
                         Layout.fillWidth: true
-                        text: "Always start new thread"
+                        text: root.uiText("alwaysStartNewThread")
                         checked: root.codexAlwaysStartNewThread
                         onCheckedChanged: root.codexAlwaysStartNewThread = checked
                     }
@@ -1697,7 +1898,7 @@ ApplicationWindow {
                         hoverEnabled: true
                         ToolTip.visible: hovered
                         ToolTip.delay: 250
-                        ToolTip.text: "한국어: 체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다.\nEnglish: Starts a new Codex thread on restart when checked; resumes the last thread when unchecked."
+                        ToolTip.text: root.uiText("newThreadHelp")
                     }
                 }
 
@@ -1707,13 +1908,13 @@ ApplicationWindow {
 
                     Button {
                         Layout.fillWidth: true
-                        text: "Restore Defaults"
+                        text: root.uiText("restoreDefaults")
                         onClicked: root.resetSettings()
                     }
 
                     Button {
                         Layout.fillWidth: true
-                        text: "Apply"
+                        text: root.uiText("apply")
                         onClicked: root.sendSettings()
                     }
                 }
@@ -1730,29 +1931,29 @@ ApplicationWindow {
 
             Button {
                 Layout.fillWidth: true
-                text: "STOP"
+                text: root.uiText("stop")
                 onClicked: root.sendControl("emergency_stop")
                 palette.button: "#7a2730"
                 palette.buttonText: "#ffffff"
             }
             Button {
                 Layout.fillWidth: true
-                text: "Settings"
+                text: root.uiText("settings")
                 onClicked: root.settingsOpen = !root.settingsOpen
             }
             Button {
                 Layout.fillWidth: true
-                text: "TTS Stop"
+                text: root.uiText("ttsStop")
                 onClicked: root.sendControl("tts_stop")
             }
             Button {
                 Layout.fillWidth: true
-                text: "Clear Cmds"
+                text: root.uiText("clearCmds")
                 onClicked: root.sendControl("clear_commands")
             }
             Button {
                 Layout.fillWidth: true
-                text: "Exit"
+                text: root.uiText("exit")
                 onClicked: root.sendControl("exit")
             }
         }

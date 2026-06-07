@@ -1,6 +1,263 @@
 import AppKit
 import Foundation
 
+enum UiLanguage: Equatable {
+    case en
+    case ko
+}
+
+private let visualTextEn: [String: String] = [
+    "waitingForBridge": "waiting for bridge",
+    "connecting": "connecting",
+    "connected": "connected",
+    "bridgeDisconnected": "bridge disconnected",
+    "idle": "idle",
+    "listening": "listening",
+    "wakeMatched": "wake matched",
+    "wakeRejected": "wake rejected",
+    "sttProcessing": "transcribing",
+    "submitting": "submitting",
+    "thinking": "thinking",
+    "running": "running",
+    "speaking": "speaking",
+    "approvalPending": "approval pending",
+    "approvalCompact": "approval",
+    "rejectedCompact": "rejected",
+    "wakeCompact": "wake",
+    "error": "error",
+    "shutdown": "shutting down",
+    "wakePrefix": "wake: ",
+    "sessionNew": "session: new",
+    "sessionPrefix": "session: ",
+    "usagePrefix": "usage: ",
+    "references": "References",
+    "commands": "Commands",
+    "referenceText": "reference text",
+    "noReferencesQueued": "No references queued",
+    "referenceCountSuffix": " reference item(s) queued",
+    "queuedReferences": "Queued References",
+    "qNone": "Q: none",
+    "referencesQueuedNext": "References queued for the next routed request.",
+    "voiceAgentGuide": "Voice Agent Guide",
+    "guideTooltip": "Voice Agent guide",
+    "ok": "OK",
+    "settings": "Settings",
+    "stop": "STOP",
+    "ttsStop": "TTS Stop",
+    "tts": "TTS",
+    "clearCmds": "Clear Cmds",
+    "exit": "Exit",
+    "add": "Add",
+    "refs": "Refs",
+    "clearRef": "Clear Ref",
+    "clear": "Clear",
+    "show": "Show",
+    "hide": "Hide",
+    "restoreDefaults": "Restore Defaults",
+    "apply": "Apply",
+    "recentQa": "Recent Q/A",
+    "showRecentQa": "Show Recent Q/A panel",
+    "showFloatingHud": "Show floating HUD",
+    "speakWakeWarning": "Speak wake warning",
+    "alwaysStartNewThread": "Always start new thread",
+    "language": "Language",
+    "gender": "Gender",
+    "voice": "Voice",
+    "rate": "Rate",
+    "pitch": "Pitch",
+    "volume": "Volume",
+    "thinkingFx": "Thinking Fx",
+    "maxSpeech": "Max Speech",
+    "codexThread": "Codex Thread",
+    "wake": "Wake",
+    "allow": "Allow",
+    "deny": "Deny",
+    "sessionAllow": "Session Allow",
+    "quitVoiceAgent": "Quit Voice Agent",
+    "voiceGuide": "1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn.",
+    "referenceHelp": "Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request.",
+    "languageHelp": "Choose auto, Korean, or English for TTS and response language. Visual UI language applies after restart.",
+    "genderHelp": "Sets preferred male or female voice when available.",
+    "voiceHelp": "Overrides the voice with an installed macOS voice name.",
+    "rateHelp": "TTS speaking rate. Higher values speak faster.",
+    "pitchHelp": "TTS voice pitch. The default is 1.00.",
+    "volumeHelp": "TTS output volume.",
+    "thinkingHelp": "Thinking-loop sound volume. Set to 0 to mute it.",
+    "maxSpeechHelp": "Maximum always-on utterance length, from 5 to 55 seconds.",
+    "threadHelp": "Codex thread id to resume on next restart.",
+    "newThreadHelp": "Starts a new Codex thread on restart when checked; resumes the last thread when unchecked.",
+    "chatHelp": "Shows or hides the Recent Q/A panel.",
+    "hudHelp": "Shows or hides the floating HUD above other apps.",
+    "wakeWarningHelp": "Controls whether wake mismatch warnings are spoken aloud.",
+    "wakePhrasesHelp": "Wake phrase list. One phrase per line replaces the current list.",
+    "approvalAllowHelp": "Phrases that approve once during permission prompts. One phrase per line.",
+    "approvalDenyHelp": "Phrases that deny permission prompts. Overlaps with allow phrases may be treated as unknown.",
+    "sessionAllowHelp": "Phrases that approve for the current session.",
+    "speech": "speech",
+    "command": "command",
+    "status": "status"
+]
+
+private let visualTextKo: [String: String] = [
+    "waitingForBridge": "브리지 대기 중",
+    "connecting": "연결 중",
+    "connected": "연결됨",
+    "bridgeDisconnected": "브리지 연결 끊김",
+    "idle": "대기 중",
+    "listening": "듣는 중",
+    "wakeMatched": "호출됨",
+    "wakeRejected": "호출어 불일치",
+    "sttProcessing": "음성 인식 중",
+    "submitting": "전송 중",
+    "thinking": "생각 중",
+    "running": "실행 중",
+    "speaking": "말하는 중",
+    "approvalPending": "권한 대기 중",
+    "approvalCompact": "승인",
+    "rejectedCompact": "거부됨",
+    "wakeCompact": "호출",
+    "error": "오류",
+    "shutdown": "종료 중",
+    "wakePrefix": "호출어: ",
+    "sessionNew": "세션: 새 세션",
+    "sessionPrefix": "세션: ",
+    "usagePrefix": "사용량: ",
+    "references": "참고자료",
+    "commands": "명령",
+    "referenceText": "참고자료 텍스트",
+    "noReferencesQueued": "대기 중인 참고자료 없음",
+    "referenceCountSuffix": "개 참고자료 대기 중",
+    "queuedReferences": "대기 중인 참고자료",
+    "qNone": "Q: 없음",
+    "referencesQueuedNext": "다음 요청에 붙을 참고자료가 대기 중입니다.",
+    "voiceAgentGuide": "Voice Agent 안내",
+    "guideTooltip": "Voice Agent 안내",
+    "ok": "확인",
+    "settings": "설정",
+    "stop": "정지",
+    "ttsStop": "TTS 정지",
+    "tts": "TTS",
+    "clearCmds": "명령 지우기",
+    "exit": "종료",
+    "add": "추가",
+    "refs": "목록",
+    "clearRef": "참고 지우기",
+    "clear": "지우기",
+    "show": "보기",
+    "hide": "숨기기",
+    "restoreDefaults": "기본값 복원",
+    "apply": "적용",
+    "recentQa": "최근 Q/A",
+    "showRecentQa": "최근 Q/A 패널 표시",
+    "showFloatingHud": "floating HUD 표시",
+    "speakWakeWarning": "호출어 경고 말하기",
+    "alwaysStartNewThread": "항상 새 스레드로 시작",
+    "language": "언어",
+    "gender": "성별",
+    "voice": "음성",
+    "rate": "속도",
+    "pitch": "음높이",
+    "volume": "볼륨",
+    "thinkingFx": "작업 효과음",
+    "maxSpeech": "최대 발화",
+    "codexThread": "Codex Thread",
+    "wake": "호출어",
+    "allow": "허용",
+    "deny": "거부",
+    "sessionAllow": "세션 허용",
+    "quitVoiceAgent": "Voice Agent 종료",
+    "voiceGuide": "1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. 참고자료는 다음 요청 한 번에만 붙습니다.\n5. 정지는 현재 에이전트 작업을 즉시 중단합니다.",
+    "referenceHelp": "파일명, URL, 조건 같은 참고자료만 적고 추가를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.",
+    "languageHelp": "TTS와 응답 언어를 자동, 한국어, 영어 중 선택합니다. Visual UI 언어는 다음 재시작 때 적용됩니다.",
+    "genderHelp": "가능한 경우 남성/여성 음성 선호도를 적용합니다.",
+    "voiceHelp": "macOS에 설치된 특정 음성 이름을 직접 지정합니다.",
+    "rateHelp": "TTS 말하기 속도입니다. 높을수록 빠르게 읽습니다.",
+    "pitchHelp": "TTS 음높이입니다. 기본값은 1.00입니다.",
+    "volumeHelp": "TTS 출력 볼륨입니다.",
+    "thinkingHelp": "작업 중 반복 효과음 볼륨입니다. 0이면 꺼집니다.",
+    "maxSpeechHelp": "한 번에 받을 always-on 발화 최대 길이입니다. 5초에서 55초 사이입니다.",
+    "threadHelp": "다음 재시작 때 이어갈 Codex thread id입니다.",
+    "newThreadHelp": "체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다.",
+    "chatHelp": "최근 질문과 답변 패널 표시 여부입니다.",
+    "hudHelp": "다른 앱 위에 뜨는 floating HUD 표시 여부입니다.",
+    "wakeWarningHelp": "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
+    "wakePhrasesHelp": "호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.",
+    "approvalAllowHelp": "권한 요청에서 한 번만 허용으로 처리할 문구입니다. 줄마다 하나씩 입력합니다.",
+    "approvalDenyHelp": "권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 안전하게 unknown으로 처리될 수 있습니다.",
+    "sessionAllowHelp": "현재 세션 동안 허용으로 처리할 문구입니다.",
+    "speech": "음성",
+    "command": "명령",
+    "status": "상태"
+]
+
+private func localizedText(_ key: String, language: UiLanguage) -> String {
+    switch language {
+    case .ko:
+        return visualTextKo[key] ?? visualTextEn[key] ?? key
+    case .en:
+        return visualTextEn[key] ?? key
+    }
+}
+
+private func resolvedUiLanguage(from value: String) -> UiLanguage {
+    value == "ko" ? .ko : .en
+}
+
+private func stateText(_ state: String, language: UiLanguage) -> String {
+    switch state {
+    case "idle": return localizedText("idle", language: language)
+    case "listening": return localizedText("listening", language: language)
+    case "wake_matched": return localizedText("wakeMatched", language: language)
+    case "wake_rejected": return localizedText("wakeRejected", language: language)
+    case "stt_processing": return localizedText("sttProcessing", language: language)
+    case "submitting": return localizedText("submitting", language: language)
+    case "thinking": return localizedText("thinking", language: language)
+    case "running": return localizedText("running", language: language)
+    case "speaking": return localizedText("speaking", language: language)
+    case "approval_pending": return localizedText("approvalPending", language: language)
+    case "error": return localizedText("error", language: language)
+    case "shutdown": return localizedText("shutdown", language: language)
+    default: return state
+    }
+}
+
+private func displayText(_ rawText: String, state: String, language: UiLanguage) -> String {
+    let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty || trimmed == state {
+        return stateText(state, language: language)
+    }
+    switch trimmed {
+    case "waiting for bridge": return localizedText("waitingForBridge", language: language)
+    case "connecting": return localizedText("connecting", language: language)
+    case "connected": return localizedText("connected", language: language)
+    case "bridge disconnected": return localizedText("bridgeDisconnected", language: language)
+    case "idle": return localizedText("idle", language: language)
+    default: return trimmed
+    }
+}
+
+private func referenceSummary(_ count: Int, language: UiLanguage) -> String {
+    if count <= 0 {
+        return localizedText("noReferencesQueued", language: language)
+    }
+    if language == .ko {
+        return "\(count)" + localizedText("referenceCountSuffix", language: language)
+    }
+    return "\(count)" + localizedText("referenceCountSuffix", language: language)
+}
+
+private func sessionText(_ sessionId: String, language: UiLanguage) -> String {
+    let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty
+        ? localizedText("sessionNew", language: language)
+        : localizedText("sessionPrefix", language: language) + trimmed
+}
+
+private func usageText(_ usage: String, language: UiLanguage) -> String {
+    let trimmed = usage.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "" : localizedText("usagePrefix", language: language) + trimmed
+}
+
 final class AgentCircleView: NSView {
     var state = "idle" {
         didSet { needsDisplay = true }
@@ -473,6 +730,9 @@ final class AgentCircleView: NSView {
 }
 
 final class VisualRootView: NSView {
+    var uiLanguage: UiLanguage = .en {
+        didSet { applyLocalization() }
+    }
     private let circleView: AgentCircleView
     private let commandView: NSTextView
     private let contextField: NSTextField
@@ -494,6 +754,9 @@ final class VisualRootView: NSView {
     private let controls: NSStackView
     private var chatHistoryEnabled = true
     private var chatPanelOpen = true
+    private var currentSessionId = ""
+    private var currentUsage = ""
+    private var currentContextCount = 0
 
     init(
         circleView: AgentCircleView,
@@ -544,7 +807,7 @@ final class VisualRootView: NSView {
         addSubview(usageLabel)
 
         guideButton.bezelStyle = .helpButton
-        guideButton.toolTip = "Voice Agent guide"
+        guideButton.toolTip = localizedText("guideTooltip", language: uiLanguage)
         guideButton.target = self
         guideButton.action = #selector(showVoiceGuide)
         addSubview(guideButton)
@@ -561,12 +824,10 @@ final class VisualRootView: NSView {
         commandPanel.addSubview(contextLabel)
 
         referenceHelpButton.title = "?"
-        referenceHelpButton.helpText =
-            "한국어: 파일명, URL, 조건 같은 참고자료만 적고 Add를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.\n\n" +
-            "English: Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request."
+        referenceHelpButton.helpText = localizedText("referenceHelp", language: uiLanguage)
         commandPanel.addSubview(referenceHelpButton)
 
-        contextField.placeholderString = "reference text"
+        contextField.placeholderString = localizedText("referenceText", language: uiLanguage)
         contextField.font = NSFont.systemFont(ofSize: 13)
         commandPanel.addSubview(contextField)
 
@@ -606,6 +867,7 @@ final class VisualRootView: NSView {
         controls.distribution = .fillEqually
         controls.spacing = 10
         addSubview(controls)
+        applyLocalization()
     }
 
     required init?(coder: NSCoder) {
@@ -614,21 +876,9 @@ final class VisualRootView: NSView {
 
     @objc private func showVoiceGuide() {
         let alert = NSAlert()
-        alert.messageText = "Voice Agent Guide"
-        alert.informativeText =
-            "한국어\n" +
-            "1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n" +
-            "2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n" +
-            "3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n" +
-            "4. Reference는 다음 요청 한 번에만 붙는 참고자료입니다.\n" +
-            "5. STOP은 현재 에이전트 작업을 즉시 중단합니다.\n\n" +
-            "English\n" +
-            "1. Say a wake phrase first, such as codex or jarvis.\n" +
-            "2. Then speak naturally; the command is passed through to the agent.\n" +
-            "3. During approvals, say approve, deny, or approve for this session.\n" +
-            "4. References are attached to the next request only.\n" +
-            "5. STOP interrupts the current agent turn."
-        alert.addButton(withTitle: "OK")
+        alert.messageText = localizedText("voiceAgentGuide", language: uiLanguage)
+        alert.informativeText = localizedText("voiceGuide", language: uiLanguage)
+        alert.addButton(withTitle: localizedText("ok", language: uiLanguage))
         alert.runModal()
     }
 
@@ -663,7 +913,7 @@ final class VisualRootView: NSView {
             )
         }
         chatToggleButton.isHidden = !chatAvailable
-        chatToggleButton.title = chatPanelOpen ? "Hide" : "Q/A"
+        chatToggleButton.title = chatPanelOpen ? localizedText("hide", language: uiLanguage) : "Q/A"
         if chatVisible {
             chatToggleButton.frame = NSRect(
                 x: chatView.frame.minX + 104,
@@ -819,13 +1069,18 @@ final class VisualRootView: NSView {
     }
 
     func updateSessionId(_ sessionId: String) {
-        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-        sessionLabel.stringValue = trimmed.isEmpty ? "session: new" : "session: \(trimmed)"
+        currentSessionId = sessionId
+        sessionLabel.stringValue = sessionText(sessionId, language: uiLanguage)
     }
 
     func updateUsage(_ usage: String) {
-        let trimmed = usage.trimmingCharacters(in: .whitespacesAndNewlines)
-        usageLabel.stringValue = trimmed.isEmpty ? "" : "usage: \(trimmed)"
+        currentUsage = usage
+        usageLabel.stringValue = usageText(usage, language: uiLanguage)
+    }
+
+    func updateContextSummary(_ count: Int) {
+        currentContextCount = count
+        contextSummary.stringValue = referenceSummary(count, language: uiLanguage)
     }
 
     func updateQuestion(_ question: String) {
@@ -862,6 +1117,37 @@ final class VisualRootView: NSView {
 
     @objc private func toggleChatPanel() {
         chatPanelOpen.toggle()
+        needsLayout = true
+    }
+
+    private func applyLocalization() {
+        contextLabel.stringValue = localizedText("references", language: uiLanguage)
+        commandLabel.stringValue = localizedText("commands", language: uiLanguage)
+        guideButton.toolTip = localizedText("guideTooltip", language: uiLanguage)
+        referenceHelpButton.helpText = localizedText("referenceHelp", language: uiLanguage)
+        contextField.placeholderString = localizedText("referenceText", language: uiLanguage)
+        updateSessionId(currentSessionId)
+        updateUsage(currentUsage)
+        updateContextSummary(currentContextCount)
+        chatView.uiLanguage = uiLanguage
+        let titles = [localizedText("stop", language: uiLanguage), localizedText("settings", language: uiLanguage), localizedText("ttsStop", language: uiLanguage), localizedText("clearCmds", language: uiLanguage), localizedText("exit", language: uiLanguage)]
+        for (index, subview) in controls.arrangedSubviews.enumerated() {
+            guard index < titles.count, let button = subview as? NSButton else { continue }
+            button.title = titles[index]
+            if index == 0 {
+                button.attributedTitle = NSAttributedString(
+                    string: titles[index],
+                    attributes: [
+                        .foregroundColor: NSColor.systemRed,
+                        .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .bold)
+                    ]
+                )
+            }
+        }
+        addContextButton.title = localizedText("add", language: uiLanguage)
+        showContextButton.title = localizedText("refs", language: uiLanguage)
+        clearContextButton.title = localizedText("clearRef", language: uiLanguage)
+        chatToggleButton.title = chatPanelOpen ? localizedText("hide", language: uiLanguage) : "Q/A"
         needsLayout = true
     }
 }
@@ -921,6 +1207,12 @@ struct ChatHistoryItem {
 }
 
 final class ChatHistoryView: NSView {
+    var uiLanguage: UiLanguage = .en {
+        didSet {
+            bubbleViews.forEach { $0.uiLanguage = uiLanguage }
+            needsDisplay = true
+        }
+    }
     private var items: [ChatHistoryItem] = []
     private var bubbleViews: [ChatBubbleView] = []
     private let scrollView = NSScrollView(frame: .zero)
@@ -974,7 +1266,7 @@ final class ChatHistoryView: NSView {
             .font: NSFont.systemFont(ofSize: 15, weight: .bold),
             .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1)
         ]
-        ("Recent Q/A" as NSString).draw(
+        (localizedText("recentQa", language: uiLanguage) as NSString).draw(
             with: NSRect(x: 14, y: bounds.height - 30, width: bounds.width - 28, height: 18),
             options: [.usesLineFragmentOrigin],
             attributes: attrs
@@ -983,7 +1275,7 @@ final class ChatHistoryView: NSView {
 
     private func rebuildBubbles() {
         bubbleViews.forEach { $0.removeFromSuperview() }
-        bubbleViews = items.map { ChatBubbleView(item: $0) }
+        bubbleViews = items.map { ChatBubbleView(item: $0, uiLanguage: uiLanguage) }
         bubbleViews.forEach { contentView.addSubview($0) }
     }
 
@@ -1017,11 +1309,17 @@ final class ChatHistoryView: NSView {
 
 final class ChatBubbleView: NSView {
     let item: ChatHistoryItem
+    var uiLanguage: UiLanguage {
+        didSet {
+            kindLabel.stringValue = label(for: item.kind)
+        }
+    }
     private let kindLabel = NSTextField(labelWithString: "")
     private let textView = NSTextView(frame: .zero)
 
-    init(item: ChatHistoryItem) {
+    init(item: ChatHistoryItem, uiLanguage: UiLanguage) {
         self.item = item
+        self.uiLanguage = uiLanguage
         super.init(frame: .zero)
 
         kindLabel.stringValue = label(for: item.kind)
@@ -1095,10 +1393,10 @@ final class ChatBubbleView: NSView {
     private func label(for kind: String) -> String {
         switch kind {
         case "question": return "Q"
-        case "speech": return "speech"
-        case "command": return "command"
-        case "status": return "status"
-        case "error": return "error"
+        case "speech": return localizedText("speech", language: uiLanguage)
+        case "command": return localizedText("command", language: uiLanguage)
+        case "status": return localizedText("status", language: uiLanguage)
+        case "error": return localizedText("error", language: uiLanguage)
         default: return kind
         }
     }
@@ -1287,9 +1585,22 @@ final class FloatingHudPanel: NSPanel {
 }
 
 final class MenuBarCompanion {
+    var uiLanguage: UiLanguage = .en {
+        didSet { applyLocalization() }
+    }
     private var statusItem: NSStatusItem?
     private var hudPanel: NSPanel?
     private let popover = NSPopover()
+    private weak var popoverTitleLabel: NSTextField?
+    private weak var popoverStopButton: NSButton?
+    private weak var popoverTtsStopButton: NSButton?
+    private weak var popoverShowButton: NSButton?
+    private weak var hudAddReferenceButton: NSButton?
+    private weak var hudShowReferenceButton: NSButton?
+    private weak var hudClearReferenceButton: NSButton?
+    private weak var hudStopButton: NSButton?
+    private weak var hudTtsStopButton: NSButton?
+    private weak var hudShowButton: NSButton?
     private let stateLabel = NSTextField(labelWithString: "idle")
     private let detailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
     private let questionLabel = NSTextField(wrappingLabelWithString: "Q: none")
@@ -1308,6 +1619,11 @@ final class MenuBarCompanion {
     private var onClearContext: (() -> Void)?
     private var onShowContext: (() -> Void)?
     private var hudEnabled = true
+    private var currentState = "idle"
+    private var currentDetail = "waiting for bridge"
+    private var currentQuestion = ""
+    private var currentUsage = ""
+    private var currentContextCount = 0
 
     func install(
         onStop: @escaping () -> Void,
@@ -1325,7 +1641,7 @@ final class MenuBarCompanion {
         self.onShowContext = onShowContext
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "VA idle"
+        item.button?.title = "VA \(compactState("idle"))"
         item.button?.target = self
         item.button?.action = #selector(togglePopover(_:))
         item.button?.toolTip = "Voice Agent"
@@ -1348,36 +1664,41 @@ final class MenuBarCompanion {
     }
 
     func update(state: String, text: String) {
+        currentState = state
+        currentDetail = text
         statusItem?.button?.title = "VA \(compactState(state))"
-        stateLabel.stringValue = state
-        detailLabel.stringValue = text.isEmpty ? state : text
+        stateLabel.stringValue = stateText(state, language: uiLanguage)
+        detailLabel.stringValue = displayText(text, state: state, language: uiLanguage)
         hudCircle.state = state
-        hudCircle.statusText = state
-        hudStateLabel.stringValue = state
-        hudDetailLabel.stringValue = text.isEmpty ? state : text
+        hudCircle.statusText = stateText(state, language: uiLanguage)
+        hudStateLabel.stringValue = stateText(state, language: uiLanguage)
+        hudDetailLabel.stringValue = displayText(text, state: state, language: uiLanguage)
     }
 
     func updateQuestion(_ question: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        questionLabel.stringValue = trimmed.isEmpty ? "Q: none" : "Q: \(trimmed)"
+        currentQuestion = trimmed
+        questionLabel.stringValue = trimmed.isEmpty ? localizedText("qNone", language: uiLanguage) : "Q: \(trimmed)"
         hudQuestionLabel.stringValue = trimmed.isEmpty ? "" : "Q: \(trimmed)"
     }
 
     func updateUsage(_ usage: String) {
         let trimmed = usage.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = trimmed.isEmpty ? "" : "usage: \(trimmed)"
+        currentUsage = trimmed
+        let value = usageText(trimmed, language: uiLanguage)
         usageLabel.stringValue = value
         hudUsageLabel.stringValue = Self.formatHudUsage(trimmed)
     }
 
     func updateContext(_ entries: [String]) {
+        currentContextCount = entries.count
         if entries.isEmpty {
-            hudContextSummary.stringValue = "No references queued"
+            hudContextSummary.stringValue = referenceSummary(0, language: uiLanguage)
             hudContextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
             return
         }
 
-        hudContextSummary.stringValue = "\(entries.count) reference item(s) queued"
+        hudContextSummary.stringValue = referenceSummary(entries.count, language: uiLanguage)
         hudContextSummary.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.40, alpha: 1)
     }
 
@@ -1491,6 +1812,7 @@ final class MenuBarCompanion {
         view.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 1).cgColor
 
         let title = NSTextField(labelWithString: "Voice Agent")
+        popoverTitleLabel = title
         title.font = NSFont.systemFont(ofSize: 16, weight: .bold)
         title.textColor = NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1)
         title.frame = NSRect(x: 16, y: 166, width: 288, height: 22)
@@ -1517,16 +1839,20 @@ final class MenuBarCompanion {
         view.addSubview(usageLabel)
 
         let stop = NSButton(title: "STOP", target: self, action: #selector(stopAgent))
+        popoverStopButton = stop
         stop.frame = NSRect(x: 16, y: 14, width: 76, height: 28)
         view.addSubview(stop)
 
-        let ttsStop = NSButton(title: "TTS Stop", target: self, action: #selector(stopTts))
+        let ttsStop = NSButton(title: localizedText("ttsStop", language: uiLanguage), target: self, action: #selector(stopTts))
+        popoverTtsStopButton = ttsStop
         ttsStop.frame = NSRect(x: 102, y: 14, width: 88, height: 28)
         view.addSubview(ttsStop)
 
-        let show = NSButton(title: "Show", target: self, action: #selector(showWindow))
+        let show = NSButton(title: localizedText("show", language: uiLanguage), target: self, action: #selector(showWindow))
+        popoverShowButton = show
         show.frame = NSRect(x: 200, y: 14, width: 88, height: 28)
         view.addSubview(show)
+        applyLocalization()
 
         return view
     }
@@ -1572,7 +1898,7 @@ final class MenuBarCompanion {
         hudContextSummary.frame = NSRect(x: 14, y: 106, width: 298, height: 16)
         view.addSubview(hudContextSummary)
 
-        hudContextField.placeholderString = "reference text"
+        hudContextField.placeholderString = localizedText("referenceText", language: uiLanguage)
         hudContextField.font = NSFont.systemFont(ofSize: 11)
         hudContextField.isEditable = true
         hudContextField.isSelectable = true
@@ -1581,41 +1907,66 @@ final class MenuBarCompanion {
         hudContextField.frame = NSRect(x: 14, y: 80, width: 134, height: 22)
         view.addSubview(hudContextField)
 
-        let addReference = NSButton(title: "Add", target: self, action: #selector(addContext))
+        let addReference = NSButton(title: localizedText("add", language: uiLanguage), target: self, action: #selector(addContext))
+        hudAddReferenceButton = addReference
         addReference.frame = NSRect(x: 156, y: 78, width: 48, height: 26)
         view.addSubview(addReference)
 
-        let showReference = NSButton(title: "Refs", target: self, action: #selector(showContext))
+        let showReference = NSButton(title: localizedText("refs", language: uiLanguage), target: self, action: #selector(showContext))
+        hudShowReferenceButton = showReference
         showReference.frame = NSRect(x: 210, y: 78, width: 48, height: 26)
         view.addSubview(showReference)
 
-        let clearReference = NSButton(title: "Clear", target: self, action: #selector(clearContext))
+        let clearReference = NSButton(title: localizedText("clear", language: uiLanguage), target: self, action: #selector(clearContext))
+        hudClearReferenceButton = clearReference
         clearReference.frame = NSRect(x: 264, y: 78, width: 48, height: 26)
         view.addSubview(clearReference)
 
-        let stop = NSButton(title: "STOP", target: self, action: #selector(stopAgent))
+        let stop = NSButton(title: localizedText("stop", language: uiLanguage), target: self, action: #selector(stopAgent))
+        hudStopButton = stop
         stop.frame = NSRect(x: 14, y: 48, width: 72, height: 26)
         view.addSubview(stop)
 
-        let ttsStop = NSButton(title: "TTS", target: self, action: #selector(stopTts))
+        let ttsStop = NSButton(title: localizedText("tts", language: uiLanguage), target: self, action: #selector(stopTts))
+        hudTtsStopButton = ttsStop
         ttsStop.frame = NSRect(x: 94, y: 48, width: 62, height: 26)
         view.addSubview(ttsStop)
 
-        let show = NSButton(title: "Show", target: self, action: #selector(showWindow))
+        let show = NSButton(title: localizedText("show", language: uiLanguage), target: self, action: #selector(showWindow))
+        hudShowButton = show
         show.frame = NSRect(x: 164, y: 48, width: 68, height: 26)
         view.addSubview(show)
+        applyLocalization()
 
         return view
     }
 
     private func compactState(_ state: String) -> String {
         switch state {
-        case "approval_pending": return "approval"
+        case "approval_pending": return localizedText("approvalCompact", language: uiLanguage)
         case "stt_processing": return "stt"
-        case "wake_rejected": return "rejected"
-        case "wake_matched": return "wake"
+        case "wake_rejected": return localizedText("rejectedCompact", language: uiLanguage)
+        case "wake_matched": return localizedText("wakeCompact", language: uiLanguage)
         default: return state
         }
+    }
+
+    private func applyLocalization() {
+        popoverTitleLabel?.stringValue = "Voice Agent"
+        popoverStopButton?.title = localizedText("stop", language: uiLanguage)
+        popoverTtsStopButton?.title = localizedText("ttsStop", language: uiLanguage)
+        popoverShowButton?.title = localizedText("show", language: uiLanguage)
+        hudAddReferenceButton?.title = localizedText("add", language: uiLanguage)
+        hudShowReferenceButton?.title = localizedText("refs", language: uiLanguage)
+        hudClearReferenceButton?.title = localizedText("clear", language: uiLanguage)
+        hudStopButton?.title = localizedText("stop", language: uiLanguage)
+        hudTtsStopButton?.title = localizedText("tts", language: uiLanguage)
+        hudShowButton?.title = localizedText("show", language: uiLanguage)
+        hudContextField.placeholderString = localizedText("referenceText", language: uiLanguage)
+        update(state: currentState, text: currentDetail)
+        updateQuestion(currentQuestion)
+        updateUsage(currentUsage)
+        updateContext(Array(repeating: "", count: currentContextCount))
     }
 
     private static func formatHudUsage(_ usage: String) -> String {
@@ -1681,6 +2032,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var approvalDenyPhrases: [String] = []
     private var approvalSessionPhrases: [String] = []
     private var codexThreadId = ""
+    private var uiLanguage: UiLanguage = .en
+    private var uiLanguageInitialized = false
 
     init(bridgeUrl: String) {
         self.bridgeUrl = bridgeUrl
@@ -1708,6 +2061,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             onClearContext: { [weak self] in self?.clearContext() },
             onShowContext: { [weak self] in self?.showContext() }
         )
+        menuBarCompanion.uiLanguage = uiLanguage
         connect()
     }
 
@@ -1719,7 +2073,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         mainMenu.addItem(editItem)
 
         let appMenu = NSMenu()
-        appMenu.addItem(NSMenuItem(title: "Quit Voice Agent", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: localizedText("quitVoiceAgent", language: uiLanguage), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appItem.submenu = appMenu
 
         let editMenu = NSMenu(title: "Edit")
@@ -1736,10 +2090,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private func buildContentView() -> NSView {
         let controls = NSStackView()
         controls.addArrangedSubview(emergencyButton())
-        controls.addArrangedSubview(button("Settings", action: #selector(showSettings)))
-        controls.addArrangedSubview(button("TTS Stop", action: #selector(stopTts)))
-        controls.addArrangedSubview(button("Clear Cmds", action: #selector(clearCommands)))
-        controls.addArrangedSubview(button("Exit", action: #selector(exitVisual)))
+        controls.addArrangedSubview(button(localizedText("settings", language: uiLanguage), action: #selector(showSettings)))
+        controls.addArrangedSubview(button(localizedText("ttsStop", language: uiLanguage), action: #selector(stopTts)))
+        controls.addArrangedSubview(button(localizedText("clearCmds", language: uiLanguage), action: #selector(clearCommands)))
+        controls.addArrangedSubview(button(localizedText("exit", language: uiLanguage), action: #selector(exitVisual)))
 
         contextField.target = self
         contextField.action = #selector(addContext)
@@ -1749,11 +2103,12 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             commandView: commandView,
             contextField: contextField,
             contextSummary: contextSummary,
-            addContextButton: button("Add", action: #selector(addContext)),
-            clearContextButton: button("Clear Ref", action: #selector(clearContext)),
-            showContextButton: button("Refs", action: #selector(showContext)),
+            addContextButton: button(localizedText("add", language: uiLanguage), action: #selector(addContext)),
+            clearContextButton: button(localizedText("clearRef", language: uiLanguage), action: #selector(clearContext)),
+            showContextButton: button(localizedText("refs", language: uiLanguage), action: #selector(showContext)),
             controls: controls
         )
+        rootView.uiLanguage = uiLanguage
         self.rootView = rootView
         rootView.updateSessionId(codexThreadId)
         rootView.updateChatHistory(enabled: chatHistoryEnabled)
@@ -1772,9 +2127,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     }
 
     private func emergencyButton() -> NSButton {
-        let button = button("STOP", action: #selector(emergencyStop))
+        let button = button(localizedText("stop", language: uiLanguage), action: #selector(emergencyStop))
         button.attributedTitle = NSAttributedString(
-            string: "STOP",
+            string: localizedText("stop", language: uiLanguage),
             attributes: [
                 .foregroundColor: NSColor.systemRed,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .bold)
@@ -1785,17 +2140,17 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func connect() {
         guard let url = URL(string: bridgeUrl), !bridgeUrl.isEmpty else {
-            circleView.statusText = "waiting for bridge"
+            circleView.statusText = localizedText("waitingForBridge", language: uiLanguage)
             menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             return
         }
 
-        circleView.statusText = "connecting"
+        circleView.statusText = localizedText("connecting", language: uiLanguage)
         menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
         let task = URLSession.shared.webSocketTask(with: url)
         webSocket = task
         task.resume()
-        circleView.statusText = "connected"
+        circleView.statusText = localizedText("connected", language: uiLanguage)
         menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
         receiveNext()
     }
@@ -1813,8 +2168,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             case .failure:
                 DispatchQueue.main.async {
                     self.circleView.state = "error"
-                    self.circleView.statusText = "bridge disconnected"
-                    self.menuBarCompanion.update(state: "error", text: "bridge disconnected")
+                    self.circleView.statusText = localizedText("bridgeDisconnected", language: self.uiLanguage)
+                    self.menuBarCompanion.update(state: "error", text: self.circleView.statusText)
                     self.thinkingPulseSound.setActive(false)
                 }
             }
@@ -1832,15 +2187,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         switch type {
         case "state":
             circleView.state = event["state"] as? String ?? "idle"
-            circleView.statusText = event["text"] as? String ?? circleView.state
+            circleView.statusText = displayText(event["text"] as? String ?? "", state: circleView.state, language: uiLanguage)
             menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             if circleView.state == "wake_rejected" {
                 circleView.glow = 1
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) { [weak self] in
                     guard let self, self.circleView.state == "wake_rejected" else { return }
                     self.circleView.state = "idle"
-                    self.circleView.statusText = "idle"
-                    self.menuBarCompanion.update(state: "idle", text: "idle")
+                    self.circleView.statusText = stateText("idle", language: self.uiLanguage)
+                    self.menuBarCompanion.update(state: "idle", text: self.circleView.statusText)
                     self.circleView.glow = 0
                 }
             }
@@ -1850,7 +2205,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             menuBarCompanion.updateVolume(rms: circleView.rms, peak: circleView.peak)
         case "wake":
             circleView.state = "wake_matched"
-            circleView.statusText = "wake: \(event["phrase"] as? String ?? "")"
+            circleView.statusText = localizedText("wakePrefix", language: uiLanguage) + (event["phrase"] as? String ?? "")
             menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             circleView.glow = 1
             NSSound.beep()
@@ -1866,24 +2221,24 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             menuBarCompanion.updateMessage(command)
         case "speech":
             circleView.state = "speaking"
-            let speech = event["text"] as? String ?? "speaking"
+            let speech = event["text"] as? String ?? stateText("speaking", language: uiLanguage)
             circleView.statusText = speech
             rootView?.pushChat(role: "assistant", kind: "speech", text: speech)
             menuBarCompanion.update(state: "speaking", text: speech)
         case "status":
-            let status = event["text"] as? String ?? "status"
+            let status = event["text"] as? String ?? localizedText("status", language: uiLanguage)
             circleView.statusText = status
             rootView?.pushChat(role: "assistant", kind: "status", text: status)
             menuBarCompanion.update(state: circleView.state, text: status)
         case "error":
             circleView.state = "error"
-            let error = event["text"] as? String ?? "error"
+            let error = event["text"] as? String ?? localizedText("error", language: uiLanguage)
             circleView.statusText = error
             rootView?.pushChat(role: "assistant", kind: "error", text: error)
             menuBarCompanion.update(state: "error", text: error)
         case "approval":
             circleView.state = "approval_pending"
-            let approval = event["text"] as? String ?? "approval pending"
+            let approval = event["text"] as? String ?? stateText("approval_pending", language: uiLanguage)
             circleView.statusText = approval
             rootView?.pushChat(role: "assistant", kind: "status", text: approval)
             menuBarCompanion.update(state: "approval_pending", text: approval)
@@ -1901,6 +2256,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 updateTtsSettings(tts)
             }
             if let visual = event["visual"] as? [String: Any] {
+                initializeUiLanguageIfNeeded(tts: event["tts"] as? [String: Any], visual: visual)
                 updateVisualSettings(visual)
             }
             if let phrases = event["wakePhrases"] as? [String] {
@@ -1947,10 +2303,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func showContextList(_ entries: [String]) {
         let alert = NSAlert()
-        alert.messageText = "Queued References"
+        alert.messageText = localizedText("queuedReferences", language: uiLanguage)
         alert.informativeText = entries.isEmpty
-            ? "No references queued."
-            : "References queued for the next routed request."
+            ? localizedText("noReferencesQueued", language: uiLanguage) + "."
+            : localizedText("referencesQueuedNext", language: uiLanguage)
 
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
         let textView = NSTextView(frame: scrollView.bounds)
@@ -1961,7 +2317,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         textView.textColor = .white
         textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         textView.textContainerInset = NSSize(width: 8, height: 8)
-        textView.string = formatContextList(entries)
+        textView.string = formatContextList(entries, language: uiLanguage)
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: scrollView.bounds.width, height: CGFloat.greatestFiniteMagnitude)
@@ -1971,7 +2327,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
         alert.accessoryView = scrollView
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: localizedText("ok", language: uiLanguage))
 
         if let mainWindow {
             alert.beginSheetModal(for: mainWindow)
@@ -2063,14 +2419,16 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private func updateContext(_ entries: [String]) {
         contextEntries = Array(entries.prefix(8))
         if contextEntries.isEmpty {
-            contextSummary.stringValue = "No references queued"
+            contextSummary.stringValue = referenceSummary(0, language: uiLanguage)
             contextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
+            rootView?.updateContextSummary(0)
             menuBarCompanion.updateContext(contextEntries)
             return
         }
 
-        contextSummary.stringValue = "\(contextEntries.count) reference item(s) queued"
+        contextSummary.stringValue = referenceSummary(contextEntries.count, language: uiLanguage)
         contextSummary.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.40, alpha: 1)
+        rootView?.updateContextSummary(contextEntries.count)
         menuBarCompanion.updateContext(contextEntries)
     }
 
@@ -2082,6 +2440,29 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         ttsPitch = settings["pitch"] as? Double ?? ttsPitch
         ttsVolume = settings["volume"] as? Double ?? ttsVolume
         syncSettingsControls()
+    }
+
+    private func initializeUiLanguageIfNeeded(tts: [String: Any]?, visual: [String: Any]?) {
+        guard !uiLanguageInitialized else { return }
+        let language = (visual?["responseLanguage"] as? String) ?? (tts?["language"] as? String) ?? "auto"
+        uiLanguage = resolvedUiLanguage(from: language)
+        uiLanguageInitialized = true
+        applyUiLanguage()
+    }
+
+    private func applyUiLanguage() {
+        mainWindow?.title = "Voice Agent"
+        rootView?.uiLanguage = uiLanguage
+        menuBarCompanion.uiLanguage = uiLanguage
+        installMainMenu()
+        settingsWindow?.close()
+        settingsWindow = nil
+        settingsChatHistoryCheckbox.title = localizedText("showRecentQa", language: uiLanguage)
+        settingsHudCheckbox.title = localizedText("showFloatingHud", language: uiLanguage)
+        settingsWakeRejectedWarningCheckbox.title = localizedText("speakWakeWarning", language: uiLanguage)
+        settingsNewThreadCheckbox.title = localizedText("alwaysStartNewThread", language: uiLanguage)
+        circleView.statusText = displayText(circleView.statusText, state: circleView.state, language: uiLanguage)
+        menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
     }
 
     private func updateVisualSettings(_ settings: [String: Any]) {
@@ -2146,7 +2527,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             backing: .buffered,
             defer: false
         )
-        window.title = "Settings"
+        window.title = localizedText("settings", language: uiLanguage)
         window.isReleasedWhenClosed = false
 
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 820))
@@ -2158,65 +2539,65 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
         addSettingsPhraseArea(
             view,
-            label: "Allow",
+            label: localizedText("allow", language: uiLanguage),
             textView: settingsApprovalOncePhrasesView,
             y: 738,
             placeholderHeight: 46,
-            help: "한국어: 권한 요청에서 한 번만 허용으로 처리할 문구입니다. 줄마다 하나씩 입력합니다.\n\nEnglish: Phrases that approve once during permission prompts. One phrase per line."
+            help: localizedText("approvalAllowHelp", language: uiLanguage)
         )
         addSettingsPhraseArea(
             view,
-            label: "Deny",
+            label: localizedText("deny", language: uiLanguage),
             textView: settingsApprovalDenyPhrasesView,
             y: 676,
             placeholderHeight: 46,
-            help: "한국어: 권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 안전하게 unknown으로 처리될 수 있습니다.\n\nEnglish: Phrases that deny permission prompts. Overlaps with allow phrases may be treated as unknown."
+            help: localizedText("approvalDenyHelp", language: uiLanguage)
         )
         addSettingsPhraseArea(
             view,
-            label: "Session Allow",
+            label: localizedText("sessionAllow", language: uiLanguage),
             textView: settingsApprovalSessionPhrasesView,
             y: 614,
             placeholderHeight: 46,
-            help: "한국어: 현재 세션 동안 허용으로 처리할 문구입니다.\n\nEnglish: Phrases that approve for the current session."
+            help: localizedText("sessionAllowHelp", language: uiLanguage)
         )
 
-        addSettingsRow(view, label: "Language", control: settingsLanguagePopup, y: 570)
-        addSettingsHelp(view, y: 570, text: "한국어: TTS와 응답 언어를 자동, 한국어, 영어 중 선택합니다.\n\nEnglish: Choose auto, Korean, or English for TTS and response language.")
-        addSettingsRow(view, label: "Gender", control: settingsGenderPopup, y: 530)
-        addSettingsHelp(view, y: 530, text: "한국어: 가능한 경우 남성/여성 음성 선호도를 적용합니다.\n\nEnglish: Sets preferred male or female voice when available.")
-        addSettingsRow(view, label: "Voice", control: settingsVoiceField, y: 490)
-        addSettingsHelp(view, y: 490, text: "한국어: macOS에 설치된 특정 음성 이름을 직접 지정합니다.\n\nEnglish: Overrides the voice with an installed macOS voice name.")
-        addSettingsRow(view, label: "Rate", control: settingsRateField, y: 450)
-        addSettingsHelp(view, y: 450, text: "한국어: TTS 말하기 속도입니다. 높을수록 빠르게 읽습니다.\n\nEnglish: TTS speaking rate. Higher values speak faster.")
-        addSettingsRow(view, label: "Pitch", control: settingsPitchField, y: 410)
-        addSettingsHelp(view, y: 410, text: "한국어: TTS 음높이입니다. 기본값은 1.00입니다.\n\nEnglish: TTS voice pitch. The default is 1.00.")
-        addSettingsRow(view, label: "Volume", control: settingsVolumeField, y: 370)
-        addSettingsHelp(view, y: 370, text: "한국어: TTS 출력 볼륨입니다.\n\nEnglish: TTS output volume.")
-        addSettingsRow(view, label: "Thinking Fx", control: settingsThinkingVolumeField, y: 330)
-        addSettingsHelp(view, y: 330, text: "한국어: 작업 중 반복 효과음 볼륨입니다. 0이면 꺼집니다.\n\nEnglish: Thinking-loop sound volume. Set to 0 to mute it.")
-        addSettingsRow(view, label: "Max Speech", control: settingsMaxUtteranceField, y: 290)
-        addSettingsHelp(view, y: 290, text: "한국어: 한 번에 받을 always-on 발화 최대 길이입니다. 5초에서 55초 사이입니다.\n\nEnglish: Maximum always-on utterance length, from 5 to 55 seconds.")
-        addSettingsRow(view, label: "Codex Thread", control: settingsCodexThreadField, y: 250)
-        addSettingsHelp(view, y: 250, text: "한국어: 다음 재시작 때 이어갈 Codex thread id입니다.\n\nEnglish: Codex thread id to resume on next restart.")
+        addSettingsRow(view, label: localizedText("language", language: uiLanguage), control: settingsLanguagePopup, y: 570)
+        addSettingsHelp(view, y: 570, text: localizedText("languageHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gender", language: uiLanguage), control: settingsGenderPopup, y: 530)
+        addSettingsHelp(view, y: 530, text: localizedText("genderHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("voice", language: uiLanguage), control: settingsVoiceField, y: 490)
+        addSettingsHelp(view, y: 490, text: localizedText("voiceHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("rate", language: uiLanguage), control: settingsRateField, y: 450)
+        addSettingsHelp(view, y: 450, text: localizedText("rateHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("pitch", language: uiLanguage), control: settingsPitchField, y: 410)
+        addSettingsHelp(view, y: 410, text: localizedText("pitchHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("volume", language: uiLanguage), control: settingsVolumeField, y: 370)
+        addSettingsHelp(view, y: 370, text: localizedText("volumeHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("thinkingFx", language: uiLanguage), control: settingsThinkingVolumeField, y: 330)
+        addSettingsHelp(view, y: 330, text: localizedText("thinkingHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("maxSpeech", language: uiLanguage), control: settingsMaxUtteranceField, y: 290)
+        addSettingsHelp(view, y: 290, text: localizedText("maxSpeechHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("codexThread", language: uiLanguage), control: settingsCodexThreadField, y: 250)
+        addSettingsHelp(view, y: 250, text: localizedText("threadHelp", language: uiLanguage))
         settingsNewThreadCheckbox.frame = NSRect(x: 132, y: 220, width: 216, height: 22)
         view.addSubview(settingsNewThreadCheckbox)
-        addSettingsHelp(view, y: 218, text: "한국어: 체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다.\n\nEnglish: Starts a new Codex thread on restart when checked; resumes the last thread when unchecked.")
+        addSettingsHelp(view, y: 218, text: localizedText("newThreadHelp", language: uiLanguage))
         settingsChatHistoryCheckbox.frame = NSRect(x: 132, y: 198, width: 216, height: 22)
         view.addSubview(settingsChatHistoryCheckbox)
-        addSettingsHelp(view, y: 196, text: "한국어: 최근 질문과 답변 패널 표시 여부입니다.\n\nEnglish: Shows or hides the Recent Q/A panel.")
+        addSettingsHelp(view, y: 196, text: localizedText("chatHelp", language: uiLanguage))
         settingsHudCheckbox.frame = NSRect(x: 132, y: 176, width: 216, height: 22)
         view.addSubview(settingsHudCheckbox)
-        addSettingsHelp(view, y: 174, text: "한국어: 다른 앱 위에 뜨는 floating HUD 표시 여부입니다.\n\nEnglish: Shows or hides the floating HUD above other apps.")
+        addSettingsHelp(view, y: 174, text: localizedText("hudHelp", language: uiLanguage))
         settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 154, width: 216, height: 22)
         view.addSubview(settingsWakeRejectedWarningCheckbox)
-        addSettingsHelp(view, y: 152, text: "한국어: wake 명령어 불일치 안내를 TTS로 읽을지 정합니다.\n\nEnglish: Controls whether wake mismatch warnings are spoken aloud.")
+        addSettingsHelp(view, y: 152, text: localizedText("wakeWarningHelp", language: uiLanguage))
 
-        let wakeLabel = NSTextField(labelWithString: "Wake")
+        let wakeLabel = NSTextField(labelWithString: localizedText("wake", language: uiLanguage))
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
         wakeLabel.frame = NSRect(x: 26, y: 124, width: 96, height: 20)
         view.addSubview(wakeLabel)
-        addSettingsHelp(view, y: 120, text: "한국어: 호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.\n\nEnglish: Wake phrase list. One phrase per line replaces the current list.")
+        addSettingsHelp(view, y: 120, text: localizedText("wakePhrasesHelp", language: uiLanguage))
 
         let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 64, width: 216, height: 72))
         wakeScroll.borderType = .bezelBorder
@@ -2229,11 +2610,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         wakeScroll.documentView = settingsWakePhrasesView
         view.addSubview(wakeScroll)
 
-        let reset = button("Restore Defaults", action: #selector(resetSettings))
+        let reset = button(localizedText("restoreDefaults", language: uiLanguage), action: #selector(resetSettings))
         reset.frame = NSRect(x: 26, y: 18, width: 150, height: 28)
         view.addSubview(reset)
 
-        let apply = button("Apply", action: #selector(applySettings))
+        let apply = button(localizedText("apply", language: uiLanguage), action: #selector(applySettings))
         apply.frame = NSRect(x: 236, y: 18, width: 112, height: 28)
         view.addSubview(apply)
 
@@ -2421,9 +2802,9 @@ private func normalizedPhrases(_ values: [String]) -> [String] {
     return result
 }
 
-private func formatContextList(_ entries: [String]) -> String {
+private func formatContextList(_ entries: [String], language: UiLanguage = .en) -> String {
     if entries.isEmpty {
-        return "No references queued."
+        return localizedText("noReferencesQueued", language: language) + "."
     }
     return entries.enumerated().map { index, entry in
         "\(index + 1). \(entry)"

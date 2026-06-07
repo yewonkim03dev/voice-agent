@@ -356,6 +356,11 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /anchors\.verticalCenterOffset: root\.visualCenterYOffset/u);
   assert.match(qml, /id: sessionBadge/u);
   assert.match(qml, /session: /u);
+  assert.match(qml, /property string uiLanguage/u);
+  assert.match(qml, /property bool uiLanguageInitialized/u);
+  assert.match(qml, /function uiText\(key\)/u);
+  assert.match(qml, /function initializeUiLanguage\(event\)/u);
+  assert.match(qml, /root\.initializeUiLanguage\(event\)/u);
   assert.match(qml, /Text\.ElideMiddle/u);
   assert.match(qml, /anchors\.bottom: controls\.top/u);
   assert.match(qml, /id: statusBackdrop/u);
@@ -407,7 +412,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Speak wake warning/u);
   assert.match(qml, /Max speech/u);
   assert.match(qml, /maxUtteranceSeconds/u);
-  assert.match(qml, /ToolTip\.text: "한국어:/u);
+  assert.match(qml, /ToolTip\.text: root\.uiText\("languageHelp"\)/u);
+  assert.match(qml, /Visual UI language applies after restart/u);
   assert.match(qml, /Maximum utterance length/u);
   assert.match(qml, /Layout\.preferredWidth: 22/u);
   assert.match(qml, /Layout\.preferredHeight: 22/u);
@@ -422,7 +428,7 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /property string usageText/u);
   assert.match(qml, /event\.type === "usage"/u);
   assert.match(qml, /id: usageBadge/u);
-  assert.match(qml, /"usage: " \+ root\.usageText/u);
+  assert.match(qml, /root\.uiText\("usagePrefix"\) \+ root\.usageText/u);
   assert.match(qml, /onHoveredChanged/u);
   assert.match(qml, /Thinking sound/u);
   assert.match(qml, /thinkingVolumeSlider/u);
@@ -446,9 +452,9 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /show_context/u);
   assert.match(qml, /context_list/u);
   assert.match(qml, /referenceListPopup/u);
-  assert.match(qml, /text: "Refs"/u);
+  assert.match(qml, /text: root\.uiText\("refs"\)/u);
   assert.match(qml, /contextEntries/u);
-  assert.match(qml, /placeholderText: "reference text"/u);
+  assert.match(qml, /placeholderText: root\.uiText\("referenceText"\)/u);
   assert.match(qml, /Visual에서는 \/add를 붙이지 않아도/u);
   assert.doesNotMatch(qml, /WebView|WebEngine|Chromium|Electron|Tauri/iu);
 });
@@ -457,6 +463,12 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   const swift = await readFile("visual/macos/VoiceAgentVisual.swift", "utf8");
 
   assert.match(swift, /import AppKit/u);
+  assert.match(swift, /enum UiLanguage: Equatable/u);
+  assert.match(swift, /private func localizedText\(_ key: String, language: UiLanguage\)/u);
+  assert.match(swift, /private func displayText\(_ rawText: String, state: String, language: UiLanguage\)/u);
+  assert.match(swift, /initializeUiLanguageIfNeeded\(tts: event\["tts"\] as\? \[String: Any\], visual: visual\)/u);
+  assert.match(swift, /rootView\?\.uiLanguage = uiLanguage/u);
+  assert.match(swift, /menuBarCompanion\.uiLanguage = uiLanguage/u);
   assert.match(swift, /URLSession\.shared\.webSocketTask/u);
   assert.match(swift, /drawWaveRing/u);
   assert.match(swift, /drawOuterTicks/u);
@@ -552,7 +564,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /compact: true/u);
   assert.match(swift, /bezelStyle = \.circular/u);
   assert.match(swift, /width: 16, height: 16/u);
-  assert.match(swift, /한국어: 한 번에 받을 always-on 발화 최대 길이입니다/u);
+  assert.match(swift, /"maxSpeechHelp": "한 번에 받을 always-on 발화 최대 길이입니다/u);
   assert.match(swift, /settingsHudCheckbox/u);
   assert.match(swift, /Show floating HUD/u);
   assert.match(swift, /Thinking Fx/u);
@@ -565,7 +577,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /override var canBecomeKey: Bool \{ true \}/u);
   assert.match(swift, /final class MenuBarCompanion/u);
   assert.match(swift, /NSStatusBar\.system\.statusItem/u);
-  assert.match(swift, /item\.button\?\.title = "VA idle"/u);
+  assert.match(swift, /compactState\("idle"\)/u);
   assert.match(swift, /private var hudPanel: NSPanel\?/u);
   assert.match(swift, /private let hudUsageLabel = NSTextField/u);
   assert.match(swift, /menuBarCompanion\.updateUsage\(usage\)/u);
@@ -587,7 +599,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /onClearContext: @escaping \(\) -> Void/u);
   assert.match(swift, /func updateVolume\(rms: CGFloat, peak: CGFloat\)/u);
   assert.match(swift, /func update\(state: String, text: String\)/u);
-  assert.match(swift, /hudCircle\.statusText = state/u);
+  assert.match(swift, /hudCircle\.statusText = stateText\(state, language: uiLanguage\)/u);
   assert.doesNotMatch(swift, /hudCircle\.statusText = text\.isEmpty \? state : text/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
   assert.match(swift, /func updateContext\(_ entries: \[String\]\)/u);
@@ -621,8 +633,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /showContextList/u);
   assert.match(swift, /showContextButton/u);
   assert.match(swift, /Queued References/u);
-  assert.match(swift, /placeholderString = "reference text"/u);
-  assert.match(swift, /hudContextField\.placeholderString = "reference text"/u);
+  assert.match(swift, /placeholderString = localizedText\("referenceText", language: uiLanguage\)/u);
+  assert.match(swift, /hudContextField\.placeholderString = localizedText\("referenceText", language: uiLanguage\)/u);
   assert.match(swift, /hudContextField\.isEditable = true/u);
   assert.match(swift, /hudContextField\.isSelectable = true/u);
   assert.match(swift, /hudContextField\.action = #selector\(addContext\)/u);
