@@ -1087,7 +1087,7 @@ test("always-on voice runner reapplies camera watcher config after gesture setti
   assert.equal(camera.startConfigs.at(-1)?.bindings.stop, "fist");
 });
 
-test("always-on voice runner turns camera watcher off and shows running status while agent runs by default", async () => {
+test("always-on voice runner keeps camera watcher active and shows running status while agent runs by default", async () => {
   const camera = new FakeCameraGestureWatcher();
   const visualBridge = new FakeVisualBridge();
   const { backend, runner, audioInput } = createAlwaysOnRunner(
@@ -1114,12 +1114,16 @@ test("always-on voice runner turns camera watcher off and shows running status w
 
   const cameraEvents = visualBridge.events.filter((event) => event.type === "camera");
   const lastCameraEvent = cameraEvents.at(-1);
+  const modesBeforeStop = [...camera.modes];
   await runner.stop();
 
   assert.equal(backend.prompts.length, 1);
-  assert.equal(camera.modes.includes("off"), true);
+  const runningIndex = modesBeforeStop.findIndex((mode) => mode === "running");
+  const offAfterRunningIndex = modesBeforeStop.findIndex((mode, index) => index > runningIndex && mode === "off");
+  assert.equal(runningIndex >= 0, true);
+  assert.equal(offAfterRunningIndex, -1);
   assert.equal(lastCameraEvent?.mode, "running");
-  assert.equal(lastCameraEvent?.enabled, false);
+  assert.equal(lastCameraEvent?.enabled, true);
 });
 
 test("always-on voice runner restores idle camera mode after stopping active work", async () => {
@@ -1150,10 +1154,10 @@ test("always-on voice runner restores idle camera mode after stopping active wor
 
   assert.equal(backend.prompts.length, 1);
   assert.deepEqual(backend.interrupts, ["manual stop"]);
-  const offIndex = camera.modes.findIndex((mode) => mode === "off");
-  const restoredIdleIndex = camera.modes.findIndex((mode, index) => index > offIndex && mode === "idle");
-  assert.equal(offIndex >= 0, true);
-  assert.equal(restoredIdleIndex > offIndex, true);
+  const runningIndex = camera.modes.findIndex((mode) => mode === "running");
+  const restoredIdleIndex = camera.modes.findIndex((mode, index) => index > runningIndex && mode === "idle");
+  assert.equal(runningIndex >= 0, true);
+  assert.equal(restoredIdleIndex > runningIndex, true);
 });
 
 test("always-on voice runner routes camera approval gestures through approval flow", async () => {

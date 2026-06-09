@@ -52,7 +52,16 @@ export class LandmarkCameraGestureWatcher implements CameraGestureWatcher {
       return;
     }
 
-    if (this.provider && this.mode === mode) return;
+    if (this.provider) {
+      if (this.mode !== mode) {
+        this.mode = mode;
+        this.emitStatus({
+          enabled: true,
+          mode
+        });
+      }
+      return;
+    }
     this.mode = mode;
     void this.startProvider(mode);
   }
@@ -89,12 +98,15 @@ export class LandmarkCameraGestureWatcher implements CameraGestureWatcher {
         height: config.resolution.height,
         mode,
         onFrame: (frame) => {
-          if (this.generation !== generation || this.mode !== mode) return;
+          if (this.generation !== generation || this.mode === "off") return;
           this.handleFrame(frame);
         },
         onStatus: (status) => {
           if (this.generation !== generation) return;
-          this.emitStatus(status);
+          this.emitStatus({
+            ...status,
+            mode: this.mode !== "off" && status.mode !== "off" ? this.mode : status.mode
+          });
         },
         onError: (error) => {
           if (this.generation !== generation) return;

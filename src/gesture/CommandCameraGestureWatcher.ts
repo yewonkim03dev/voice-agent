@@ -97,7 +97,15 @@ export class CommandCameraGestureWatcher implements CameraGestureWatcher {
       return;
     }
 
-    if (this.child && previousMode === mode) return;
+    if (this.child) {
+      if (previousMode !== mode) {
+        this.emitStatus({
+          enabled: true,
+          mode
+        });
+      }
+      return;
+    }
     this.startChild(mode);
   }
 
@@ -141,7 +149,7 @@ export class CommandCameraGestureWatcher implements CameraGestureWatcher {
       if (!text) return;
       this.emitStatus({
         enabled: true,
-        mode,
+        mode: this.mode === "off" ? mode : this.mode,
         text
       });
     });
@@ -190,7 +198,10 @@ export class CommandCameraGestureWatcher implements CameraGestureWatcher {
           ...(event.confidence !== undefined ? { confidence: event.confidence } : {})
         });
       } else {
-        this.emitStatus(event);
+        this.emitStatus({
+          ...event,
+          mode: this.mode !== "off" && event.mode !== "off" ? this.mode : event.mode
+        });
       }
     }
   }

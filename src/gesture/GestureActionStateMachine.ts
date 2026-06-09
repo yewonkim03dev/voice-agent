@@ -55,7 +55,7 @@ export class GestureActionStateMachine {
       case "pending_approval":
         return "listening";
       case "running":
-        return this.config.runningMode === "emergency_only" ? "emergency" : "off";
+        return this.config.runningMode === "emergency_only" ? "emergency" : "running";
     }
   }
 

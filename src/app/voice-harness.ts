@@ -992,7 +992,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.gestureStateMachine.setState(state);
     const mode = this.gestureStateMachine.getCameraMode();
     this.cameraGestureWatcher.setMode(mode);
-    this.sendVisualCameraStatus(state === "running" && mode === "off" ? "running" : mode);
+    this.sendVisualCameraStatus(mode);
   }
 
   private currentGestureRuntimeState(): GestureRuntimeState {
@@ -1006,7 +1006,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
       type: "camera",
-      enabled: this.gestureWake.enabled && mode !== "off" && mode !== "running",
+      enabled: this.gestureWake.enabled && mode !== "off",
       mode,
       wakeGesture: this.gestureWake.bindings.wake,
       stopGesture: this.gestureWake.bindings.stop,

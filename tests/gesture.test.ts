@@ -198,6 +198,35 @@ test("landmark camera watcher maps provider frames through the classifier", asyn
   assert.equal(provider.stopCount >= 1, true);
 });
 
+test("landmark camera watcher keeps provider running across active camera modes", async () => {
+  const provider = new FakeHandLandmarkProvider();
+  const watcher = new LandmarkCameraGestureWatcher({
+    createProvider: () => provider
+  });
+  const gestures: string[] = [];
+  const statuses: string[] = [];
+  watcher.onGesture((observation) => gestures.push(observation.gesture));
+  watcher.onStatus((status) => statuses.push(status.mode));
+
+  await watcher.start({
+    ...defaultGestureWakeConfig,
+    enabled: true
+  });
+  watcher.setMode("idle");
+  await Promise.resolve();
+  watcher.setMode("running");
+  await Promise.resolve();
+  provider.emitFrame({
+    timestamp: 1000,
+    landmarks: makeOpenPalmLandmarks()
+  });
+  await watcher.stop();
+
+  assert.deepEqual(gestures, ["open_palm"]);
+  assert.equal(provider.starts.length, 1);
+  assert.equal(statuses.includes("running"), true);
+});
+
 test("gesture runtime enablement requires --cam", () => {
   assert.equal(gestureWakeConfigForRuntime({ ...defaultGestureWakeConfig, enabled: true }, false).enabled, false);
   assert.equal(gestureWakeConfigForRuntime({ ...defaultGestureWakeConfig, enabled: false }, true).enabled, true);
@@ -258,7 +287,7 @@ test("gesture state machine maps stop and approval by runtime state", () => {
   assert.equal(machine.observe({ gesture: "fist", timestamp: 4500 })?.action, "approval.deny");
 });
 
-test("gesture state machine keeps camera off while running unless emergency mode is enabled", () => {
+test("gesture state machine keeps camera active while running unless emergency mode is enabled", () => {
   const off = new GestureActionStateMachine({
     config: {
       ...defaultGestureWakeConfig,
@@ -267,7 +296,7 @@ test("gesture state machine keeps camera off while running unless emergency mode
     }
   });
   off.setState("running");
-  assert.equal(off.getCameraMode(), "off");
+  assert.equal(off.getCameraMode(), "running");
 
   const emergency = new GestureActionStateMachine({
     config: {
