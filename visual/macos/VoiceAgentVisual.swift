@@ -53,12 +53,28 @@ private let visualTextEn: [String: String] = [
     "tts": "TTS",
     "micOn": "🎙",
     "micOff": "🔇",
+    "cameraOn": "📷",
+    "cameraOff": "🚫",
+    "cameraTurnOn": "Turn camera on",
+    "cameraTurnOff": "Turn camera off",
+    "cameraLabel": "Camera",
+    "on": "ON",
+    "off": "OFF",
     "microphoneOn": "microphone on",
     "microphoneOff": "microphone off",
     "audioReconnecting": "audio reconnecting",
     "waitingForMicrophone": "waiting for microphone",
     "audioInputRestarting": "audio input restarting",
     "audioReady": "audio ready",
+    "cameraGestureCancelled": "camera gesture cancelled",
+    "cameraGestureWakePending": "camera gesture wake pending",
+    "cameraGestureWakeOff": "camera gesture wake off",
+    "cameraGestureUnavailableWithoutCam": "camera gesture wake unavailable without --cam",
+    "cameraGestureWatcherReady": "camera gesture watcher ready",
+    "cameraGestureWatcherStarted": "camera gesture watcher started",
+    "ttsSettingsUpdated": "TTS settings updated",
+    "ttsSettingsRestored": "TTS settings restored",
+    "commandsCleared": "commands cleared",
     "clearCmds": "Clear Cmds",
     "exit": "Exit",
     "add": "Add",
@@ -187,12 +203,28 @@ private let visualTextKo: [String: String] = [
     "tts": "TTS",
     "micOn": "🎙",
     "micOff": "🔇",
+    "cameraOn": "📷",
+    "cameraOff": "🚫",
+    "cameraTurnOn": "카메라 켜기",
+    "cameraTurnOff": "카메라 끄기",
+    "cameraLabel": "카메라",
+    "on": "켜짐",
+    "off": "꺼짐",
     "microphoneOn": "마이크 켜짐",
     "microphoneOff": "마이크 꺼짐",
     "audioReconnecting": "마이크 재연결 중",
     "waitingForMicrophone": "마이크 장치 대기 중",
     "audioInputRestarting": "마이크 입력 재시작 중",
     "audioReady": "마이크 준비됨",
+    "cameraGestureCancelled": "카메라 제스처 취소됨",
+    "cameraGestureWakePending": "카메라 제스처 대기 중",
+    "cameraGestureWakeOff": "카메라 제스처 꺼짐",
+    "cameraGestureUnavailableWithoutCam": "카메라 제스처는 --cam으로 실행해야 사용할 수 있음",
+    "cameraGestureWatcherReady": "카메라 제스처 준비됨",
+    "cameraGestureWatcherStarted": "카메라 제스처 시작됨",
+    "ttsSettingsUpdated": "TTS 설정 적용됨",
+    "ttsSettingsRestored": "TTS 설정 복원됨",
+    "commandsCleared": "명령 지워짐",
     "clearCmds": "명령 지우기",
     "exit": "종료",
     "add": "추가",
@@ -322,6 +354,15 @@ private func displayText(_ rawText: String, state: String, language: UiLanguage)
     case "waiting for microphone": return localizedText("waitingForMicrophone", language: language)
     case "audio input restarting": return localizedText("audioInputRestarting", language: language)
     case "audio ready": return localizedText("audioReady", language: language)
+    case "camera gesture cancelled": return localizedText("cameraGestureCancelled", language: language)
+    case "camera gesture wake pending": return localizedText("cameraGestureWakePending", language: language)
+    case "camera gesture wake off": return localizedText("cameraGestureWakeOff", language: language)
+    case "camera gesture wake unavailable without --cam": return localizedText("cameraGestureUnavailableWithoutCam", language: language)
+    case "camera gesture watcher ready": return localizedText("cameraGestureWatcherReady", language: language)
+    case "camera gesture watcher started": return localizedText("cameraGestureWatcherStarted", language: language)
+    case "TTS settings updated": return localizedText("ttsSettingsUpdated", language: language)
+    case "TTS settings restored": return localizedText("ttsSettingsRestored", language: language)
+    case "commands cleared": return localizedText("commandsCleared", language: language)
     case "idle": return localizedText("idle", language: language)
     default: return trimmed
     }
@@ -390,10 +431,11 @@ private func cameraStatusText(_ event: [String: Any], language: UiLanguage) -> S
     let wake = event["wakeGesture"] as? String ?? "-"
     let stop = event["stopGesture"] as? String ?? "-"
     let running = event["runningMode"] as? String ?? "off"
+    let enabledText = localizedText(enabled ? "on" : "off", language: language)
     if let text = event["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return "Camera: \(enabled ? "ON" : "OFF") · \(mode) · \(text)"
+        return localizedText("cameraLabel", language: language) + ": \(enabledText) · \(mode) · " + displayText(text, state: "status", language: language)
     }
-    return "Camera: \(enabled ? "ON" : "OFF") · \(mode) · wake \(gestureDisplayName(wake, language: language)) · stop \(gestureDisplayName(stop, language: language)) · \(gestureRunningModeDisplayName(running, language: language))"
+    return localizedText("cameraLabel", language: language) + ": \(enabledText) · \(mode) · " + localizedText("wake", language: language) + " \(gestureDisplayName(wake, language: language)) · " + localizedText("stop", language: language) + " \(gestureDisplayName(stop, language: language)) · \(gestureRunningModeDisplayName(running, language: language))"
 }
 
 final class AgentCircleView: NSView {
@@ -895,6 +937,7 @@ final class VisualRootView: NSView {
     private var chatHistoryEnabled = true
     private var chatPanelOpen = true
     private var micEnabled = true
+    private var cameraEnabled = false
     private var currentSessionId = ""
     private var currentUsage = ""
     private var currentCamera = ""
@@ -1247,6 +1290,11 @@ final class VisualRootView: NSView {
         cameraLabel.stringValue = camera
     }
 
+    func updateCameraEnabled(_ enabled: Bool) {
+        cameraEnabled = enabled
+        applyLocalization()
+    }
+
     func updateContextSummary(_ count: Int) {
         currentContextCount = count
         contextSummary.stringValue = referenceSummary(
@@ -1323,6 +1371,7 @@ final class VisualRootView: NSView {
             localizedText("settings", language: uiLanguage),
             localizedText("ttsStop", language: uiLanguage),
             localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage),
+            localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage),
             localizedText("clearCmds", language: uiLanguage),
             localizedText("exit", language: uiLanguage)
         ]
@@ -1798,6 +1847,7 @@ final class MenuBarCompanion {
     private weak var hudStopButton: NSButton?
     private weak var hudTtsStopButton: NSButton?
     private weak var hudMicButton: NSButton?
+    private weak var hudCameraButton: NSButton?
     private weak var hudShowButton: NSButton?
     private weak var hudCompactButton: NSButton?
     private let stateLabel = NSTextField(labelWithString: "idle")
@@ -1819,10 +1869,12 @@ final class MenuBarCompanion {
     private var onClearContext: (() -> Void)?
     private var onShowContext: (() -> Void)?
     private var onMicToggle: (() -> Void)?
+    private var onCameraToggle: (() -> Void)?
     private var onHudCompactChange: ((Bool) -> Void)?
     private var hudEnabled = true
     private var hudCompact = false
     private var micEnabled = true
+    private var cameraEnabled = false
     private var currentState = "idle"
     private var currentDetail = "waiting for bridge"
     private var currentQuestion = ""
@@ -1839,6 +1891,7 @@ final class MenuBarCompanion {
         onClearContext: @escaping () -> Void,
         onShowContext: @escaping () -> Void,
         onMicToggle: @escaping () -> Void,
+        onCameraToggle: @escaping () -> Void,
         onHudCompactChange: @escaping (Bool) -> Void
     ) {
         self.onStop = onStop
@@ -1849,6 +1902,7 @@ final class MenuBarCompanion {
         self.onClearContext = onClearContext
         self.onShowContext = onShowContext
         self.onMicToggle = onMicToggle
+        self.onCameraToggle = onCameraToggle
         self.onHudCompactChange = onHudCompactChange
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -1883,6 +1937,12 @@ final class MenuBarCompanion {
     func updateMicEnabled(_ enabled: Bool) {
         micEnabled = enabled
         applyLocalization()
+    }
+
+    func updateCamera(_ text: String, enabled: Bool) {
+        cameraEnabled = enabled
+        applyLocalization()
+        updateMessage(text)
     }
 
     func update(state: String, text: String) {
@@ -1962,6 +2022,10 @@ final class MenuBarCompanion {
 
     @objc private func toggleMic() {
         onMicToggle?()
+    }
+
+    @objc private func toggleCamera() {
+        onCameraToggle?()
     }
 
     @objc private func showWindow() {
@@ -2079,6 +2143,7 @@ final class MenuBarCompanion {
         hudStopButton?.isHidden = hudCompact
         hudTtsStopButton?.isHidden = hudCompact
         hudMicButton?.isHidden = hudCompact
+        hudCameraButton?.isHidden = hudCompact
         hudShowButton?.isHidden = hudCompact
 
         hudCompactButton?.frame = hudCompact
@@ -2231,22 +2296,27 @@ final class MenuBarCompanion {
 
         let stop = NSButton(title: localizedText("stop", language: uiLanguage), target: self, action: #selector(stopAgent))
         hudStopButton = stop
-        stop.frame = NSRect(x: 14, y: 48, width: 72, height: 26)
+        stop.frame = NSRect(x: 14, y: 48, width: 66, height: 26)
         view.addSubview(stop)
 
         let ttsStop = NSButton(title: localizedText("tts", language: uiLanguage), target: self, action: #selector(stopTts))
         hudTtsStopButton = ttsStop
-        ttsStop.frame = NSRect(x: 88, y: 48, width: 56, height: 26)
+        ttsStop.frame = NSRect(x: 84, y: 48, width: 50, height: 26)
         view.addSubview(ttsStop)
 
         let mic = NSButton(title: localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage), target: self, action: #selector(toggleMic))
         hudMicButton = mic
-        mic.frame = NSRect(x: 152, y: 48, width: 62, height: 26)
+        mic.frame = NSRect(x: 142, y: 48, width: 44, height: 26)
         view.addSubview(mic)
+
+        let camera = NSButton(title: localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage), target: self, action: #selector(toggleCamera))
+        hudCameraButton = camera
+        camera.frame = NSRect(x: 194, y: 48, width: 44, height: 26)
+        view.addSubview(camera)
 
         let show = NSButton(title: localizedText("show", language: uiLanguage), target: self, action: #selector(showWindow))
         hudShowButton = show
-        show.frame = NSRect(x: 222, y: 48, width: 58, height: 26)
+        show.frame = NSRect(x: 246, y: 48, width: 58, height: 26)
         view.addSubview(show)
 
         let compact = NSButton(title: "−", target: self, action: #selector(toggleHudCompact))
@@ -2285,6 +2355,9 @@ final class MenuBarCompanion {
         hudStopButton?.title = localizedText("stop", language: uiLanguage)
         hudTtsStopButton?.title = localizedText("tts", language: uiLanguage)
         hudMicButton?.title = localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage)
+        hudMicButton?.toolTip = localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage)
+        hudCameraButton?.title = localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage)
+        hudCameraButton?.toolTip = localizedText(cameraEnabled ? "cameraTurnOff" : "cameraTurnOn", language: uiLanguage)
         hudShowButton?.title = localizedText("show", language: uiLanguage)
         hudCompactButton?.toolTip = localizedText(hudCompact ? "restoreHud" : "compactHud", language: uiLanguage)
         hudContextField.placeholderString = localizedText("referenceText", language: uiLanguage)
@@ -2728,6 +2801,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var hudCompact = false
     private var popupPreferred = false
     private var micEnabled = true
+    private var cameraEnabled = false
     private var speakWakeRejectedWarnings = true
     private var codexAlwaysStartNewThread = false
     private var wakePhrases: [String] = []
@@ -2773,6 +2847,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             onClearContext: { [weak self] in self?.clearContext() },
             onShowContext: { [weak self] in self?.showContext() },
             onMicToggle: { [weak self] in self?.toggleMicInput() },
+            onCameraToggle: { [weak self] in self?.toggleCameraInput() },
             onHudCompactChange: { [weak self] compact in self?.updateHudCompact(compact, sendSettings: true) }
         )
         menuBarCompanion.uiLanguage = uiLanguage
@@ -2809,6 +2884,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         controls.addArrangedSubview(button(localizedText("settings", language: uiLanguage), action: #selector(showSettings)))
         controls.addArrangedSubview(button(localizedText("ttsStop", language: uiLanguage), action: #selector(stopTts)))
         controls.addArrangedSubview(button(localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage), action: #selector(toggleMicInput)))
+        controls.addArrangedSubview(button(localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage), action: #selector(toggleCameraInput)))
         controls.addArrangedSubview(button(localizedText("clearCmds", language: uiLanguage), action: #selector(clearCommands)))
         controls.addArrangedSubview(button(localizedText("exit", language: uiLanguage), action: #selector(exitVisual)))
 
@@ -2831,6 +2907,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         rootView.updateSessionId(codexThreadId)
         rootView.updateChatHistory(enabled: chatHistoryEnabled)
         rootView.updateMicEnabled(micEnabled)
+        rootView.updateCameraEnabled(cameraEnabled)
         return rootView
     }
 
@@ -2949,13 +3026,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             rootView?.pushChat(role: "assistant", kind: "speech", text: speech)
             menuBarCompanion.update(state: "speaking", text: speech)
         case "status":
-            let status = event["text"] as? String ?? localizedText("status", language: uiLanguage)
+            let status = displayText(event["text"] as? String ?? localizedText("status", language: uiLanguage), state: "status", language: uiLanguage)
             circleView.statusText = status
             rootView?.pushChat(role: "assistant", kind: "status", text: status)
             menuBarCompanion.update(state: circleView.state, text: status)
         case "error":
             circleView.state = "error"
-            let error = event["text"] as? String ?? localizedText("error", language: uiLanguage)
+            let error = displayText(event["text"] as? String ?? localizedText("error", language: uiLanguage), state: "error", language: uiLanguage)
             circleView.statusText = error
             rootView?.pushChat(role: "assistant", kind: "error", text: error)
             menuBarCompanion.update(state: "error", text: error)
@@ -2978,9 +3055,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             rootView?.updateUsage(usage)
             menuBarCompanion.updateUsage(usage)
         case "camera":
+            cameraEnabled = event["enabled"] as? Bool ?? false
             let camera = cameraStatusText(event, language: uiLanguage)
             rootView?.updateCamera(camera)
-            menuBarCompanion.updateMessage(camera)
+            rootView?.updateCameraEnabled(cameraEnabled)
+            menuBarCompanion.updateCamera(camera, enabled: cameraEnabled)
         case "context":
             updateContext(event["entries"] as? [String] ?? [])
         case "context_list":
@@ -3035,6 +3114,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         let next = !micEnabled
         updateMicEnabled(next)
         sendControl("mic_toggle", micEnabled: next)
+    }
+
+    @objc private func toggleCameraInput() {
+        sendControl("camera_toggle")
     }
 
     @objc private func emergencyStop() {

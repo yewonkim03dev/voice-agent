@@ -114,6 +114,11 @@ test("visual bridge parses allowed control events only", () => {
     type: "control",
     action: "emergency_stop"
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"camera_toggle"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "camera_toggle"
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"reset_settings"}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -457,6 +462,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /audioReady: "audio ready"/u);
   assert.match(qml, /displayText\(event\.text \|\| "", event\.state\)/u);
   assert.match(qml, /mic_toggle/u);
+  assert.match(qml, /camera_toggle/u);
+  assert.match(qml, /cameraGestureCancelled/u);
   assert.match(qml, /STOP/u);
   assert.match(qml, /emergency_stop/u);
   assert.match(qml, /Settings/u);
@@ -699,6 +706,9 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /final class FloatingHudPanel: NSPanel/u);
   assert.match(swift, /override var canBecomeKey: Bool \{ true \}/u);
   assert.match(swift, /final class MenuBarCompanion/u);
+  assert.match(swift, /hudCameraButton/u);
+  assert.match(swift, /camera_toggle/u);
+  assert.match(swift, /cameraGestureCancelled/u);
   assert.match(swift, /NSStatusBar\.system\.statusItem/u);
   assert.match(swift, /compactState\("idle"\)/u);
   assert.match(swift, /private var hudPanel: NSPanel\?/u);

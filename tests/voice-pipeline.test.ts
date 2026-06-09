@@ -443,6 +443,7 @@ test("always-on voice runner prints complete voice help", async () => {
   assert.ok(logs.includes("  /record starts or stops manual recording."));
   assert.ok(logs.includes("  /mic toggles microphone listening on/off."));
   assert.ok(logs.includes("  /mic-reconnect rebuilds or restarts microphone input."));
+  assert.ok(logs.includes("  /cam toggles camera gesture wake on/off."));
   assert.ok(logs.includes("  /cam-test shows camera gesture test steps and current status."));
   assert.ok(logs.includes("  /add <text> queues additional info for the next voice transcript."));
   assert.ok(logs.includes("  /refs lists queued additional info."));
@@ -1058,6 +1059,58 @@ test("always-on voice runner keeps camera off after denied permission when gestu
 
   assert.equal(camera.startCount, 0);
   assert.equal(camera.modes.includes("idle"), false);
+});
+
+test("always-on voice runner toggles camera gestures from terminal command", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const visualBridge = new FakeVisualBridge();
+  const { runner, logs } = createAlwaysOnRunner([], {
+    visualBridge,
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+  });
+
+  await runner.start();
+  await runner.processLine("/cam");
+  await runner.drain();
+  await runner.processLine("/cam");
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(logs.includes("[camera:toggle] off"), true);
+  assert.equal(logs.includes("[camera:toggle] on"), true);
+  assert.equal(camera.stopCount >= 2, true);
+  assert.equal(camera.startCount, 2);
+  assert.equal(
+    visualBridge.events.some((event) => event.type === "camera" && event.enabled === false && event.text === "camera gesture wake off"),
+    true
+  );
+  assert.equal(
+    visualBridge.events.some((event) => event.type === "camera" && event.enabled === true && event.mode === "idle"),
+    true
+  );
+});
+
+test("always-on voice runner toggles camera gestures from visual control", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const visualBridge = new FakeVisualBridge();
+  const { runner } = createAlwaysOnRunner([], {
+    visualBridge,
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+  });
+
+  await runner.start();
+  visualBridge.emitControl("camera_toggle");
+  await runner.drain();
+  visualBridge.emitControl("camera_toggle");
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(camera.startCount, 2);
+  assert.equal(visualBridge.events.some((event) => event.type === "camera" && event.text === "camera gesture wake off"), true);
 });
 
 test("always-on voice runner reapplies camera watcher config after gesture settings change", async () => {
@@ -2700,6 +2753,7 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  Wake: 코덱스 <명령>"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /help shows available terminal commands."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /mic toggles microphone listening on/off."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("  /cam toggles camera gesture wake on/off."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /cam-test shows camera gesture test steps and current status."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /refs lists queued additional info."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[camera:test] permission=authorized"), true);

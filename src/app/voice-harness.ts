@@ -287,6 +287,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private audioInputStatus: AudioInputStatus = "running";
   private audioRecoveryActive = false;
   private cameraGestureActive = false;
+  private cameraGestureSuspended = false;
   private cameraSettingsGeneration = 0;
   private cameraDiagnosticUntil = 0;
   private lastCameraDiagnosticAt = 0;
@@ -369,6 +370,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /help shows available terminal commands.");
     this.writeLine("  /mic toggles microphone listening on/off.");
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
+    this.writeLine("  /cam toggles camera gesture wake on/off.");
     this.writeLine("  /cam-test shows camera gesture test steps and current status.");
     this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
     this.writeLine("  /gesture-reset clears local gesture mappings and custom templates.");
@@ -421,6 +423,11 @@ export class AlwaysOnVoiceHarnessRunner {
       return "continue";
     }
 
+    if (isCameraToggleCommand(text)) {
+      await this.toggleCameraGestureInput();
+      return "continue";
+    }
+
     if (isCameraTestCommand(text)) {
       await this.printCameraGestureTest();
       return "continue";
@@ -470,6 +477,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /record starts or stops manual recording.");
     this.writeLine("  /mic toggles microphone listening on/off.");
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
+    this.writeLine("  /cam toggles camera gesture wake on/off.");
     this.writeLine("  /cam-test shows camera gesture test steps and current status.");
     this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
     this.writeLine("  /gesture-reset clears local gesture mappings and custom templates.");
@@ -834,6 +842,34 @@ export class AlwaysOnVoiceHarnessRunner {
     }
   }
 
+  async toggleCameraGestureInput(enabled = this.cameraGestureSuspended || !this.cameraGestureActive): Promise<void> {
+    if (!this.cameraGestureEnabledByCli) {
+      this.cameraGestureSuspended = true;
+      this.writeLine("[camera:toggle] restart Voice Agent with --cam to enable camera gestures.");
+      this.sendVisualCameraStatus("off", "camera gesture wake unavailable without --cam");
+      return;
+    }
+
+    if (!enabled) {
+      this.cameraGestureSuspended = true;
+      this.cameraGestureActive = false;
+      await this.cameraGestureWatcher.stop();
+      this.gestureStateMachine.setState("idle");
+      this.writeLine("[camera:toggle] off");
+      this.sendVisualCameraStatus("off", "camera gesture wake off");
+      return;
+    }
+
+    this.cameraGestureSuspended = false;
+    this.writeLine("[camera:toggle] on");
+    if (!this.cameraGestureActive) {
+      await this.startCameraGestureIfEnabled();
+      return;
+    }
+
+    this.refreshGestureRuntimeState();
+  }
+
   private async reconnectAudioInput(reason: string): Promise<void> {
     this.writeLine(`[audio:reconnect] ${reason}`);
     this.terminalHarness.sendVisualEvent({
@@ -887,8 +923,11 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private async startCameraGestureIfEnabled(): Promise<void> {
-    this.sendVisualCameraStatus("off", this.gestureWake.enabled ? "camera gesture wake pending" : "camera gesture wake off");
-    if (!this.gestureWake.enabled) return;
+    this.sendVisualCameraStatus(
+      "off",
+      this.isCameraGestureRuntimeEnabled() ? "camera gesture wake pending" : "camera gesture wake off"
+    );
+    if (!this.isCameraGestureRuntimeEnabled()) return;
 
     const permission = await this.cameraPermissionManager.requestPermission();
     if (permission !== "authorized") {
@@ -914,7 +953,7 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private async handleGestureObservation(observation: GestureWatcherObservation): Promise<void> {
-    if (!this.gestureWake.enabled || !this.cameraGestureActive) return;
+    if (!this.isCameraGestureRuntimeEnabled() || !this.cameraGestureActive) return;
     this.refreshGestureRuntimeState();
 
     const trigger = this.gestureStateMachine.observe(observation);
@@ -1000,7 +1039,7 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private refreshGestureRuntimeState(): void {
-    if (!this.gestureWake.enabled || !this.cameraGestureActive) {
+    if (!this.isCameraGestureRuntimeEnabled() || !this.cameraGestureActive) {
       this.cameraGestureWatcher.setMode("off");
       this.sendVisualCameraStatus("off");
       return;
@@ -1023,13 +1062,17 @@ export class AlwaysOnVoiceHarnessRunner {
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
       type: "camera",
-      enabled: this.gestureWake.enabled && mode !== "off",
+      enabled: this.isCameraGestureRuntimeEnabled() && mode !== "off",
       mode,
       wakeGesture: this.gestureWake.bindings.wake,
       stopGesture: this.gestureWake.bindings.stop,
       runningMode: this.gestureWake.runningMode,
       ...(text ? { text } : {})
     });
+  }
+
+  private isCameraGestureRuntimeEnabled(): boolean {
+    return this.gestureWake.enabled && !this.cameraGestureSuspended;
   }
 
   private handleProvisionalWake(event: WakeStreamEvent): void {
@@ -1128,6 +1171,12 @@ export class AlwaysOnVoiceHarnessRunner {
       return;
     }
 
+    if (this.cameraGestureSuspended) {
+      this.writeLine("[camera:capture] camera gesture wake is off. Type /cam to turn it on.");
+      this.sendVisualCameraStatus("off", "camera gesture wake off");
+      return;
+    }
+
     if (!this.cameraGestureActive) {
       await this.startCameraGestureIfEnabled();
     }
@@ -1193,7 +1242,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.cameraSettingsGeneration += 1;
     const generation = this.cameraSettingsGeneration;
 
-    if (!this.gestureWake.enabled || !this.cameraGestureActive) {
+    if (!this.isCameraGestureRuntimeEnabled() || !this.cameraGestureActive) {
       this.refreshGestureRuntimeState();
       return;
     }
@@ -1206,7 +1255,7 @@ export class AlwaysOnVoiceHarnessRunner {
           generation !== this.cameraSettingsGeneration ||
           !this.started ||
           !this.cameraGestureActive ||
-          !this.gestureWake.enabled
+          !this.isCameraGestureRuntimeEnabled()
         ) {
           return;
         }
@@ -1761,7 +1810,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 }
 
 function isVisibleHelpCommandLine(visible: string): boolean {
-  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam-test|camera-test|gesture-add|gesture-capture|gesture-reset|gesture-clear|add|refs)(?:\s|$)/u.test(visible);
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-reset|gesture-clear|add|refs)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {
@@ -2069,12 +2118,17 @@ function bindVisualDirectGoControls(
 }
 
 function bindVisualWakeSettingsControls(
-  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "resetGestureWakeSettings" | "captureCustomGestureTemplate" | "toggleMicInput">,
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "resetGestureWakeSettings" | "captureCustomGestureTemplate" | "toggleMicInput" | "toggleCameraGestureInput">,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
     if (event.action === "mic_toggle") {
       runner.toggleMicInput(event.micEnabled);
+      return;
+    }
+
+    if (event.action === "camera_toggle") {
+      void runner.toggleCameraGestureInput();
       return;
     }
 
@@ -2209,6 +2263,10 @@ function isShowContextCommand(text: string): boolean {
 
 function isMicToggleCommand(text: string): boolean {
   return /^\/(?:mic|mic-toggle|microphone)$/iu.test(text.trim());
+}
+
+function isCameraToggleCommand(text: string): boolean {
+  return /^\/(?:cam|camera|camera-toggle)$/iu.test(text.trim());
 }
 
 function isHelpCommand(text: string): boolean {

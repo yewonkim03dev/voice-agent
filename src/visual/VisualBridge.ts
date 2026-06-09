@@ -22,6 +22,7 @@ export type VisualUiState =
 export type VisualControlAction =
   | "tts_stop"
   | "mic_toggle"
+  | "camera_toggle"
   | "exit"
   | "clear_commands"
   | "add_context"
@@ -376,6 +377,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
   if (
     record.action !== "tts_stop" &&
     record.action !== "mic_toggle" &&
+    record.action !== "camera_toggle" &&
     record.action !== "exit" &&
     record.action !== "clear_commands" &&
     record.action !== "add_context" &&

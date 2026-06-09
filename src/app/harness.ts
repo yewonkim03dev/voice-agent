@@ -1454,6 +1454,7 @@ export class TerminalHarness {
         await this.stopVoiceOutput();
         return;
       case "mic_toggle":
+      case "camera_toggle":
         return;
       case "emergency_stop":
         await this.requestEmergencyStop();

@@ -69,6 +69,7 @@ ApplicationWindow {
     property string codexThreadId: ""
     property bool codexAlwaysStartNewThread: false
     property bool micEnabled: true
+    property bool cameraEnabled: false
     property string uiLanguage: "en"
     property bool uiLanguageInitialized: false
     property string voiceGuideText: root.uiText("voiceGuide")
@@ -156,12 +157,29 @@ ApplicationWindow {
             ttsStop: "TTS 정지",
             micOn: "🎙",
             micOff: "🔇",
+            cameraOn: "📷",
+            cameraOff: "🚫",
+            cameraTurnOn: "카메라 켜기",
+            cameraTurnOff: "카메라 끄기",
+            cameraLabel: "카메라",
+            on: "켜짐",
+            off: "꺼짐",
+            wake: "호출",
             microphoneOn: "마이크 켜짐",
             microphoneOff: "마이크 꺼짐",
             audioReconnecting: "마이크 재연결 중",
             waitingForMicrophone: "마이크 장치 대기 중",
             audioInputRestarting: "마이크 입력 재시작 중",
             audioReady: "마이크 준비됨",
+            cameraGestureCancelled: "카메라 제스처 취소됨",
+            cameraGestureWakePending: "카메라 제스처 대기 중",
+            cameraGestureWakeOff: "카메라 제스처 꺼짐",
+            cameraGestureUnavailableWithoutCam: "카메라 제스처는 --cam으로 실행해야 사용할 수 있음",
+            cameraGestureWatcherReady: "카메라 제스처 준비됨",
+            cameraGestureWatcherStarted: "카메라 제스처 시작됨",
+            ttsSettingsUpdated: "TTS 설정 적용됨",
+            ttsSettingsRestored: "TTS 설정 복원됨",
+            commandsCleared: "명령 지워짐",
             clearCmds: "명령 지우기",
             exit: "종료",
             speech: "음성",
@@ -270,12 +288,29 @@ ApplicationWindow {
             ttsStop: "TTS Stop",
             micOn: "🎙",
             micOff: "🔇",
+            cameraOn: "📷",
+            cameraOff: "🚫",
+            cameraTurnOn: "Turn camera on",
+            cameraTurnOff: "Turn camera off",
+            cameraLabel: "Camera",
+            on: "ON",
+            off: "OFF",
+            wake: "wake",
             microphoneOn: "microphone on",
             microphoneOff: "microphone off",
             audioReconnecting: "audio reconnecting",
             waitingForMicrophone: "waiting for microphone",
             audioInputRestarting: "audio input restarting",
             audioReady: "audio ready",
+            cameraGestureCancelled: "camera gesture cancelled",
+            cameraGestureWakePending: "camera gesture wake pending",
+            cameraGestureWakeOff: "camera gesture wake off",
+            cameraGestureUnavailableWithoutCam: "camera gesture wake unavailable without --cam",
+            cameraGestureWatcherReady: "camera gesture watcher ready",
+            cameraGestureWatcherStarted: "camera gesture watcher started",
+            ttsSettingsUpdated: "TTS settings updated",
+            ttsSettingsRestored: "TTS settings restored",
+            commandsCleared: "commands cleared",
             clearCmds: "Clear Cmds",
             exit: "Exit",
             speech: "speech",
@@ -333,6 +368,15 @@ ApplicationWindow {
         if (trimmed === "waiting for microphone") return root.uiText("waitingForMicrophone")
         if (trimmed === "audio input restarting") return root.uiText("audioInputRestarting")
         if (trimmed === "audio ready") return root.uiText("audioReady")
+        if (trimmed === "camera gesture cancelled") return root.uiText("cameraGestureCancelled")
+        if (trimmed === "camera gesture wake pending") return root.uiText("cameraGestureWakePending")
+        if (trimmed === "camera gesture wake off") return root.uiText("cameraGestureWakeOff")
+        if (trimmed === "camera gesture wake unavailable without --cam") return root.uiText("cameraGestureUnavailableWithoutCam")
+        if (trimmed === "camera gesture watcher ready") return root.uiText("cameraGestureWatcherReady")
+        if (trimmed === "camera gesture watcher started") return root.uiText("cameraGestureWatcherStarted")
+        if (trimmed === "TTS settings updated") return root.uiText("ttsSettingsUpdated")
+        if (trimmed === "TTS settings restored") return root.uiText("ttsSettingsRestored")
+        if (trimmed === "commands cleared") return root.uiText("commandsCleared")
         if (trimmed === "waiting for bridge") return root.uiText("waitingForBridge")
         if (trimmed === "connecting") return root.uiText("connecting")
         if (trimmed === "connected") return root.uiText("connected")
@@ -695,15 +739,15 @@ ApplicationWindow {
     }
 
     function formatCameraStatus(event) {
-        var enabled = event.enabled ? "ON" : "OFF"
+        var enabled = event.enabled ? root.uiText("on") : root.uiText("off")
         var mode = event.mode || "off"
         var wakeGesture = event.wakeGesture || "-"
         var stopGesture = event.stopGesture || "-"
         var runningMode = event.runningMode || "off"
         if (event.text && event.text.length > 0) {
-            return "Camera: " + enabled + " · " + mode + " · " + event.text
+            return root.uiText("cameraLabel") + ": " + enabled + " · " + mode + " · " + root.displayText(event.text, "status")
         }
-        return "Camera: " + enabled + " · " + mode + " · wake " + root.gestureDisplayName(wakeGesture) + " · stop " + root.gestureDisplayName(stopGesture) + " · " + root.runningModeDisplayName(runningMode)
+        return root.uiText("cameraLabel") + ": " + enabled + " · " + mode + " · " + root.uiText("wake") + " " + root.gestureDisplayName(wakeGesture) + " · " + root.uiText("stop") + " " + root.gestureDisplayName(stopGesture) + " · " + root.runningModeDisplayName(runningMode)
     }
 
     function referenceSummaryText() {
@@ -867,12 +911,12 @@ ApplicationWindow {
                 root.statusText = event.text
                 root.pushChat("assistant", "speech", event.text)
             } else if (event.type === "status") {
-                root.statusText = event.text
-                root.pushChat("assistant", "status", event.text)
+                root.statusText = root.displayText(event.text || "", "status")
+                root.pushChat("assistant", "status", root.statusText)
             } else if (event.type === "error") {
                 root.uiState = "error"
-                root.statusText = event.text
-                root.pushChat("assistant", "error", event.text)
+                root.statusText = root.displayText(event.text || "", "error")
+                root.pushChat("assistant", "error", root.statusText)
             } else if (event.type === "approval") {
                 root.uiState = "approval_pending"
                 root.statusText = event.text
@@ -880,6 +924,7 @@ ApplicationWindow {
             } else if (event.type === "usage") {
                 root.usageText = event.text || ""
             } else if (event.type === "camera") {
+                root.cameraEnabled = !!event.enabled
                 root.cameraText = root.formatCameraStatus(event)
             } else if (event.type === "context") {
                 root.contextEntries = event.entries || []
@@ -2509,6 +2554,15 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 text: root.micEnabled ? root.uiText("micOff") : root.uiText("micOn")
                 onClicked: root.sendControl("mic_toggle")
+            }
+            Button {
+                Layout.fillWidth: true
+                text: root.cameraEnabled ? root.uiText("cameraOff") : root.uiText("cameraOn")
+                hoverEnabled: true
+                ToolTip.visible: hovered
+                ToolTip.delay: 250
+                ToolTip.text: root.cameraEnabled ? root.uiText("cameraTurnOff") : root.uiText("cameraTurnOn")
+                onClicked: root.sendControl("camera_toggle")
             }
             Button {
                 Layout.fillWidth: true
