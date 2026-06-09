@@ -4,7 +4,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { RecorderCommandAudioInput } from "../audio/RecorderCommandAudioInput.ts";
-import type { AudioFrame, AudioInput } from "../audio/AudioFrame.ts";
+import type { AudioFrame, AudioInput, AudioInputStatus, AudioInputStatusEvent } from "../audio/AudioFrame.ts";
 import { AlwaysOnWakeGate, type AlwaysOnWakeGateEvent } from "../listening/AlwaysOnWakeGate.ts";
 import { EndOfSpeechDetector } from "../listening/EndOfSpeechDetector.ts";
 import { ManualRecordingGate } from "../listening/ManualRecordingGate.ts";
@@ -209,6 +209,8 @@ export class AlwaysOnVoiceHarnessRunner {
   private candidateVisualState = false;
   private provisionalWake: WakeStreamEvent | undefined;
   private recentProvisionalWakeCue: WakeStreamEvent | undefined;
+  private audioInputStatus: AudioInputStatus = "running";
+  private audioRecoveryActive = false;
   private started = false;
   private lastVolumeEventAt = 0;
   private wakeFollowUp:
@@ -243,6 +245,7 @@ export class AlwaysOnVoiceHarnessRunner {
       createId: this.createId
     });
     this.audioInput.onFrame((frame) => this.consumeFrame(frame));
+    this.audioInput.onStatus?.((event) => this.handleAudioInputStatus(event));
     this.wakeStreamDetector.onWake((event) => this.handleProvisionalWake(event));
     this.wakeStreamDetector.updateWakePhrases?.(this.wakePhrases);
     this.wakeGate.onUtterance((audio) => this.queueTranscription(audio, "candidate"));
@@ -261,6 +264,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ")}`);
     this.writeLine("  Manual fallback: /record to start, /record again to stop.");
     this.writeLine("  /mic toggles microphone listening on/off.");
+    this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
@@ -293,6 +297,11 @@ export class AlwaysOnVoiceHarnessRunner {
 
     if (isMicToggleCommand(text)) {
       this.toggleMicInput();
+      return "continue";
+    }
+
+    if (isMicReconnectCommand(text)) {
+      await this.reconnectAudioInput("manual command");
       return "continue";
     }
 
@@ -571,6 +580,62 @@ export class AlwaysOnVoiceHarnessRunner {
     });
     this.writeLine(`[voice:mic] ${enabled ? "on" : "off"}`);
     this.sendVisualMicSettings();
+
+    if (enabled && shouldReconnectAudioInput(this.audioInputStatus)) {
+      void this.reconnectAudioInput("mic enabled");
+    }
+  }
+
+  private async reconnectAudioInput(reason: string): Promise<void> {
+    this.writeLine(`[audio:reconnect] ${reason}`);
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state: "idle",
+      text: "audio reconnecting"
+    });
+    await this.audioInput.reconnect?.();
+  }
+
+  private handleAudioInputStatus(event: AudioInputStatusEvent): void {
+    this.audioInputStatus = event.status;
+    const suffix = event.message ? ` ${event.message}` : "";
+    this.writeLine(`[audio:status] ${event.status}${suffix}`);
+
+    switch (event.status) {
+      case "reconfiguring":
+        this.audioRecoveryActive = true;
+        this.sendAudioRecoveryVisualState("audio reconnecting");
+        return;
+      case "waiting_device":
+        this.audioRecoveryActive = true;
+        this.sendAudioRecoveryVisualState("waiting for microphone");
+        return;
+      case "failed":
+      case "restarting":
+        this.audioRecoveryActive = true;
+        this.sendAudioRecoveryVisualState("audio input restarting");
+        return;
+      case "restarted":
+      case "running":
+        if (this.audioRecoveryActive) {
+          this.audioRecoveryActive = false;
+          this.sendAudioRecoveryVisualState("audio ready");
+        }
+        return;
+      case "starting":
+      case "stopped":
+        return;
+    }
+  }
+
+  private sendAudioRecoveryVisualState(text: string): void {
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state: "idle",
+      text
+    });
   }
 
   private handleProvisionalWake(event: WakeStreamEvent): void {
@@ -1340,6 +1405,14 @@ function isShowContextCommand(text: string): boolean {
 
 function isMicToggleCommand(text: string): boolean {
   return /^\/(?:mic|mic-toggle|microphone)$/iu.test(text.trim());
+}
+
+function isMicReconnectCommand(text: string): boolean {
+  return /^\/(?:mic-reconnect|microphone-reconnect|audio-reconnect)$/iu.test(text.trim());
+}
+
+function shouldReconnectAudioInput(status: AudioInputStatus): boolean {
+  return status === "waiting_device" || status === "failed" || status === "reconfiguring" || status === "restarting";
 }
 
 function formatSupplementalTextList(entries: readonly string[]): string {

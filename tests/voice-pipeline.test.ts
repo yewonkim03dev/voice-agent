@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { AudioFrame, AudioInput } from "../src/audio/AudioFrame.ts";
+import type { AudioFrame, AudioInput, AudioInputStatusEvent } from "../src/audio/AudioFrame.ts";
 import { InMemoryAgentBackend, TerminalHarness } from "../src/app/harness.ts";
 import {
   createCodexThreadStore,
@@ -420,6 +420,51 @@ test("always-on voice runner toggles microphone from visual control", async () =
   assert.equal(speechProcessor.audio.length, 1);
   assert.equal(backend.prompts.length, 1);
   assert.equal(backend.prompts[0].text, "다시 돌려줘");
+});
+
+test("always-on voice runner maps audio input recovery status to visual state", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { runner, audioInput, logs } = createAlwaysOnRunner([], {
+    visualBridge
+  });
+
+  await runner.start();
+  audioInput.emitStatus({
+    status: "reconfiguring",
+    timestamp: 1000,
+    message: "configuration_changed"
+  });
+  assert.equal(lastStateEvent(visualBridge.events)?.text, "audio reconnecting");
+
+  audioInput.emitStatus({
+    status: "waiting_device",
+    timestamp: 1001
+  });
+  assert.equal(lastStateEvent(visualBridge.events)?.text, "waiting for microphone");
+
+  audioInput.emitStatus({
+    status: "running",
+    timestamp: 1002
+  });
+  assert.equal(lastStateEvent(visualBridge.events)?.text, "audio ready");
+  await runner.stop();
+
+  assert.ok(logs.includes("[audio:status] reconfiguring configuration_changed"));
+});
+
+test("always-on voice runner asks audio input to reconnect when mic returns during recovery", async () => {
+  const { runner, audioInput } = createAlwaysOnRunner([]);
+
+  await runner.start();
+  audioInput.emitStatus({
+    status: "waiting_device",
+    timestamp: 1000
+  });
+  await runner.processLine("/mic");
+  await runner.processLine("/mic");
+  await runner.stop();
+
+  assert.equal(audioInput.reconnectCount, 1);
 });
 
 test("always-on voice runner routes a configured custom wake phrase", async () => {
@@ -2129,7 +2174,9 @@ function createTestWakeGate(createId: (prefix: string) => string = (prefix) => `
 
 class FakeAudioInput implements AudioInput {
   private readonly listeners: Array<(frame: AudioFrame) => void> = [];
+  private readonly statusListeners: Array<(event: AudioInputStatusEvent) => void> = [];
   private running = false;
+  reconnectCount = 0;
 
   async start(): Promise<void> {
     this.running = true;
@@ -2141,6 +2188,18 @@ class FakeAudioInput implements AudioInput {
 
   onFrame(callback: (frame: AudioFrame) => void): void {
     this.listeners.push(callback);
+  }
+
+  onStatus(callback: (event: AudioInputStatusEvent) => void): void {
+    this.statusListeners.push(callback);
+  }
+
+  async reconnect(): Promise<void> {
+    this.reconnectCount += 1;
+  }
+
+  emitStatus(event: AudioInputStatusEvent): void {
+    this.statusListeners.forEach((listener) => listener(event));
   }
 
   emit(bytes: number[], timestamp: number): void {

@@ -49,6 +49,10 @@ private let visualTextEn: [String: String] = [
     "micOff": "🔇",
     "microphoneOn": "microphone on",
     "microphoneOff": "microphone off",
+    "audioReconnecting": "audio reconnecting",
+    "waitingForMicrophone": "waiting for microphone",
+    "audioInputRestarting": "audio input restarting",
+    "audioReady": "audio ready",
     "clearCmds": "Clear Cmds",
     "exit": "Exit",
     "add": "Add",
@@ -149,6 +153,10 @@ private let visualTextKo: [String: String] = [
     "micOff": "🔇",
     "microphoneOn": "마이크 켜짐",
     "microphoneOff": "마이크 꺼짐",
+    "audioReconnecting": "마이크 재연결 중",
+    "waitingForMicrophone": "마이크 장치 대기 중",
+    "audioInputRestarting": "마이크 입력 재시작 중",
+    "audioReady": "마이크 준비됨",
     "clearCmds": "명령 지우기",
     "exit": "종료",
     "add": "추가",
@@ -249,6 +257,10 @@ private func displayText(_ rawText: String, state: String, language: UiLanguage)
     case "bridge disconnected": return localizedText("bridgeDisconnected", language: language)
     case "microphone on": return localizedText("microphoneOn", language: language)
     case "microphone off": return localizedText("microphoneOff", language: language)
+    case "audio reconnecting": return localizedText("audioReconnecting", language: language)
+    case "waiting for microphone": return localizedText("waitingForMicrophone", language: language)
+    case "audio input restarting": return localizedText("audioInputRestarting", language: language)
+    case "audio ready": return localizedText("audioReady", language: language)
     case "idle": return localizedText("idle", language: language)
     default: return trimmed
     }

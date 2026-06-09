@@ -409,6 +409,10 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /🔇/u);
   assert.match(qml, /microphoneOn: "microphone on"/u);
   assert.match(qml, /microphoneOff: "microphone off"/u);
+  assert.match(qml, /audioReconnecting: "audio reconnecting"/u);
+  assert.match(qml, /waitingForMicrophone: "waiting for microphone"/u);
+  assert.match(qml, /audioInputRestarting: "audio input restarting"/u);
+  assert.match(qml, /audioReady: "audio ready"/u);
   assert.match(qml, /displayText\(event\.text \|\| "", event\.state\)/u);
   assert.match(qml, /mic_toggle/u);
   assert.match(qml, /STOP/u);
@@ -571,6 +575,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /🔇/u);
   assert.match(swift, /"microphoneOn": "microphone on"/u);
   assert.match(swift, /case "microphone on": return localizedText\("microphoneOn", language: language\)/u);
+  assert.match(swift, /"audioReconnecting": "audio reconnecting"/u);
+  assert.match(swift, /case "audio reconnecting": return localizedText\("audioReconnecting", language: language\)/u);
   assert.match(swift, /mic_toggle/u);
   assert.match(swift, /STOP/u);
   assert.match(swift, /emergency_stop/u);

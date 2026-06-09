@@ -127,6 +127,10 @@ ApplicationWindow {
             micOff: "🔇",
             microphoneOn: "마이크 켜짐",
             microphoneOff: "마이크 꺼짐",
+            audioReconnecting: "마이크 재연결 중",
+            waitingForMicrophone: "마이크 장치 대기 중",
+            audioInputRestarting: "마이크 입력 재시작 중",
+            audioReady: "마이크 준비됨",
             clearCmds: "명령 지우기",
             exit: "종료",
             speech: "음성",
@@ -215,6 +219,10 @@ ApplicationWindow {
             micOff: "🔇",
             microphoneOn: "microphone on",
             microphoneOff: "microphone off",
+            audioReconnecting: "audio reconnecting",
+            waitingForMicrophone: "waiting for microphone",
+            audioInputRestarting: "audio input restarting",
+            audioReady: "audio ready",
             clearCmds: "Clear Cmds",
             exit: "Exit",
             speech: "speech",
@@ -266,6 +274,10 @@ ApplicationWindow {
         if (trimmed.length === 0 || trimmed === state) return root.stateText(state)
         if (trimmed === "microphone on") return root.uiText("microphoneOn")
         if (trimmed === "microphone off") return root.uiText("microphoneOff")
+        if (trimmed === "audio reconnecting") return root.uiText("audioReconnecting")
+        if (trimmed === "waiting for microphone") return root.uiText("waitingForMicrophone")
+        if (trimmed === "audio input restarting") return root.uiText("audioInputRestarting")
+        if (trimmed === "audio ready") return root.uiText("audioReady")
         if (trimmed === "waiting for bridge") return root.uiText("waitingForBridge")
         if (trimmed === "connecting") return root.uiText("connecting")
         if (trimmed === "connected") return root.uiText("connected")
