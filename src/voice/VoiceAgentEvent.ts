@@ -28,6 +28,8 @@ export const voiceAgentPopupProtocolPrompt = [
   "When popup preference is enabled, you may emit at most one popup event per assistant answer:",
   "{\"op\":\"voice-agent\",\"type\":\"popup\",\"text\":\"markdown or plain text content\",\"title\":\"optional title\"}",
   "Use popup for long explanations, study notes, markdown-heavy answers, tables, or math content better read visually than spoken.",
+  "Popup math is rendered with KaTeX. Write inline math as $...$ or \\(...\\), and display math as $$...$$ or \\[...\\].",
+  "Do not use Unicode-only pseudo math when LaTeX is intended; prefer KaTeX-compatible LaTeX such as \\frac, \\sum, _{}, ^{}, \\lambda, and \\|w\\|_2^2.",
   "Do not speak the popup body. You may still emit a short speech final summary with role=\"final\".",
   "Across all NDJSON lines for one answer, emit no more than one popup event."
 ].join("\n");

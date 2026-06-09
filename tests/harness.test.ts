@@ -1002,6 +1002,9 @@ test("voice-agent protocol prefers speech for audible progress", () => {
   assert.doesNotMatch(voiceAgentProtocolPrompt, /Popup channel/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /Popup channel/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /at most one popup event per assistant answer/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /KaTeX/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /\$\.\.\.\$/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /\$\$\.\.\.\$\$/u);
 });
 
 test("visual popup preference updates backend protocol prompt and persists", async () => {

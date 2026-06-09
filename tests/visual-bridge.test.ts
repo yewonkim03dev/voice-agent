@@ -633,6 +633,13 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /"popupPreferred": popupPreferred/u);
   assert.match(swift, /case "popup":/u);
   assert.match(swift, /final class PopupPanelController/u);
+  assert.match(swift, /import WebKit/u);
+  assert.match(swift, /WKWebView/u);
+  assert.match(swift, /katexAssetTags/u);
+  assert.match(swift, /renderMathInElement/u);
+  assert.match(swift, /katex\.min\.js/u);
+  assert.match(swift, /auto-render\.min\.js/u);
+  assert.match(swift, /katex\.min\.css/u);
   assert.match(swift, /private func markdownAttributedString/u);
   assert.match(swift, /NSPasteboard\.general\.setString\(rawText, forType: \.string\)/u);
   assert.match(swift, /toggleButton\.action = #selector\(toggleMode\)/u);
@@ -725,7 +732,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /hudContextField\.action = #selector\(addContext\)/u);
   assert.match(swift, /Go sends the entered text directly to the agent/u);
   assert.match(swift, /No references queued/u);
-  assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);
+  assert.doesNotMatch(swift, /Electron|Tauri/iu);
 });
 
 test("macOS native companion typechecks with Swift", async (context) => {

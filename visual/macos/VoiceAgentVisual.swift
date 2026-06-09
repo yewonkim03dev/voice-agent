@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import WebKit
 
 enum UiLanguage: Equatable {
     case en
@@ -2207,7 +2208,9 @@ final class MenuBarCompanion {
 
 final class PopupPanelController: NSObject {
     private var panel: NSPanel?
+    private let scrollView = NSScrollView(frame: .zero)
     private let textView = NSTextView(frame: .zero)
+    private let webView = WKWebView(frame: .zero)
     private let toggleButton = NSButton(title: "", target: nil, action: nil)
     private let copyButton = NSButton(title: "", target: nil, action: nil)
     private let closeButton = NSButton(title: "", target: nil, action: nil)
@@ -2254,7 +2257,7 @@ final class PopupPanelController: NSObject {
         content.wantsLayer = true
         content.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 0.96).cgColor
 
-        let scrollView = NSScrollView(frame: NSRect(x: 16, y: 58, width: size.width - 32, height: size.height - 74))
+        scrollView.frame = NSRect(x: 16, y: 58, width: size.width - 32, height: size.height - 74)
         scrollView.autoresizingMask = [.width, .height]
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
@@ -2270,6 +2273,13 @@ final class PopupPanelController: NSObject {
         textView.textContainer?.widthTracksTextView = true
         scrollView.documentView = textView
         content.addSubview(scrollView)
+
+        webView.frame = scrollView.frame
+        webView.autoresizingMask = [.width, .height]
+        webView.wantsLayer = true
+        webView.layer?.backgroundColor = NSColor(calibratedRed: 0.07, green: 0.10, blue: 0.15, alpha: 1).cgColor
+        webView.setValue(false, forKey: "drawsBackground")
+        content.addSubview(webView)
 
         toggleButton.target = self
         toggleButton.action = #selector(toggleMode)
@@ -2300,12 +2310,16 @@ final class PopupPanelController: NSObject {
     private func renderContent() {
         updateLocalization()
         if showingRaw {
+            webView.isHidden = true
+            scrollView.isHidden = false
             textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
             textView.string = rawText
             return
         }
 
-        textView.textStorage?.setAttributedString(markdownAttributedString(rawText))
+        scrollView.isHidden = true
+        webView.isHidden = false
+        webView.loadHTMLString(popupHtmlDocument(rawText), baseURL: katexDistDirectory())
     }
 
     @objc private func toggleMode() {
@@ -2321,6 +2335,183 @@ final class PopupPanelController: NSObject {
     @objc private func close() {
         panel?.orderOut(nil)
     }
+}
+
+private func popupHtmlDocument(_ markdown: String) -> String {
+    let body = markdownBodyHtml(markdown)
+    let assets = katexAssetTags()
+    return #"""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+\#(assets)
+<style>
+:root {
+  color-scheme: dark;
+  background: #111827;
+  color: #e5edf8;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+body {
+  margin: 0;
+  padding: 18px 20px 28px;
+  background: #111827;
+  color: #e5edf8;
+  font-size: 14px;
+  line-height: 1.58;
+}
+h1, h2, h3 {
+  margin: 18px 0 10px;
+  line-height: 1.25;
+  color: #f5f8ff;
+}
+h1 { font-size: 24px; }
+h2 { font-size: 20px; }
+h3 { font-size: 17px; }
+p {
+  margin: 9px 0;
+}
+.bullet {
+  padding-left: 1.1em;
+  text-indent: -1.1em;
+}
+.spacer {
+  height: 8px;
+}
+pre {
+  overflow-x: auto;
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0b1220;
+  color: #d7e4f5;
+}
+code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+</style>
+</head>
+<body>
+\#(body)
+<script>
+if (window.renderMathInElement) {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "$$", right: "$$", display: true},
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false},
+      {left: "$", right: "$", display: false}
+    ],
+    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+    throwOnError: false,
+    strict: "warn"
+  });
+}
+</script>
+</body>
+</html>
+"""#
+}
+
+private func markdownBodyHtml(_ markdown: String) -> String {
+    var output: [String] = []
+    var inCodeBlock = false
+
+    for line in markdown.components(separatedBy: .newlines) {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("```") {
+            if inCodeBlock {
+                output.append("</code></pre>")
+            } else {
+                output.append("<pre><code>")
+            }
+            inCodeBlock.toggle()
+            continue
+        }
+
+        if inCodeBlock {
+            output.append(htmlEscaped(line))
+            continue
+        }
+
+        if trimmed.isEmpty {
+            output.append("<div class=\"spacer\"></div>")
+        } else if trimmed.hasPrefix("### ") {
+            output.append("<h3>\(htmlEscaped(String(trimmed.dropFirst(4))))</h3>")
+        } else if trimmed.hasPrefix("## ") {
+            output.append("<h2>\(htmlEscaped(String(trimmed.dropFirst(3))))</h2>")
+        } else if trimmed.hasPrefix("# ") {
+            output.append("<h1>\(htmlEscaped(String(trimmed.dropFirst(2))))</h1>")
+        } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+            output.append("<p class=\"bullet\">&bull; \(htmlEscaped(String(trimmed.dropFirst(2))))</p>")
+        } else {
+            output.append("<p>\(htmlEscaped(line))</p>")
+        }
+    }
+
+    if inCodeBlock {
+        output.append("</code></pre>")
+    }
+
+    return output.joined(separator: "\n")
+}
+
+private func htmlEscaped(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "&", with: "&amp;")
+        .replacingOccurrences(of: "<", with: "&lt;")
+        .replacingOccurrences(of: ">", with: "&gt;")
+        .replacingOccurrences(of: "\"", with: "&quot;")
+        .replacingOccurrences(of: "'", with: "&#39;")
+}
+
+private func katexAssetTags() -> String {
+    guard let directory = katexDistDirectory() else { return "" }
+    let css = directory.appendingPathComponent("katex.min.css").absoluteString
+    let script = directory.appendingPathComponent("katex.min.js").absoluteString
+    let autoRender = directory.appendingPathComponent("contrib/auto-render.min.js").absoluteString
+    return #"""
+<link rel="stylesheet" href="\#(css)">
+<script src="\#(script)"></script>
+<script src="\#(autoRender)"></script>
+"""#
+}
+
+private func katexDistDirectory() -> URL? {
+    let fileManager = FileManager.default
+    let roots = [
+        URL(fileURLWithPath: fileManager.currentDirectoryPath),
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    ]
+
+    for root in roots {
+        var current = root
+        for _ in 0..<8 {
+            let candidate = current
+                .appendingPathComponent("node_modules", isDirectory: true)
+                .appendingPathComponent("katex", isDirectory: true)
+                .appendingPathComponent("dist", isDirectory: true)
+            if fileManager.fileExists(atPath: candidate.appendingPathComponent("katex.min.css").path),
+               fileManager.fileExists(atPath: candidate.appendingPathComponent("katex.min.js").path),
+               fileManager.fileExists(atPath: candidate.appendingPathComponent("contrib/auto-render.min.js").path) {
+                return candidate
+            }
+
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { break }
+            current = parent
+        }
+    }
+
+    return nil
 }
 
 private func markdownAttributedString(_ markdown: String) -> NSAttributedString {

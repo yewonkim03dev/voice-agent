@@ -17,5 +17,8 @@
     "tts:test": "node src/app/tts-test.ts",
     "visual": "node src/visual/run-visual.ts",
     "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "katex": "^0.17.0"
   }
 }
