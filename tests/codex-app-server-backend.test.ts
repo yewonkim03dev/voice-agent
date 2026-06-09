@@ -344,7 +344,7 @@ test("late completed old turns do not idle the current app-server turn", async (
   assert.equal(statuses.at(-1)?.task, "thinking");
 });
 
-test("can prepend the voice-agent protocol prompt to real turn/start requests", async () => {
+test("passes the voice-agent protocol prompt as thread developer instructions", async () => {
   const { backend, child, socket } = createStartedBackend({
     voiceAgentProtocol: true,
     voiceAgentProtocolPrompt: "Respond as voice-agent NDJSON."
@@ -363,19 +363,44 @@ test("can prepend the voice-agent protocol prompt to real turn/start requests", 
     mode: "submit"
   });
 
+  const threadStart = socket.sent.find((message) => message.method === "thread/start");
+  assert.equal(threadStart?.params.developerInstructions, "Respond as voice-agent NDJSON.");
+
   const turnStart = socket.sent.find((message) => message.method === "turn/start");
   assert.deepEqual(turnStart?.params.input, [
-    {
-      type: "text",
-      text: "Respond as voice-agent NDJSON.",
-      text_elements: []
-    },
     {
       type: "text",
       text: "테스트 돌려줘",
       text_elements: []
     }
   ]);
+});
+
+test("passes the voice-agent protocol prompt when resuming a thread", async () => {
+  const child = new FakeAppServerProcess();
+  const socket = new FakeWebSocket();
+  const backend = new CodexAppServerBackend({
+    cwd: "/repo",
+    voiceAgentProtocol: true,
+    voiceAgentProtocolPrompt: "Respond as voice-agent NDJSON.",
+    threadStore: {
+      async load() {
+        return "thread_saved";
+      },
+      async save() {}
+    },
+    spawnProcess: () => child,
+    createWebSocket: () => socket
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  const threadResume = socket.sent.find((message) => message.method === "thread/resume");
+  assert.equal(threadResume?.params.developerInstructions, "Respond as voice-agent NDJSON.");
 });
 
 test("adds response language runtime policy without changing the base protocol prompt", async () => {
@@ -398,13 +423,11 @@ test("adds response language runtime policy without changing the base protocol p
     mode: "submit"
   });
 
+  const threadStart = socket.sent.find((message) => message.method === "thread/start");
+  assert.equal(threadStart?.params.developerInstructions, "Respond as voice-agent NDJSON.");
+
   const turnStart = socket.sent.find((message) => message.method === "turn/start");
   assert.deepEqual(turnStart?.params.input, [
-    {
-      type: "text",
-      text: "Respond as voice-agent NDJSON.",
-      text_elements: []
-    },
     {
       type: "text",
       text: "Runtime policy: Reply to the user in Korean, regardless of the input language.",

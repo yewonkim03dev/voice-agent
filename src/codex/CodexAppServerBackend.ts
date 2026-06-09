@@ -426,6 +426,7 @@ export class CodexAppServerBackend implements AgentBackend {
       approvalPolicy: this.approvalPolicy,
       approvalsReviewer: "user",
       sandbox: "workspace-write",
+      ...(this.voiceAgentProtocol ? { developerInstructions: this.protocolPrompt } : {}),
       persistExtendedHistory: true
     });
     const thread = asRecord(result).thread;
@@ -440,6 +441,7 @@ export class CodexAppServerBackend implements AgentBackend {
       sandbox: "workspace-write",
       experimentalRawEvents: false,
       persistExtendedHistory: true,
+      ...(this.voiceAgentProtocol ? { developerInstructions: this.protocolPrompt } : {}),
       sessionStartSource: "startup"
     });
     const thread = asRecord(result).thread;
@@ -530,21 +532,14 @@ export class CodexAppServerBackend implements AgentBackend {
 
     const policy = responseLanguagePolicyPrompt(prompt.responseLanguage);
 
+    if (!policy) return input;
+
     return [
       {
         type: "text" as const,
-        text: this.protocolPrompt,
+        text: policy,
         text_elements: []
       },
-      ...(policy
-        ? [
-            {
-              type: "text" as const,
-              text: policy,
-              text_elements: []
-            }
-          ]
-        : []),
       ...input
     ];
   }
