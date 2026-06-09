@@ -6,6 +6,14 @@ import test from "node:test";
 
 import type { AudioFrame, AudioInput, AudioInputStatusEvent } from "../src/audio/AudioFrame.ts";
 import { InMemoryAgentBackend, TerminalHarness } from "../src/app/harness.ts";
+import type {
+  CameraGestureWatcher,
+  CameraPermissionManager,
+  CameraPermissionStatus,
+  GestureWatcherObservation,
+  GestureWatcherStatus
+} from "../src/gesture/CameraGestureWatcher.ts";
+import type { GestureCameraMode, GestureWakeConfig } from "../src/gesture/GestureWakeConfig.ts";
 import {
   createCodexThreadStore,
   readCodexThreadId,
@@ -435,8 +443,66 @@ test("always-on voice runner prints complete voice help", async () => {
   assert.ok(logs.includes("  /record starts or stops manual recording."));
   assert.ok(logs.includes("  /mic toggles microphone listening on/off."));
   assert.ok(logs.includes("  /mic-reconnect rebuilds or restarts microphone input."));
+  assert.ok(logs.includes("  /cam-test shows camera gesture test steps and current status."));
   assert.ok(logs.includes("  /add <text> queues additional info for the next voice transcript."));
   assert.ok(logs.includes("  /refs lists queued additional info."));
+});
+
+test("always-on voice runner prints camera test guidance without requesting permission when --cam is absent", async () => {
+  const permission = new FakeCameraPermissionManager("authorized");
+  const { runner, logs } = createAlwaysOnRunner([], {
+    cameraPermissionManager: permission
+  });
+
+  await runner.start();
+  await runner.processLine("/cam-test");
+  await runner.stop();
+
+  assert.equal(permission.requestCount, 0);
+  assert.ok(logs.some((line) => line.includes("[camera:test] cli=false enabled=false active=false")));
+  assert.ok(logs.includes("[camera:test] restart Voice Agent with --cam to enable camera gesture wake."));
+});
+
+test("always-on voice runner prints physical camera gesture test steps when --cam is active", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const permission = new FakeCameraPermissionManager("authorized");
+  const { runner, logs } = createAlwaysOnRunner([], {
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: permission
+  });
+
+  await runner.start();
+  await runner.processLine("/cam-test");
+  await runner.stop();
+
+  assert.equal(camera.startCount, 1);
+  assert.equal(permission.requestCount, 1);
+  assert.ok(logs.includes("[camera:test] permission=authorized"));
+  assert.ok(logs.includes("[camera:test] hold open_palm for at least 700ms; HUD should enter listening."));
+  assert.ok(logs.includes("[camera:test] while listening, hold thumbs_down for at least 700ms; HUD should return to idle."));
+  assert.ok(logs.includes("[camera:test] live observation logging is enabled for 15s. If no [camera:observe] lines appear, the camera helper is not producing hand landmark frames."));
+});
+
+test("always-on voice runner prints camera observation diagnostics after /cam-test", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { runner, logs } = createAlwaysOnRunner([], {
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+  });
+
+  await runner.start();
+  await runner.processLine("/cam-test");
+  camera.emitGesture("none", 1000);
+  camera.emitGesture("open_palm", 1700);
+  camera.emitGesture("open_palm", 2400);
+  await runner.drain();
+  await runner.stop();
+
+  assert.ok(logs.includes("[camera:observe] #1 gesture=none confidence=n/a state=idle trigger=none"));
+  assert.ok(logs.includes("[camera:observe] #2 gesture=open_palm confidence=n/a state=idle trigger=none"));
+  assert.ok(logs.includes("[camera:observe] #3 gesture=open_palm confidence=n/a state=idle trigger=wake"));
 });
 
 test("always-on voice runner maps audio input recovery status to visual state", async () => {
@@ -892,6 +958,290 @@ test("always-on voice runner manual /record fallback routes without a wake phras
 
   assert.equal(backend.prompts.length, 1);
   assert.equal(backend.prompts[0].text, "그냥 간단한 npm test 돌려줘");
+});
+
+test("always-on voice runner does not start camera gestures without --cam", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { backend, runner } = createAlwaysOnRunner([], {
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+  });
+
+  await runner.start();
+  camera.emitGesture("open_palm", 1000);
+  camera.emitGesture("open_palm", 1700);
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(camera.startCount, 0);
+  assert.equal(backend.prompts.length, 0);
+});
+
+test("always-on voice runner uses camera open palm as wake follow-up when --cam is enabled", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "테스트 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge,
+      cameraGestureEnabled: true,
+      cameraGestureWatcher: camera,
+      cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+    }
+  );
+
+  await runner.start();
+  camera.emitGesture("open_palm", 1000);
+  camera.emitGesture("open_palm", 1700);
+  await flushAsync();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(camera.startCount, 1);
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.equal(visualBridge.events.some((event) => event.type === "camera" && event.mode === "idle"), true);
+});
+
+test("always-on voice runner disables camera gestures when permission is denied", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, logs } = createAlwaysOnRunner([], {
+    visualBridge,
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("denied")
+  });
+
+  await runner.start();
+  camera.emitGesture("open_palm", 1000);
+  camera.emitGesture("open_palm", 1700);
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(camera.startCount, 0);
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(logs.some((line) => line === "[camera:permission] denied"), true);
+  assert.equal(
+    visualBridge.events.some(
+      (event) =>
+        event.type === "camera" &&
+        event.text === "Camera gesture wake disabled. System Settings → Privacy & Security → Camera → allow this app"
+    ),
+    true
+  );
+});
+
+test("always-on voice runner keeps camera off after denied permission when gesture settings change", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { runner } = createAlwaysOnRunner([], {
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("denied")
+  });
+
+  await runner.start();
+  runner.updateGestureWakeSettings({
+    bindings: {
+      wake: "peace",
+      stop: "fist"
+    }
+  }, { persist: false });
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(camera.startCount, 0);
+  assert.equal(camera.modes.includes("idle"), false);
+});
+
+test("always-on voice runner reapplies camera watcher config after gesture settings change", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { runner } = createAlwaysOnRunner([], {
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+  });
+
+  await runner.start();
+  runner.updateGestureWakeSettings({
+    fps: 8,
+    resolution: "800x600",
+    bindings: {
+      wake: "peace",
+      stop: "fist"
+    }
+  }, { persist: false });
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(camera.startCount, 2);
+  assert.equal(camera.startConfigs.at(-1)?.fps, 8);
+  assert.equal(camera.startConfigs.at(-1)?.resolution.label, "800x600");
+  assert.equal(camera.startConfigs.at(-1)?.bindings.wake, "peace");
+  assert.equal(camera.startConfigs.at(-1)?.bindings.stop, "fist");
+});
+
+test("always-on voice runner turns camera watcher off and shows running status while agent runs by default", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "긴 작업 처리해줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge,
+      cameraGestureEnabled: true,
+      cameraGestureWatcher: camera,
+      cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+    }
+  );
+
+  await runner.start();
+  camera.emitGesture("open_palm", 1000);
+  camera.emitGesture("open_palm", 1700);
+  await flushAsync();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+
+  const cameraEvents = visualBridge.events.filter((event) => event.type === "camera");
+  const lastCameraEvent = cameraEvents.at(-1);
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(camera.modes.includes("off"), true);
+  assert.equal(lastCameraEvent?.mode, "running");
+  assert.equal(lastCameraEvent?.enabled, false);
+});
+
+test("always-on voice runner restores idle camera mode after stopping active work", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "긴 작업 처리해줘",
+        language: "ko"
+      }
+    ],
+    {
+      cameraGestureEnabled: true,
+      cameraGestureWatcher: camera,
+      cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+    }
+  );
+
+  await runner.start();
+  camera.emitGesture("open_palm", 1000);
+  camera.emitGesture("open_palm", 1700);
+  await flushAsync();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.terminalHarness.stopActiveTurn("manual stop");
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.deepEqual(backend.interrupts, ["manual stop"]);
+  const offIndex = camera.modes.findIndex((mode) => mode === "off");
+  const restoredIdleIndex = camera.modes.findIndex((mode, index) => index > offIndex && mode === "idle");
+  assert.equal(offIndex >= 0, true);
+  assert.equal(restoredIdleIndex > offIndex, true);
+});
+
+test("always-on voice runner routes camera approval gestures through approval flow", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { backend, runner } = createAlwaysOnRunner([], {
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized"),
+    gestureWake: {
+      enabled: false,
+      fps: 5,
+      resolution: {
+        width: 640,
+        height: 480,
+        label: "640x480"
+      },
+      holdMs: 700,
+      cooldownMs: 0,
+      runningMode: "off",
+      bindings: {
+        wake: "open_palm",
+        stop: "thumbs_down",
+        "approval.once": "thumbs_up",
+        "approval.deny": "fist"
+      }
+    }
+  });
+
+  await runner.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+  camera.emitGesture("thumbs_up", 1000);
+  camera.emitGesture("thumbs_up", 1700);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.permissions.length, 1);
+  assert.equal(backend.permissions[0].decision, "allow");
+  assert.equal(backend.prompts.length, 0);
+});
+
+test("always-on voice runner interrupts running work from emergency camera stop gesture", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "긴 작업 처리해줘",
+        language: "ko"
+      }
+    ],
+    {
+      cameraGestureEnabled: true,
+      cameraGestureWatcher: camera,
+      cameraPermissionManager: new FakeCameraPermissionManager("authorized"),
+      gestureWake: {
+        enabled: false,
+        fps: 5,
+        resolution: {
+          width: 640,
+          height: 480,
+          label: "640x480"
+        },
+        holdMs: 700,
+        cooldownMs: 0,
+        runningMode: "emergency_only",
+        bindings: {
+          wake: "open_palm",
+          stop: "thumbs_down"
+        }
+      }
+    }
+  );
+
+  await runner.start();
+  camera.emitGesture("open_palm", 1000);
+  camera.emitGesture("open_palm", 1700);
+  await flushAsync();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  assert.equal(backend.prompts.length, 1);
+
+  camera.emitGesture("thumbs_down", 3000);
+  camera.emitGesture("thumbs_down", 3700);
+  await flushAsync();
+  await runner.stop();
+
+  assert.deepEqual(backend.interrupts, ["Stop requested from camera gesture"]);
+  assert.equal(camera.modes.includes("emergency"), true);
 });
 
 test("always-on voice runner routes approval speech while native approval is pending", async () => {
@@ -1825,6 +2175,58 @@ test("voice harness config loads TTS settings from the local config file", async
   }
 });
 
+test("voice harness config loads gesture wake settings from the local config file", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+
+  try {
+    await writeFile(
+      join(cwd, ".voice-agent.local.json"),
+      JSON.stringify({
+        recorderCommand: "file-recorder",
+        sttCommand: "file-stt {audio}",
+        sampleRate: 16_000,
+        channels: 1,
+        gestureWake: {
+          enabled: true,
+          fps: 8,
+          resolution: "800x600",
+          holdMs: 900,
+          cooldownMs: 2000,
+          runningMode: "emergency_only",
+          bindings: {
+            wake: "peace",
+            stop: "fist",
+            "approval.once": "thumbs_up"
+          }
+        }
+      }),
+      "utf8"
+    );
+
+    const resolution = await resolveVoiceHarnessConfig({
+      env: {},
+      cwd
+    });
+
+    assert.equal(resolution.config?.gestureWake?.enabled, true);
+    assert.equal(resolution.config?.gestureWake?.fps, 8);
+    assert.equal(resolution.config?.gestureWake?.resolution.label, "800x600");
+    assert.equal(resolution.config?.gestureWake?.holdMs, 900);
+    assert.equal(resolution.config?.gestureWake?.cooldownMs, 2000);
+    assert.equal(resolution.config?.gestureWake?.runningMode, "emergency_only");
+    assert.deepEqual(resolution.config?.gestureWake?.bindings, {
+      wake: "peace",
+      stop: "fist",
+      "approval.once": "thumbs_up"
+    });
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
 test("voice local settings store persists overrides and reset restores factory defaults", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
   const configPath = ".voice-agent.local.json";
@@ -1857,6 +2259,19 @@ test("voice local settings store persists overrides and reset restores factory d
         onceApprove: ["진행"],
         deny: ["그만"],
         sessionApprove: ["오늘은 허용"]
+      },
+      gestureWake: {
+        enabled: true,
+        fps: 8,
+        resolution: "800x600",
+        holdMs: 900,
+        cooldownMs: 2000,
+        runningMode: "emergency_only",
+        bindings: {
+          wake: "peace",
+          stop: "fist",
+          "approval.once": "thumbs_up"
+        }
       },
       tts: {
         enabled: true,
@@ -1917,6 +2332,23 @@ test("voice local settings store persists overrides and reset restores factory d
         "remember this host"
       ]
     });
+    assert.deepEqual(updated.gestureWake, {
+      enabled: true,
+      fps: 8,
+      resolution: {
+        width: 800,
+        height: 600,
+        label: "800x600"
+      },
+      holdMs: 900,
+      cooldownMs: 2000,
+      runningMode: "emergency_only",
+      bindings: {
+        wake: "peace",
+        stop: "fist",
+        "approval.once": "thumbs_up"
+      }
+    });
     assert.deepEqual(updated.tts, {
       enabled: true,
       language: "ko",
@@ -1946,6 +2378,7 @@ test("voice local settings store persists overrides and reset restores factory d
     });
     assert.equal("wakePhrases" in reset, false);
     assert.equal("approvalPhrases" in reset, false);
+    assert.equal("gestureWake" in reset, false);
     assert.equal("tts" in reset, false);
     assert.deepEqual(reset.visual, {
       provider: "qtqml"
@@ -1958,6 +2391,7 @@ test("voice local settings store persists overrides and reset restores factory d
     });
     assert.deepEqual(resolution.config?.wakePhrases, defaultWakePhrases);
     assert.equal(resolution.config?.approvalPhrases, undefined);
+    assert.equal(resolution.config?.gestureWake, undefined);
     assert.equal(resolution.config?.tts, undefined);
   } finally {
     await rm(cwd, {
@@ -2102,6 +2536,7 @@ test("voice harness CLI parses always-on and visual flags without forwarding the
     alwaysOn: true,
     debug: true,
     visual: true,
+    cameraGesture: false,
     harnessArgs: ["--codex", "-c", "model=\"gpt\""]
   });
 });
@@ -2111,7 +2546,18 @@ test("voice harness CLI parses visual provider without forwarding it to Codex", 
     alwaysOn: false,
     debug: false,
     visual: true,
+    cameraGesture: false,
     visualProvider: "macos-native",
+    harnessArgs: ["--codex", "-c", "model=\"gpt\""]
+  });
+});
+
+test("voice harness CLI parses camera gesture flag without forwarding it to Codex", () => {
+  assert.deepEqual(parseVoiceHarnessCliArgs(["--codex", "--always-on", "--cam", "-c", "model=\"gpt\""]), {
+    alwaysOn: true,
+    debug: false,
+    visual: false,
+    cameraGesture: true,
     harnessArgs: ["--codex", "-c", "model=\"gpt\""]
   });
 });
@@ -2125,7 +2571,9 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  Wake: 코덱스 <명령>"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /help shows available terminal commands."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /mic toggles microphone listening on/off."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("  /cam-test shows camera gesture test steps and current status."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /refs lists queued additional info."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[camera:test] permission=authorized"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("Type /help to show available commands."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[codex-app] turn/start sess_1: 날씨 확인해줘"), false);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[wake:candidate] start preRollFrames=8 preRollBytes=32768"), false);
@@ -2294,6 +2742,10 @@ function createAlwaysOnRunner(
     speechProcessor?: SpeechProcessor;
     wakeStreamDetector?: WakeStreamDetector;
     settingsPersistence?: VoiceSettingsPersistence;
+    gestureWake?: GestureWakeConfig;
+    cameraGestureEnabled?: boolean;
+    cameraGestureWatcher?: CameraGestureWatcher;
+    cameraPermissionManager?: CameraPermissionManager;
     debug?: boolean;
     wakeFollowUpWindowMs?: number;
   } = {}
@@ -2332,6 +2784,10 @@ function createAlwaysOnRunner(
     wakePhrases: options.wakePhrases ?? defaultWakePhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
+    gestureWake: options.gestureWake,
+    cameraGestureEnabled: options.cameraGestureEnabled,
+    cameraGestureWatcher: options.cameraGestureWatcher,
+    cameraPermissionManager: options.cameraPermissionManager,
     writeLine: (line) => logs.push(line),
     now: () => 1000,
     createId,
@@ -2715,6 +3171,72 @@ class DeferredSettingsPersistence implements VoiceSettingsPersistence {
 
   resolveNext(): void {
     this.resolvers.shift()?.();
+  }
+}
+
+class FakeCameraPermissionManager implements CameraPermissionManager {
+  private readonly status: CameraPermissionStatus;
+  requestCount = 0;
+
+  constructor(status: CameraPermissionStatus) {
+    this.status = status;
+  }
+
+  async requestPermission(): Promise<CameraPermissionStatus> {
+    this.requestCount += 1;
+    return this.status;
+  }
+}
+
+class FakeCameraGestureWatcher implements CameraGestureWatcher {
+  readonly modes: GestureCameraMode[] = [];
+  readonly startConfigs: GestureWakeConfig[] = [];
+  startCount = 0;
+  stopCount = 0;
+  private readonly gestureListeners: Array<(observation: GestureWatcherObservation) => void> = [];
+  private readonly statusListeners: Array<(status: GestureWatcherStatus) => void> = [];
+
+  async start(config: GestureWakeConfig): Promise<void> {
+    this.startCount += 1;
+    this.startConfigs.push(config);
+    this.emitStatus({
+      enabled: true,
+      mode: "idle"
+    });
+  }
+
+  async stop(): Promise<void> {
+    this.stopCount += 1;
+    this.setMode("off");
+  }
+
+  setMode(mode: GestureCameraMode): void {
+    this.modes.push(mode);
+    this.emitStatus({
+      enabled: mode !== "off",
+      mode
+    });
+  }
+
+  onGesture(callback: (observation: GestureWatcherObservation) => void): void {
+    this.gestureListeners.push(callback);
+  }
+
+  onStatus(callback: (status: GestureWatcherStatus) => void): void {
+    this.statusListeners.push(callback);
+  }
+
+  emitGesture(gesture: GestureWatcherObservation["gesture"], timestamp: number): void {
+    this.gestureListeners.forEach((listener) =>
+      listener({
+        gesture,
+        timestamp
+      })
+    );
+  }
+
+  private emitStatus(status: GestureWatcherStatus): void {
+    this.statusListeners.forEach((listener) => listener(status));
   }
 }
 

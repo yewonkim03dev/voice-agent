@@ -289,6 +289,7 @@ export class TerminalHarness {
   private progressVoiceGeneration = 0;
   private readonly permissionCueMessageIds = new Set<string>();
   private ignoreApprovalSpeechUntil = 0;
+  private readonly agentActivityListeners: Array<() => void> = [];
 
   constructor(options: TerminalHarnessOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -439,6 +440,10 @@ export class TerminalHarness {
     );
   }
 
+  onAgentActivityChange(callback: () => void): void {
+    this.agentActivityListeners.push(callback);
+  }
+
   async stopVoiceOutput(): Promise<void> {
     await this.cancelQueuedVoiceOutput();
     this.restoreCurrentVisualState();
@@ -463,6 +468,7 @@ export class TerminalHarness {
           task: "idle"
         };
         this.passthroughState = "IDLE";
+        this.emitAgentActivityChange();
       }
     } catch (error) {
       this.sendVisualEvent({
@@ -476,6 +482,7 @@ export class TerminalHarness {
 
     this.sendVisualQuestion("");
     this.sendVisualState("idle");
+    this.emitAgentActivityChange();
     await this.speak("정지했어.", "status");
   }
 
@@ -499,6 +506,7 @@ export class TerminalHarness {
       task: "idle"
     };
     this.passthroughState = "IDLE";
+    this.emitAgentActivityChange();
   }
 
   async speakWakeRejected(text: string, visualText: string): Promise<void> {
@@ -538,6 +546,7 @@ export class TerminalHarness {
     this.backend.onStatus((status) => {
       const wasWaitingForCodex = this.passthroughState === "WAITING_CODEX" || this.passthroughState === "EXECUTING";
       this.codexStatus = status;
+      this.emitAgentActivityChange();
       if (status.rateLimits) {
         this.sendVisualUsage(status.rateLimits);
       }
@@ -748,6 +757,7 @@ export class TerminalHarness {
       currentTool: request.tool
     };
     this.passthroughState = "CONFIRMING";
+    this.emitAgentActivityChange();
     await this.speak(permissionPromptText(permissionTarget), "permission");
     this.passthroughState = "CONFIRMING";
   }
@@ -781,6 +791,7 @@ export class TerminalHarness {
       };
       this.passthroughState = "IDLE";
       this.clearPendingPermissions();
+      this.emitAgentActivityChange();
       if (outputGeneration !== undefined && outputGeneration === this.activePassthroughGeneration) {
         this.activePassthroughGeneration = undefined;
       }
@@ -1209,6 +1220,10 @@ export class TerminalHarness {
     this.restoreCurrentVisualState();
   }
 
+  private emitAgentActivityChange(): void {
+    this.agentActivityListeners.forEach((listener) => listener());
+  }
+
   private playPermissionReadyCue(id: string): void {
     if (!this.permissionCueMessageIds.delete(id)) return;
     if (!this.hasPendingApproval()) return;
@@ -1454,6 +1469,7 @@ export class TerminalHarness {
       case "clear_context":
       case "show_context":
       case "update_wake_phrases":
+      case "update_gesture_wake_settings":
         return;
       case "update_approval_phrases":
         await this.updateApprovalPhrases(event.approvalPhrases ?? {});

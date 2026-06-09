@@ -5,6 +5,27 @@ import { fileURLToPath } from "node:url";
 
 import { RecorderCommandAudioInput } from "../audio/RecorderCommandAudioInput.ts";
 import type { AudioFrame, AudioInput, AudioInputStatus, AudioInputStatusEvent } from "../audio/AudioFrame.ts";
+import {
+  NoopCameraGestureWatcher,
+  StaticCameraPermissionManager,
+  type CameraGestureWatcher,
+  type CameraPermissionManager,
+  type CameraPermissionStatus,
+  type GestureWatcherObservation,
+  type GestureWatcherStatus
+} from "../gesture/CameraGestureWatcher.ts";
+import { CommandCameraPermissionManager } from "../gesture/CommandCameraPermissionManager.ts";
+import { CommandHandLandmarkProvider } from "../gesture/CommandHandLandmarkProvider.ts";
+import { GestureActionStateMachine, type GestureTrigger } from "../gesture/GestureActionStateMachine.ts";
+import {
+  gestureWakeConfigForRuntime,
+  sanitizeGestureWakeConfig,
+  type GestureCameraMode,
+  type GestureWakeFileConfig,
+  type GestureRuntimeState,
+  type GestureWakeConfig
+} from "../gesture/GestureWakeConfig.ts";
+import { LandmarkCameraGestureWatcher } from "../gesture/LandmarkCameraGestureWatcher.ts";
 import { AlwaysOnWakeGate, type AlwaysOnWakeGateEvent } from "../listening/AlwaysOnWakeGate.ts";
 import { EndOfSpeechDetector } from "../listening/EndOfSpeechDetector.ts";
 import { ManualRecordingGate } from "../listening/ManualRecordingGate.ts";
@@ -61,6 +82,10 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   debug?: boolean;
   echoGuard?: EchoGuard;
   bargeInPolicy?: BargeInPolicy;
+  gestureWake?: GestureWakeConfig;
+  cameraGestureEnabled?: boolean;
+  cameraGestureWatcher?: CameraGestureWatcher;
+  cameraPermissionManager?: CameraPermissionManager;
   now?: () => number;
   createId?: (prefix: string) => string;
   wakeFollowUpWindowMs?: number;
@@ -244,8 +269,14 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly wakeFollowUpWindowMs: number;
   private readonly manualRecorder: UtteranceRecorder;
   private readonly textContext: SupplementalTextBuffer;
+  private readonly cameraGestureEnabledByCli: boolean;
+  private gestureWake: GestureWakeConfig;
+  private readonly cameraGestureWatcher: CameraGestureWatcher;
+  private readonly cameraPermissionManager: CameraPermissionManager;
+  private gestureStateMachine: GestureActionStateMachine;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private readonly pendingSettingsWrites = new Set<Promise<void>>();
+  private readonly pendingCameraTasks = new Set<Promise<void>>();
   private manualRecording = false;
   private micEnabled = true;
   private candidateVisualState = false;
@@ -253,6 +284,12 @@ export class AlwaysOnVoiceHarnessRunner {
   private recentProvisionalWakeCue: WakeStreamEvent | undefined;
   private audioInputStatus: AudioInputStatus = "running";
   private audioRecoveryActive = false;
+  private cameraGestureActive = false;
+  private cameraSettingsGeneration = 0;
+  private cameraDiagnosticUntil = 0;
+  private lastCameraDiagnosticAt = 0;
+  private cameraDiagnosticObservations = 0;
+  private lastCameraStatusLine = "";
   private started = false;
   private lastVolumeEventAt = 0;
   private wakeFollowUp:
@@ -281,6 +318,14 @@ export class AlwaysOnVoiceHarnessRunner {
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? ((prefix) => `${prefix}_${this.now()}`);
     this.wakeFollowUpWindowMs = options.wakeFollowUpWindowMs ?? wakeFollowUpWindowMs;
+    this.cameraGestureEnabledByCli = options.cameraGestureEnabled === true;
+    this.gestureWake = gestureWakeConfigForRuntime(options.gestureWake, this.cameraGestureEnabledByCli);
+    this.cameraGestureWatcher = options.cameraGestureWatcher ?? createDefaultCameraGestureWatcher();
+    this.cameraPermissionManager = options.cameraPermissionManager ?? createDefaultCameraPermissionManager();
+    this.gestureStateMachine = new GestureActionStateMachine({
+      config: this.gestureWake,
+      now: this.now
+    });
     this.textContext = new SupplementalTextBuffer(this.writeLine, (entries) =>
       sendVisualContextEvent(options.visualBridge, entries)
     );
@@ -294,6 +339,13 @@ export class AlwaysOnVoiceHarnessRunner {
     this.audioInput.onFrame((frame) => this.consumeFrame(frame));
     this.audioInput.onStatus?.((event) => this.handleAudioInputStatus(event));
     this.wakeStreamDetector.onWake((event) => this.handleProvisionalWake(event));
+    this.terminalHarness.onAgentActivityChange(() => {
+      this.refreshGestureRuntimeState();
+    });
+    this.cameraGestureWatcher.onGesture((event) => {
+      void this.handleGestureObservation(event);
+    });
+    this.cameraGestureWatcher.onStatus((event) => this.handleCameraStatus(event));
     this.wakeStreamDetector.updateWakePhrases?.(this.wakePhrases);
     this.wakeGate.onUtterance((audio) => this.queueTranscription(audio, "candidate"));
     this.wakeGate.onEvent((event) => this.printWakeEvent(event));
@@ -305,7 +357,9 @@ export class AlwaysOnVoiceHarnessRunner {
     await this.terminalHarness.start();
     this.sendVisualWakeSettings();
     this.sendVisualMicSettings();
+    this.sendVisualGestureSettings();
     await this.audioInput.start();
+    await this.startCameraGestureIfEnabled();
     this.started = true;
     this.writeLine("  Voice input: always-on wake listening enabled.");
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ")}`);
@@ -313,6 +367,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /help shows available terminal commands.");
     this.writeLine("  /mic toggles microphone listening on/off.");
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
+    this.writeLine("  /cam-test shows camera gesture test steps and current status.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
@@ -329,6 +384,8 @@ export class AlwaysOnVoiceHarnessRunner {
 
     await this.audioInput.stop();
     await this.wakeStreamDetector.stop?.();
+    this.cameraGestureActive = false;
+    await this.cameraGestureWatcher.stop();
     await this.drain();
     await this.drainSettingsWrites();
     this.clearWakeFollowUp();
@@ -360,6 +417,11 @@ export class AlwaysOnVoiceHarnessRunner {
       return "continue";
     }
 
+    if (isCameraTestCommand(text)) {
+      await this.printCameraGestureTest();
+      return "continue";
+    }
+
     if (text === "/quit") {
       await this.stop();
       this.writeLine("Harness stopped.");
@@ -383,6 +445,7 @@ export class AlwaysOnVoiceHarnessRunner {
 
   async drain(): Promise<void> {
     await Promise.all([...this.pendingTranscripts]);
+    await this.drainCameraTasks();
     await this.drainSettingsWrites();
   }
 
@@ -392,11 +455,49 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /record starts or stops manual recording.");
     this.writeLine("  /mic toggles microphone listening on/off.");
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
+    this.writeLine("  /cam-test shows camera gesture test steps and current status.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  /status shows the current agent status.");
     this.writeLine("  /tts-stop stops current TTS playback.");
     this.writeLine("  /quit exits Voice Agent.");
+  }
+
+  private async printCameraGestureTest(): Promise<void> {
+    this.refreshGestureRuntimeState();
+    this.cameraDiagnosticUntil = this.now() + 15_000;
+    this.lastCameraDiagnosticAt = 0;
+    this.cameraDiagnosticObservations = 0;
+    this.writeLine(
+      `[camera:test] cli=${this.cameraGestureEnabledByCli} enabled=${this.gestureWake.enabled} active=${this.cameraGestureActive} mode=${this.gestureStateMachine.getCameraMode()} wake=${this.gestureWake.bindings.wake} stop=${this.gestureWake.bindings.stop} holdMs=${this.gestureWake.holdMs} cooldownMs=${this.gestureWake.cooldownMs} runningMode=${this.gestureWake.runningMode}`
+    );
+    this.writeLine("[camera:test] macOS should show the camera-in-use indicator only after the hand landmark provider reports that the camera session started.");
+
+    if (!this.cameraGestureEnabledByCli) {
+      this.writeLine("[camera:test] restart Voice Agent with --cam to enable camera gesture wake.");
+      return;
+    }
+
+    const permission = this.cameraGestureActive ? "authorized" : await this.cameraPermissionManager.requestPermission();
+    this.writeLine(`[camera:test] permission=${permission}`);
+    if (permission !== "authorized") {
+      this.writeLine(`[camera:test] ${cameraPermissionGuidance(permission)}`);
+      return;
+    }
+
+    if (!this.cameraGestureActive) {
+      this.writeLine("[camera:test] camera permission is authorized, but the watcher is not active; restart with --cam and check startup logs.");
+      return;
+    }
+
+    this.writeLine(
+      `[camera:test] hold ${this.gestureWake.bindings.wake} for at least ${this.gestureWake.holdMs}ms; HUD should enter listening.`
+    );
+    this.writeLine(
+      `[camera:test] while listening, hold ${this.gestureWake.bindings.stop} for at least ${this.gestureWake.holdMs}ms; HUD should return to idle.`
+    );
+    this.writeLine("[camera:test] while approval is pending, hold the configured approval gesture to answer through the approval bridge.");
+    this.writeLine("[camera:test] live observation logging is enabled for 15s. If no [camera:observe] lines appear, the camera helper is not producing hand landmark frames.");
   }
 
   private consumeFrame(frame: AudioFrame): void {
@@ -466,7 +567,7 @@ export class AlwaysOnVoiceHarnessRunner {
       if (source === "manual") {
         this.printTranscript(transcript);
         const applied = this.textContext.applyWithEntries(transcript);
-        await this.terminalHarness.processTranscript(applied.transcript, {
+        await this.processTranscriptAndRefreshGestureState(applied.transcript, {
           visualQuestionText: transcript.text,
           visualQuestionReferences: applied.entries
         });
@@ -493,7 +594,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private async routeCandidateTranscript(transcript: Transcript, provisionalWake?: WakeStreamEvent): Promise<void> {
     if (this.terminalHarness.hasPendingApproval()) {
       this.writeLine("[wake:approval] pending native approval; routing speech without wake phrase.");
-      await this.terminalHarness.processTranscript(transcript);
+      await this.processTranscriptAndRefreshGestureState(transcript);
       return;
     }
 
@@ -573,7 +674,7 @@ export class AlwaysOnVoiceHarnessRunner {
     const applied = wake.commandText
       ? this.textContext.applyWithEntries(routedTranscript)
       : { transcript: routedTranscript, entries: [] };
-    await this.terminalHarness.processTranscript(applied.transcript, {
+    await this.processTranscriptAndRefreshGestureState(applied.transcript, {
       visualQuestionText: wake.commandText || transcript.text,
       visualQuestionReferences: applied.entries
     });
@@ -599,7 +700,7 @@ export class AlwaysOnVoiceHarnessRunner {
     }
     this.writeLine(`[wake:followup] phrase="${followUp.phrase}" command="${transcript.text.trim()}"`);
     const applied = this.textContext.applyWithEntries(transcript);
-    await this.terminalHarness.processTranscript(applied.transcript, {
+    await this.processTranscriptAndRefreshGestureState(applied.transcript, {
       visualQuestionText: transcript.text,
       visualQuestionReferences: applied.entries
     });
@@ -768,6 +869,152 @@ export class AlwaysOnVoiceHarnessRunner {
     });
   }
 
+  private async startCameraGestureIfEnabled(): Promise<void> {
+    this.sendVisualCameraStatus("off", this.gestureWake.enabled ? "camera gesture wake pending" : "camera gesture wake off");
+    if (!this.gestureWake.enabled) return;
+
+    const permission = await this.cameraPermissionManager.requestPermission();
+    if (permission !== "authorized") {
+      this.cameraGestureActive = false;
+      this.writeLine(`[camera:permission] ${permission}`);
+      this.sendVisualCameraStatus("off", cameraPermissionGuidance(permission));
+      return;
+    }
+
+    await this.cameraGestureWatcher.start(this.gestureWake);
+    this.cameraGestureActive = true;
+    this.refreshGestureRuntimeState();
+  }
+
+  private handleCameraStatus(status: GestureWatcherStatus): void {
+    const text = status.text ? ` text="${status.text}"` : "";
+    const line = `[camera:status] enabled=${status.enabled} mode=${status.mode}${text}`;
+    if (line !== this.lastCameraStatusLine) {
+      this.lastCameraStatusLine = line;
+      this.writeLine(line);
+    }
+    this.sendVisualCameraStatus(status.mode, status.text);
+  }
+
+  private async handleGestureObservation(observation: GestureWatcherObservation): Promise<void> {
+    if (!this.gestureWake.enabled || !this.cameraGestureActive) return;
+    this.refreshGestureRuntimeState();
+
+    const trigger = this.gestureStateMachine.observe(observation);
+    this.printCameraObservationDiagnostic(observation, trigger);
+    if (!trigger) return;
+
+    this.writeLine(`[camera:gesture] action=${trigger.action} gesture=${trigger.gesture} state=${trigger.state}`);
+
+    switch (trigger.action) {
+      case "wake":
+        this.handleGestureWake(trigger);
+        return;
+      case "stop":
+        await this.handleGestureStop(trigger);
+        return;
+      case "approval.once":
+      case "approval.deny":
+      case "approval.session":
+      case "approval.policy":
+        await this.handleGestureApproval(trigger);
+        return;
+    }
+  }
+
+  private printCameraObservationDiagnostic(observation: GestureWatcherObservation, trigger: GestureTrigger | null): void {
+    if (this.now() > this.cameraDiagnosticUntil && observation.timestamp > this.cameraDiagnosticUntil) return;
+    if (observation.gesture === "none" && observation.timestamp - this.lastCameraDiagnosticAt < 500) return;
+
+    this.cameraDiagnosticObservations += 1;
+    this.lastCameraDiagnosticAt = observation.timestamp;
+    const confidence = observation.confidence === undefined ? "n/a" : observation.confidence.toFixed(2);
+    this.writeLine(
+      `[camera:observe] #${this.cameraDiagnosticObservations} gesture=${observation.gesture} confidence=${confidence} state=${this.gestureStateMachine.getState()} trigger=${trigger?.action ?? "none"}`
+    );
+  }
+
+  private handleGestureWake(trigger: GestureTrigger): void {
+    if (trigger.state !== "idle") return;
+    if (this.terminalHarness.hasPendingApproval() || this.terminalHarness.isAgentRequestActive()) return;
+
+    this.armWakeFollowUp(`gesture:${trigger.gesture}`);
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "wake",
+      phrase: trigger.gesture
+    });
+    this.writeLine("[voice:cue] gesture wake ready \u0007");
+    this.sendListeningVisualState("listening");
+    this.refreshGestureRuntimeState();
+  }
+
+  private async handleGestureStop(trigger: GestureTrigger): Promise<void> {
+    if (trigger.state === "running") {
+      await this.terminalHarness.stopActiveTurn("Stop requested from camera gesture");
+      this.refreshGestureRuntimeState();
+      return;
+    }
+
+    if (trigger.state === "listening") {
+      if (this.manualRecording) {
+        this.manualRecorder.cancel("camera gesture stop");
+        this.manualRecording = false;
+      }
+      this.wakeGate.reset();
+      this.wakeStreamDetector.reset();
+      this.provisionalWake = undefined;
+      this.candidateVisualState = false;
+      this.clearWakeFollowUp();
+      this.terminalHarness.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "idle",
+        text: "camera gesture cancelled"
+      });
+      this.refreshGestureRuntimeState();
+    }
+  }
+
+  private async handleGestureApproval(trigger: GestureTrigger): Promise<void> {
+    if (trigger.state !== "pending_approval") return;
+    const text = approvalTextForGestureAction(trigger.action);
+    await this.processTranscriptAndRefreshGestureState(createDirectTranscript(text, this.now, this.createId));
+  }
+
+  private refreshGestureRuntimeState(): void {
+    if (!this.gestureWake.enabled || !this.cameraGestureActive) {
+      this.cameraGestureWatcher.setMode("off");
+      this.sendVisualCameraStatus("off");
+      return;
+    }
+    const state = this.currentGestureRuntimeState();
+    this.gestureStateMachine.setState(state);
+    const mode = this.gestureStateMachine.getCameraMode();
+    this.cameraGestureWatcher.setMode(mode);
+    this.sendVisualCameraStatus(state === "running" && mode === "off" ? "running" : mode);
+  }
+
+  private currentGestureRuntimeState(): GestureRuntimeState {
+    if (this.terminalHarness.hasPendingApproval()) return "pending_approval";
+    if (this.terminalHarness.isAgentRequestActive()) return "running";
+    if (this.manualRecording || this.candidateVisualState || this.activeWakeFollowUp() || this.provisionalWake) return "listening";
+    return "idle";
+  }
+
+  private sendVisualCameraStatus(mode: GestureCameraMode, text?: string): void {
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "camera",
+      enabled: this.gestureWake.enabled && mode !== "off" && mode !== "running",
+      mode,
+      wakeGesture: this.gestureWake.bindings.wake,
+      stopGesture: this.gestureWake.bindings.stop,
+      runningMode: this.gestureWake.runningMode,
+      ...(text ? { text } : {})
+    });
+  }
+
   private handleProvisionalWake(event: WakeStreamEvent): void {
     if (!this.micEnabled) return;
     if (this.manualRecording) return;
@@ -819,11 +1066,76 @@ export class AlwaysOnVoiceHarnessRunner {
     this.updateMaxUtteranceSeconds(defaultMaxUtteranceSeconds);
   }
 
+  updateGestureWakeSettings(settings: GestureWakeFileConfig, options: { persist?: boolean } = {}): void {
+    const sanitized = sanitizeGestureWakeConfig(settings);
+    this.gestureWake = gestureWakeConfigForRuntime(sanitized, this.cameraGestureEnabledByCli);
+    this.gestureStateMachine = new GestureActionStateMachine({
+      config: this.gestureWake,
+      now: this.now
+    });
+    this.writeLine(
+      `[camera:settings] wake=${this.gestureWake.bindings.wake} stop=${this.gestureWake.bindings.stop} runningMode=${this.gestureWake.runningMode}`
+    );
+    this.sendVisualGestureSettings();
+    this.reconfigureCameraGestureAfterSettingsUpdate();
+    if (options.persist !== false) {
+      this.trackSettingsWrite(this.persistGestureWakeSettings(sanitized));
+    }
+  }
+
+  private reconfigureCameraGestureAfterSettingsUpdate(): void {
+    this.cameraSettingsGeneration += 1;
+    const generation = this.cameraSettingsGeneration;
+
+    if (!this.gestureWake.enabled || !this.cameraGestureActive) {
+      this.refreshGestureRuntimeState();
+      return;
+    }
+
+    const config = this.gestureWake;
+    this.trackCameraTask(
+      (async () => {
+        await this.cameraGestureWatcher.stop();
+        if (
+          generation !== this.cameraSettingsGeneration ||
+          !this.started ||
+          !this.cameraGestureActive ||
+          !this.gestureWake.enabled
+        ) {
+          return;
+        }
+        await this.cameraGestureWatcher.start(config);
+        if (generation !== this.cameraSettingsGeneration) return;
+        this.refreshGestureRuntimeState();
+      })().catch((error) => {
+        this.cameraGestureActive = false;
+        this.writeLine(`[camera:error] ${formatError(error)}`);
+        this.sendVisualCameraStatus("off", "camera gesture watcher failed to reconfigure");
+      })
+    );
+  }
+
   private sendVisualWakeSettings(): void {
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
       type: "settings",
       wakePhrases: [...this.wakePhrases]
+    });
+  }
+
+  private sendVisualGestureSettings(): void {
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      gestureWake: {
+        enabled: this.gestureWake.enabled,
+        fps: this.gestureWake.fps,
+        resolution: this.gestureWake.resolution.label,
+        holdMs: this.gestureWake.holdMs,
+        cooldownMs: this.gestureWake.cooldownMs,
+        runningMode: this.gestureWake.runningMode,
+        bindings: { ...this.gestureWake.bindings }
+      }
     });
   }
 
@@ -842,6 +1154,19 @@ export class AlwaysOnVoiceHarnessRunner {
     this.pendingSettingsWrites.add(task);
   }
 
+  private trackCameraTask(task: Promise<void>): void {
+    const tracked = task.finally(() => {
+      this.pendingCameraTasks.delete(tracked);
+    });
+    this.pendingCameraTasks.add(tracked);
+  }
+
+  private async drainCameraTasks(): Promise<void> {
+    while (this.pendingCameraTasks.size > 0) {
+      await Promise.all([...this.pendingCameraTasks]);
+    }
+  }
+
   private async drainSettingsWrites(): Promise<void> {
     while (this.pendingSettingsWrites.size > 0) {
       await Promise.all([...this.pendingSettingsWrites]);
@@ -852,6 +1177,16 @@ export class AlwaysOnVoiceHarnessRunner {
     try {
       await this.settingsPersistence?.update({
         wakePhrases
+      });
+    } catch (error) {
+      this.writeLine(`[settings:error] ${formatError(error)}`);
+    }
+  }
+
+  private async persistGestureWakeSettings(gestureWake: GestureWakeFileConfig): Promise<void> {
+    try {
+      await this.settingsPersistence?.update({
+        gestureWake
       });
     } catch (error) {
       this.writeLine(`[settings:error] ${formatError(error)}`);
@@ -876,12 +1211,13 @@ export class AlwaysOnVoiceHarnessRunner {
       case "stop":
         await this.terminalHarness.stopActiveTurn("Stop requested from wake speech");
         this.writeLine(`[barge:stop] phrase="${decision.wake.phrase}"`);
+        this.refreshGestureRuntimeState();
         return;
       case "command":
         await this.terminalHarness.prepareForNewAgentTurn("New wake command requested");
         this.writeLine(`[barge:command] phrase="${decision.wake.phrase}" command="${decision.commandText}"`);
         const applied = this.textContext.applyWithEntries(withTranscriptText(transcript, decision.commandText));
-        await this.terminalHarness.processTranscript(applied.transcript, {
+        await this.processTranscriptAndRefreshGestureState(applied.transcript, {
           visualQuestionText: decision.commandText,
           visualQuestionReferences: applied.entries
         });
@@ -904,10 +1240,21 @@ export class AlwaysOnVoiceHarnessRunner {
 
     const transcript = createDirectTranscript(directText, this.now, this.createId);
     const applied = trimmed ? this.textContext.applyWithEntries(transcript) : { transcript, entries: [] };
-    await this.terminalHarness.processTranscript(applied.transcript, {
+    await this.processTranscriptAndRefreshGestureState(applied.transcript, {
       visualQuestionText: directText,
       visualQuestionReferences: applied.entries
     });
+  }
+
+  private async processTranscriptAndRefreshGestureState(
+    transcript: Transcript,
+    options: {
+      visualQuestionText?: string;
+      visualQuestionReferences?: string[];
+    } = {}
+  ): Promise<void> {
+    await this.terminalHarness.processTranscript(transcript, options);
+    this.refreshGestureRuntimeState();
   }
 
   private releaseAudio(audio: UtteranceAudio, source: "candidate" | "manual"): void {
@@ -1037,6 +1384,9 @@ export function createVoiceHarnessRunnerFromConfig(
     settingsPersistence?: VoiceSettingsPersistence;
     codexThreadId?: string;
     codexAlwaysStartNewThread?: boolean;
+    cameraGestureEnabled?: boolean;
+    cameraGestureWatcher?: CameraGestureWatcher;
+    cameraPermissionManager?: CameraPermissionManager;
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
@@ -1171,6 +1521,10 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     wakePhrases: options.wakePhrases ?? config.wakePhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
+    gestureWake: config.gestureWake,
+    cameraGestureEnabled: options.cameraGestureEnabled,
+    cameraGestureWatcher: options.cameraGestureWatcher,
+    cameraPermissionManager: options.cameraPermissionManager,
     writeLine,
     debug: options.debug,
     now: options.now,
@@ -1182,6 +1536,7 @@ export interface VoiceHarnessCliOptions {
   alwaysOn: boolean;
   debug: boolean;
   visual: boolean;
+  cameraGesture: boolean;
   visualProvider?: VisualProvider;
   harnessArgs: string[];
 }
@@ -1191,6 +1546,7 @@ export function parseVoiceHarnessCliArgs(args: string[]): VoiceHarnessCliOptions
   let alwaysOn = false;
   let debug = false;
   let visual = false;
+  let cameraGesture = false;
   let visualProvider: VisualProvider | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -1211,6 +1567,11 @@ export function parseVoiceHarnessCliArgs(args: string[]): VoiceHarnessCliOptions
       continue;
     }
 
+    if (arg === "--cam") {
+      cameraGesture = true;
+      continue;
+    }
+
     if (arg === "--visual-provider") {
       const value = args[++index] as VisualProvider | undefined;
       if (value === "auto" || value === "qtqml" || value === "macos-native") {
@@ -1226,6 +1587,7 @@ export function parseVoiceHarnessCliArgs(args: string[]): VoiceHarnessCliOptions
     alwaysOn,
     debug,
     visual,
+    cameraGesture,
     ...(visualProvider ? { visualProvider } : {}),
     harnessArgs
   };
@@ -1241,6 +1603,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (visible.startsWith("[voice:context]")) return true;
   if (visible.startsWith("[voice:capability]")) return true;
   if (visible.startsWith("[settings:error]")) return true;
+  if (visible.startsWith("[camera:")) return true;
   if (visible.startsWith("[codex-app] config ")) return true;
   if (visible.startsWith("[harness")) return true;
   if (visible.startsWith("[status]")) return true;
@@ -1268,6 +1631,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
     visible.startsWith("Wake phrases:") ||
     visible.startsWith("Manual fallback:") ||
     visible.startsWith("/help ") ||
+    visible.startsWith("/cam-test ") ||
     visible.startsWith("/add ") ||
     visible.startsWith("/refs ") ||
     visible.startsWith("STT output ")
@@ -1279,7 +1643,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 }
 
 function isVisibleHelpCommandLine(visible: string): boolean {
-  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|add|refs)(?:\s|$)/u.test(visible);
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam-test|camera-test|add|refs)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {
@@ -1331,6 +1695,7 @@ export async function runVoiceHarness(): Promise<void> {
         settingsPersistence,
         codexThreadId: codexThreadSettings.threadId,
         codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
+        cameraGestureEnabled: cli.cameraGesture,
         onExitRequest: requestShutdown
       })
     : createVoiceHarnessRunnerFromConfig(resolution.config, args, {
@@ -1414,6 +1779,68 @@ function closeReadline(readline: ReturnType<typeof createInterface>): void {
 
 function isReadlineClosedError(error: unknown): boolean {
   return error instanceof Error && /readline was closed/i.test(error.message);
+}
+
+function cameraPermissionGuidance(status: CameraPermissionStatus): string {
+  switch (status) {
+    case "denied":
+    case "restricted":
+      return "Camera gesture wake disabled. System Settings → Privacy & Security → Camera → allow this app";
+    case "not_determined":
+      return "Camera gesture wake disabled because camera permission was not granted.";
+    case "unavailable":
+      return "Camera gesture wake unavailable on this runtime.";
+    case "authorized":
+      return "Camera gesture wake enabled.";
+  }
+}
+
+function createDefaultCameraPermissionManager(): CameraPermissionManager {
+  if (process.platform === "darwin") {
+    return new CommandCameraPermissionManager({
+      command: "swift src/gesture/macos-camera-permission.swift",
+      env: swiftHelperEnv()
+    });
+  }
+
+  return new StaticCameraPermissionManager("unavailable");
+}
+
+function createDefaultCameraGestureWatcher(): CameraGestureWatcher {
+  if (process.platform === "darwin") {
+    return new LandmarkCameraGestureWatcher({
+      createProvider: () =>
+        new CommandHandLandmarkProvider({
+          command: "swift",
+          args: ["src/gesture/macos-camera-gesture.swift"],
+          env: swiftHelperEnv()
+        })
+    });
+  }
+
+  return new NoopCameraGestureWatcher();
+}
+
+function swiftHelperEnv(): Record<string, string> {
+  return {
+    CLANG_MODULE_CACHE_PATH: "/private/tmp/voice-agent-swift-module-cache"
+  };
+}
+
+function approvalTextForGestureAction(action: GestureTrigger["action"]): string {
+  switch (action) {
+    case "approval.once":
+      return "허용";
+    case "approval.deny":
+      return "거부";
+    case "approval.session":
+      return "이번 세션 동안 허용";
+    case "approval.policy":
+      return "같은 명령 계속 허용";
+    case "wake":
+    case "stop":
+      return "";
+  }
 }
 
 type SupplementalTextChange = (entries: string[]) => void;
@@ -1524,7 +1951,7 @@ function bindVisualDirectGoControls(
 }
 
 function bindVisualWakeSettingsControls(
-  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "toggleMicInput">,
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "toggleMicInput">,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
@@ -1535,6 +1962,11 @@ function bindVisualWakeSettingsControls(
 
     if (event.action === "update_wake_phrases") {
       runner.updateWakePhrases(event.wakePhrases ?? []);
+      return;
+    }
+
+    if (event.action === "update_gesture_wake_settings") {
+      runner.updateGestureWakeSettings(event.gestureWake ?? {});
       return;
     }
 
@@ -1636,6 +2068,10 @@ function isHelpCommand(text: string): boolean {
 
 function isMicReconnectCommand(text: string): boolean {
   return /^\/(?:mic-reconnect|microphone-reconnect|audio-reconnect)$/iu.test(text.trim());
+}
+
+function isCameraTestCommand(text: string): boolean {
+  return /^\/(?:cam-test|camera-test)$/iu.test(text.trim());
 }
 
 function shouldReconnectAudioInput(status: AudioInputStatus): boolean {

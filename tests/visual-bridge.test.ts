@@ -137,6 +137,19 @@ test("visual bridge parses allowed control events only", () => {
       networkPolicyApprove: ["호스트"]
     }
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_gesture_wake_settings","gestureWake":{"runningMode":"emergency_only","bindings":{"wake":"open_palm","stop":"thumbs_down","approval.once":"thumbs_up"}}}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "update_gesture_wake_settings",
+    gestureWake: {
+      runningMode: "emergency_only",
+      bindings: {
+        wake: "open_palm",
+        stop: "thumbs_down",
+        "approval.once": "thumbs_up"
+      }
+    }
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_codex_thread_id","codexThreadId":" 019e-session ","codexAlwaysStartNewThread":true}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -187,6 +200,8 @@ test("visual bridge replays latest settings to late visual clients", async () =>
   assert.match(source, /readyClient\.send\(this\.latestUsage\)/u);
   assert.match(source, /event\.wakePhrases !== undefined/u);
   assert.match(source, /event\.approvalPhrases !== undefined/u);
+  assert.match(source, /event\.gestureWake !== undefined/u);
+  assert.match(source, /cloneGestureWakeSettings/u);
   assert.match(source, /event\.tts !== undefined/u);
   assert.match(source, /event\.visual !== undefined/u);
   assert.match(source, /event\.codexThreadId !== undefined/u);
@@ -441,9 +456,15 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /update_tts_settings/u);
   assert.match(qml, /update_wake_phrases/u);
   assert.match(qml, /update_approval_phrases/u);
+  assert.match(qml, /update_gesture_wake_settings/u);
   assert.match(qml, /Approval allow phrases/u);
   assert.match(qml, /Persistent allow phrases/u);
   assert.match(qml, /Network persistent allow phrases/u);
+  assert.match(qml, /Gesture wake/u);
+  assert.match(qml, /id: gestureWakeBox/u);
+  assert.match(qml, /id: gestureStopBox/u);
+  assert.match(qml, /id: gestureApprovalOnceBox/u);
+  assert.match(qml, /id: gestureRunningModeBox/u);
   assert.match(qml, /id: approvalPolicyField/u);
   assert.match(qml, /id: approvalNetworkPolicyField/u);
   assert.match(qml, /policyApprove: root\.parseWakePhrases\(approvalPolicyField\.text\)/u);
@@ -608,11 +629,16 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /scrollView\.hasVerticalScroller = true/u);
   assert.match(swift, /update_tts_settings/u);
   assert.match(swift, /update_wake_phrases/u);
+  assert.match(swift, /update_gesture_wake_settings/u);
   assert.match(swift, /update_codex_thread_id/u);
   assert.match(swift, /update_visual_settings/u);
   assert.match(swift, /reset_settings/u);
   assert.match(swift, /Restore Defaults/u);
   assert.match(swift, /settingsWakePhrasesView/u);
+  assert.match(swift, /settingsGestureWakePopup/u);
+  assert.match(swift, /settingsGestureStopPopup/u);
+  assert.match(swift, /settingsGestureApprovalOncePopup/u);
+  assert.match(swift, /settingsGestureRunningModePopup/u);
   assert.match(swift, /settingsCodexThreadField/u);
   assert.match(swift, /Codex Thread/u);
   assert.match(swift, /settingsThinkingVolumeField/u);

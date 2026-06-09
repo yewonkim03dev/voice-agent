@@ -5,6 +5,11 @@ import {
   sanitizeApprovalPhraseConfig,
   type ApprovalPhraseConfig
 } from "../permission/ApprovalSpeech.ts";
+import {
+  sanitizeGestureWakeConfig,
+  type GestureWakeConfig,
+  type GestureWakeFileConfig
+} from "../gesture/GestureWakeConfig.ts";
 import type { VoiceTtsFileConfig } from "../voice/TtsConfig.ts";
 import { defaultWakePhrases, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 
@@ -22,6 +27,7 @@ export interface VoiceHarnessConfig {
   channels: number;
   wakePhrases: string[];
   approvalPhrases?: ApprovalPhraseConfig;
+  gestureWake?: GestureWakeConfig;
   tts?: VoiceTtsFileConfig;
   visual?: VoiceVisualFileConfig;
 }
@@ -40,6 +46,7 @@ export type VoiceVisualFileConfig = Partial<{
 export interface VoiceLocalSettingsOverride {
   wakePhrases?: string[];
   approvalPhrases?: ApprovalPhraseConfig;
+  gestureWake?: GestureWakeFileConfig;
   tts?: VoiceTtsFileConfig;
   visual?: VoiceVisualFileConfig;
   codexThreadId?: string | null;
@@ -254,6 +261,10 @@ export async function updateVoiceLocalSettings(
     next.approvalPhrases = sanitizeApprovalPhraseConfig(overrides.approvalPhrases);
   }
 
+  if (overrides.gestureWake !== undefined) {
+    next.gestureWake = sanitizeGestureWakeConfig(overrides.gestureWake);
+  }
+
   if (overrides.tts !== undefined) {
     next.tts = {
       ...readNestedObject(existing.tts),
@@ -312,6 +323,7 @@ export async function resetVoiceLocalSettings(options: {
 
   delete next.wakePhrases;
   delete next.approvalPhrases;
+  delete next.gestureWake;
   delete next.tts;
   delete visual.thinkingVolume;
   delete visual.responseLanguage;
@@ -433,6 +445,7 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
         channels: parsePositiveInteger(String(parsed.channels ?? ""), 1),
         wakePhrases: parseWakePhrases(parsed.wakePhrases),
         approvalPhrases: parseApprovalPhrases(parsed.approvalPhrases),
+        gestureWake: parseGestureWakeConfig(parsed.gestureWake),
         tts: parseTtsFileConfig(parsed),
         visual: parseVisualFileConfig(parsed)
       },
@@ -488,6 +501,7 @@ function hasVoiceConfigFields(parsed: Record<string, unknown>): boolean {
     "channels" in parsed ||
     "wakePhrases" in parsed ||
     "approvalPhrases" in parsed ||
+    "gestureWake" in parsed ||
     "tts" in parsed ||
     "visual" in parsed;
 }
@@ -524,6 +538,11 @@ function parseApprovalPhrases(value: unknown): ApprovalPhraseConfig | undefined 
     policyApprove: parsePhraseArray(record.policyApprove),
     networkPolicyApprove: parsePhraseArray(record.networkPolicyApprove)
   });
+}
+
+function parseGestureWakeConfig(value: unknown): GestureWakeConfig | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return sanitizeGestureWakeConfig(value);
 }
 
 function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<string, unknown>): VoiceVisualFileConfig | undefined {

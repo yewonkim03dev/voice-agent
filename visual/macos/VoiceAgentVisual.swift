@@ -93,6 +93,21 @@ private let visualTextEn: [String: String] = [
     "sessionAllow": "Session Allow",
     "policyAllow": "Persistent Allow",
     "networkPolicyAllow": "Network Allow",
+    "gestureWake": "Gesture Wake",
+    "gestureStop": "Gesture Stop",
+    "gestureApprovalOnce": "Gesture Allow",
+    "gestureApprovalDeny": "Gesture Deny",
+    "gestureApprovalSession": "Gesture Session",
+    "gestureApprovalPolicy": "Gesture Persistent",
+    "gestureRunningMode": "Gesture Run Mode",
+    "gestureNone": "None",
+    "gestureOpenPalm": "Open palm",
+    "gestureThumbsDown": "Thumbs down",
+    "gestureFist": "Fist",
+    "gesturePeace": "Peace",
+    "gestureThumbsUp": "Thumbs up",
+    "gestureRunOff": "Off",
+    "gestureRunEmergencyOnly": "Emergency only",
     "quitVoiceAgent": "Quit Voice Agent",
     "voiceGuide": "1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn.",
     "referenceHelp": "Add queues references for the next request. Go sends the entered text, or queued references when the field is empty, directly to the agent.",
@@ -116,6 +131,8 @@ private let visualTextEn: [String: String] = [
     "sessionAllowHelp": "Phrases that approve for the current session.",
     "policyAllowHelp": "Phrases that keep allowing the same command or execution policy.",
     "networkPolicyAllowHelp": "Phrases that keep allowing the same network, host, or domain.",
+    "gestureHelp": "Maps camera hand shapes to wake, stop, and approval actions. Camera still starts only with --cam.",
+    "gestureRunningModeHelp": "off turns camera off while the agent runs. emergency_only watches only the stop gesture at low FPS.",
     "speech": "speech",
     "command": "command",
     "status": "status"
@@ -207,6 +224,21 @@ private let visualTextKo: [String: String] = [
     "sessionAllow": "세션 허용",
     "policyAllow": "계속 허용",
     "networkPolicyAllow": "네트워크 계속 허용",
+    "gestureWake": "제스처 호출",
+    "gestureStop": "제스처 정지",
+    "gestureApprovalOnce": "제스처 허용",
+    "gestureApprovalDeny": "제스처 거부",
+    "gestureApprovalSession": "제스처 세션 허용",
+    "gestureApprovalPolicy": "제스처 계속 허용",
+    "gestureRunningMode": "제스처 실행 모드",
+    "gestureNone": "없음",
+    "gestureOpenPalm": "손바닥 펼침",
+    "gestureThumbsDown": "엄지 아래",
+    "gestureFist": "주먹",
+    "gesturePeace": "브이",
+    "gestureThumbsUp": "엄지 위",
+    "gestureRunOff": "끔",
+    "gestureRunEmergencyOnly": "긴급 정지만",
     "quitVoiceAgent": "Voice Agent 종료",
     "voiceGuide": "1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. 참고자료는 다음 요청 한 번에만 붙습니다.\n5. 정지는 현재 에이전트 작업을 즉시 중단합니다.",
     "referenceHelp": "추가는 다음 요청에 붙일 참고자료를 큐에 넣습니다. 전송은 입력한 텍스트를, 입력칸이 비었으면 대기 중인 참고자료를 바로 에이전트에게 보냅니다.",
@@ -230,6 +262,8 @@ private let visualTextKo: [String: String] = [
     "sessionAllowHelp": "현재 세션 동안 허용으로 처리할 문구입니다.",
     "policyAllowHelp": "같은 명령 또는 같은 실행 정책을 계속 허용으로 처리할 문구입니다.",
     "networkPolicyAllowHelp": "같은 네트워크, 호스트, 도메인을 계속 허용으로 처리할 문구입니다.",
+    "gestureHelp": "카메라 손모양을 호출, 정지, 권한 응답에 매핑합니다. 카메라는 --cam으로 실행한 경우에만 켜집니다.",
+    "gestureRunningModeHelp": "off는 작업 실행 중 카메라를 끕니다. emergency_only는 낮은 FPS로 정지 제스처만 감시합니다.",
     "speech": "음성",
     "command": "명령",
     "status": "상태"
@@ -312,6 +346,48 @@ private func sessionText(_ sessionId: String, language: UiLanguage) -> String {
 private func usageText(_ usage: String, language: UiLanguage) -> String {
     let trimmed = usage.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? "" : localizedText("usagePrefix", language: language) + trimmed
+}
+
+private func gestureDisplayName(_ value: String, language: UiLanguage) -> String {
+    switch value {
+    case "none":
+        return localizedText("gestureNone", language: language)
+    case "open_palm":
+        return localizedText("gestureOpenPalm", language: language)
+    case "thumbs_down":
+        return localizedText("gestureThumbsDown", language: language)
+    case "fist":
+        return localizedText("gestureFist", language: language)
+    case "peace":
+        return localizedText("gesturePeace", language: language)
+    case "thumbs_up":
+        return localizedText("gestureThumbsUp", language: language)
+    default:
+        return value
+    }
+}
+
+private func gestureRunningModeDisplayName(_ value: String, language: UiLanguage) -> String {
+    switch value {
+    case "emergency_only":
+        return localizedText("gestureRunEmergencyOnly", language: language)
+    case "off":
+        return localizedText("gestureRunOff", language: language)
+    default:
+        return value
+    }
+}
+
+private func cameraStatusText(_ event: [String: Any], language: UiLanguage) -> String {
+    let enabled = event["enabled"] as? Bool ?? false
+    let mode = event["mode"] as? String ?? "off"
+    let wake = event["wakeGesture"] as? String ?? "-"
+    let stop = event["stopGesture"] as? String ?? "-"
+    let running = event["runningMode"] as? String ?? "off"
+    if let text = event["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return "Camera: \(enabled ? "ON" : "OFF") · \(mode) · \(text)"
+    }
+    return "Camera: \(enabled ? "ON" : "OFF") · \(mode) · wake \(gestureDisplayName(wake, language: language)) · stop \(gestureDisplayName(stop, language: language)) · \(gestureRunningModeDisplayName(running, language: language))"
 }
 
 final class AgentCircleView: NSView {
@@ -805,6 +881,7 @@ final class VisualRootView: NSView {
     private let guideButton = NSButton(title: "?", target: nil, action: nil)
     private let sessionLabel = NSTextField(labelWithString: "session: new")
     private let usageLabel = NSTextField(labelWithString: "")
+    private let cameraLabel = NSTextField(labelWithString: "")
     private let questionView = QuestionLabelView(frame: .zero)
     private let chatView = ChatHistoryView(frame: .zero)
     private let chatToggleButton = NSButton(title: "Q/A", target: nil, action: nil)
@@ -814,6 +891,7 @@ final class VisualRootView: NSView {
     private var micEnabled = true
     private var currentSessionId = ""
     private var currentUsage = ""
+    private var currentCamera = ""
     private var currentContextCount = 0
     private var currentQuestionReferenceCount = 0
 
@@ -866,6 +944,12 @@ final class VisualRootView: NSView {
         usageLabel.alignment = .left
         usageLabel.lineBreakMode = .byTruncatingTail
         addSubview(usageLabel)
+
+        cameraLabel.textColor = NSColor(calibratedRed: 0.69, green: 0.76, blue: 0.86, alpha: 1)
+        cameraLabel.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
+        cameraLabel.alignment = .left
+        cameraLabel.lineBreakMode = .byTruncatingTail
+        addSubview(cameraLabel)
 
         guideButton.bezelStyle = .helpButton
         guideButton.toolTip = localizedText("guideTooltip", language: uiLanguage)
@@ -1018,6 +1102,12 @@ final class VisualRootView: NSView {
             width: max(120, min(520, guideButton.frame.minX - inset - 12)),
             height: 18
         )
+        cameraLabel.frame = NSRect(
+            x: inset,
+            y: usageLabel.frame.minY - 18,
+            width: max(120, min(520, guideButton.frame.minX - inset - 12)),
+            height: 18
+        )
         referenceHelpButton.frame = NSRect(
             x: commandPanel.bounds.width - panelInset - 24,
             y: topY - 2,
@@ -1146,6 +1236,11 @@ final class VisualRootView: NSView {
         usageLabel.stringValue = usageText(usage, language: uiLanguage)
     }
 
+    func updateCamera(_ camera: String) {
+        currentCamera = camera
+        cameraLabel.stringValue = camera
+    }
+
     func updateContextSummary(_ count: Int) {
         currentContextCount = count
         contextSummary.stringValue = referenceSummary(
@@ -1214,6 +1309,7 @@ final class VisualRootView: NSView {
         clearContextButton.title = localizedText("clearRef", language: uiLanguage)
         updateSessionId(currentSessionId)
         updateUsage(currentUsage)
+        updateCamera(currentCamera)
         updateContextSummary(currentContextCount)
         chatView.uiLanguage = uiLanguage
         let titles = [
@@ -2602,6 +2698,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsApprovalSessionPhrasesView = NSTextView(frame: .zero)
     private let settingsApprovalPolicyPhrasesView = NSTextView(frame: .zero)
     private let settingsApprovalNetworkPolicyPhrasesView = NSTextView(frame: .zero)
+    private let settingsGestureWakePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsGestureStopPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsGestureApprovalOncePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsGestureApprovalDenyPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsGestureApprovalSessionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsGestureApprovalPolicyPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsGestureRunningModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
     private var ttsVoiceName = ""
@@ -2624,6 +2727,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var approvalSessionPhrases: [String] = []
     private var approvalPolicyPhrases: [String] = []
     private var approvalNetworkPolicyPhrases: [String] = []
+    private var gestureWakeBindings: [String: String] = [
+        "wake": "open_palm",
+        "stop": "thumbs_down"
+    ]
+    private var gestureRunningMode = "off"
     private var codexThreadId = ""
     private var uiLanguage: UiLanguage = .en
     private var uiLanguageInitialized = false
@@ -2859,6 +2967,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             let usage = event["text"] as? String ?? ""
             rootView?.updateUsage(usage)
             menuBarCompanion.updateUsage(usage)
+        case "camera":
+            let camera = cameraStatusText(event, language: uiLanguage)
+            rootView?.updateCamera(camera)
+            menuBarCompanion.updateMessage(camera)
         case "context":
             updateContext(event["entries"] as? [String] ?? [])
         case "context_list":
@@ -2877,6 +2989,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             }
             if let phrases = event["approvalPhrases"] as? [String: Any] {
                 updateApprovalPhrases(phrases)
+            }
+            if let gestureWake = event["gestureWake"] as? [String: Any] {
+                updateGestureWakeSettings(gestureWake)
             }
             if let threadId = event["codexThreadId"] as? String {
                 updateCodexThreadId(threadId)
@@ -3028,10 +3143,20 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         approvalSessionPhrases = normalizedPhrases([settingsApprovalSessionPhrasesView.string])
         approvalPolicyPhrases = normalizedPhrases([settingsApprovalPolicyPhrasesView.string])
         approvalNetworkPolicyPhrases = normalizedPhrases([settingsApprovalNetworkPolicyPhrasesView.string])
+        gestureWakeBindings = [
+            "wake": settingsGestureWakePopup.selectedRepresentedValue(fallback: "open_palm"),
+            "stop": settingsGestureStopPopup.selectedRepresentedValue(fallback: "thumbs_down"),
+            "approval.once": settingsGestureApprovalOncePopup.selectedRepresentedValue(fallback: "none"),
+            "approval.deny": settingsGestureApprovalDenyPopup.selectedRepresentedValue(fallback: "none"),
+            "approval.session": settingsGestureApprovalSessionPopup.selectedRepresentedValue(fallback: "none"),
+            "approval.policy": settingsGestureApprovalPolicyPopup.selectedRepresentedValue(fallback: "none")
+        ]
+        gestureRunningMode = settingsGestureRunningModePopup.selectedRepresentedValue(fallback: "off")
         codexThreadId = settingsCodexThreadField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         sendTtsSettings()
         sendWakePhrases()
         sendApprovalPhrases()
+        sendGestureWakeSettings()
         sendCodexThreadId()
         settingsWindow?.close()
     }
@@ -3045,6 +3170,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         popupPreferred = false
         speakWakeRejectedWarnings = true
         codexAlwaysStartNewThread = false
+        gestureWakeBindings = [
+            "wake": "open_palm",
+            "stop": "thumbs_down"
+        ]
+        gestureRunningMode = "off"
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: true)
         menuBarCompanion.setHudEnabled(true)
@@ -3162,6 +3292,20 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         syncSettingsControls()
     }
 
+    private func updateGestureWakeSettings(_ settings: [String: Any]) {
+        if let runningMode = settings["runningMode"] as? String {
+            gestureRunningMode = runningMode == "emergency_only" ? "emergency_only" : "off"
+        }
+        if let bindings = settings["bindings"] as? [String: Any] {
+            for key in ["wake", "stop", "approval.once", "approval.deny", "approval.session", "approval.policy"] {
+                if let value = bindings[key] as? String {
+                    gestureWakeBindings[key] = normalizedGestureName(value, allowNone: key.hasPrefix("approval."))
+                }
+            }
+        }
+        syncSettingsControls()
+    }
+
     private func updateWakePhrases(_ phrases: [String]) {
         wakePhrases = normalizedPhrases(phrases)
         syncSettingsControls()
@@ -3194,7 +3338,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let contentWidth: CGFloat = 380
-        let contentHeight: CGFloat = 944
+        let contentHeight: CGFloat = 1184
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -3220,7 +3364,33 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
+        let gestureOptions = ["open_palm", "thumbs_down", "fist", "peace", "thumbs_up"]
+        let optionalGestureOptions = ["none"] + gestureOptions
+        settingsGestureWakePopup.addValueItemsIfNeeded(gestureOptions) { gestureDisplayName($0, language: uiLanguage) }
+        settingsGestureStopPopup.addValueItemsIfNeeded(gestureOptions) { gestureDisplayName($0, language: uiLanguage) }
+        settingsGestureApprovalOncePopup.addValueItemsIfNeeded(optionalGestureOptions) { gestureDisplayName($0, language: uiLanguage) }
+        settingsGestureApprovalDenyPopup.addValueItemsIfNeeded(optionalGestureOptions) { gestureDisplayName($0, language: uiLanguage) }
+        settingsGestureApprovalSessionPopup.addValueItemsIfNeeded(optionalGestureOptions) { gestureDisplayName($0, language: uiLanguage) }
+        settingsGestureApprovalPolicyPopup.addValueItemsIfNeeded(optionalGestureOptions) { gestureDisplayName($0, language: uiLanguage) }
+        settingsGestureRunningModePopup.addValueItemsIfNeeded(["off", "emergency_only"]) {
+            gestureRunningModeDisplayName($0, language: uiLanguage)
+        }
         settingsMaxUtteranceField.delegate = self
+
+        addSettingsRow(view, label: localizedText("gestureWake", language: uiLanguage), control: settingsGestureWakePopup, y: 1110)
+        addSettingsHelp(view, y: 1110, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureStop", language: uiLanguage), control: settingsGestureStopPopup, y: 1076)
+        addSettingsHelp(view, y: 1076, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalOnce", language: uiLanguage), control: settingsGestureApprovalOncePopup, y: 1042)
+        addSettingsHelp(view, y: 1042, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalDeny", language: uiLanguage), control: settingsGestureApprovalDenyPopup, y: 1008)
+        addSettingsHelp(view, y: 1008, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalSession", language: uiLanguage), control: settingsGestureApprovalSessionPopup, y: 974)
+        addSettingsHelp(view, y: 974, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalPolicy", language: uiLanguage), control: settingsGestureApprovalPolicyPopup, y: 940)
+        addSettingsHelp(view, y: 940, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureRunningMode", language: uiLanguage), control: settingsGestureRunningModePopup, y: 906)
+        addSettingsHelp(view, y: 906, text: localizedText("gestureRunningModeHelp", language: uiLanguage))
 
         addSettingsPhraseArea(
             view,
@@ -3388,6 +3558,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsApprovalSessionPhrasesView.string = approvalSessionPhrases.joined(separator: "\n")
         settingsApprovalPolicyPhrasesView.string = approvalPolicyPhrases.joined(separator: "\n")
         settingsApprovalNetworkPolicyPhrasesView.string = approvalNetworkPolicyPhrases.joined(separator: "\n")
+        settingsGestureWakePopup.selectRepresentedValue(gestureWakeBindings["wake"] ?? "open_palm")
+        settingsGestureStopPopup.selectRepresentedValue(gestureWakeBindings["stop"] ?? "thumbs_down")
+        settingsGestureApprovalOncePopup.selectRepresentedValue(gestureWakeBindings["approval.once"] ?? "none")
+        settingsGestureApprovalDenyPopup.selectRepresentedValue(gestureWakeBindings["approval.deny"] ?? "none")
+        settingsGestureApprovalSessionPopup.selectRepresentedValue(gestureWakeBindings["approval.session"] ?? "none")
+        settingsGestureApprovalPolicyPopup.selectRepresentedValue(gestureWakeBindings["approval.policy"] ?? "none")
+        settingsGestureRunningModePopup.selectRepresentedValue(gestureRunningMode)
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -3451,6 +3628,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         value == "ko" || value == "en" || value == "auto" ? value : "auto"
     }
 
+    private func normalizedGestureName(_ value: String, allowNone: Bool) -> String {
+        let options = ["open_palm", "thumbs_down", "fist", "peace", "thumbs_up"]
+        if allowNone && value == "none" {
+            return "none"
+        }
+        return options.contains(value) ? value : "none"
+    }
+
     private func sendWakePhrases() {
         sendPayload([
             "op": "voice-agent-ui",
@@ -3471,6 +3656,18 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "sessionApprove": approvalSessionPhrases,
                 "policyApprove": approvalPolicyPhrases,
                 "networkPolicyApprove": approvalNetworkPolicyPhrases
+            ]
+        ])
+    }
+
+    private func sendGestureWakeSettings() {
+        sendPayload([
+            "op": "voice-agent-ui",
+            "type": "control",
+            "action": "update_gesture_wake_settings",
+            "gestureWake": [
+                "runningMode": gestureRunningMode,
+                "bindings": gestureWakeBindings
             ]
         ])
     }
@@ -3513,6 +3710,26 @@ private extension NSPopUpButton {
     func addItemsIfNeeded(_ titles: [String]) {
         if numberOfItems > 0 { return }
         addItems(withTitles: titles)
+    }
+
+    func addValueItemsIfNeeded(_ values: [String], title: (String) -> String) {
+        if numberOfItems > 0 { return }
+        for value in values {
+            let item = NSMenuItem(title: title(value), action: nil, keyEquivalent: "")
+            item.representedObject = value
+            menu?.addItem(item)
+        }
+    }
+
+    func selectedRepresentedValue(fallback: String) -> String {
+        selectedItem?.representedObject as? String ?? titleOfSelectedItem ?? fallback
+    }
+
+    func selectRepresentedValue(_ value: String) {
+        for item in itemArray where item.representedObject as? String == value {
+            select(item)
+            return
+        }
     }
 }
 

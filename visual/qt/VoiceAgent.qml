@@ -16,6 +16,7 @@ ApplicationWindow {
     property string uiState: "idle"
     property string statusText: bridgeUrl.length > 0 ? "connecting" : "waiting for bridge"
     property string usageText: ""
+    property string cameraText: ""
     property string currentQuestion: ""
     property var currentQuestionReferences: []
     property var chatItems: []
@@ -56,6 +57,13 @@ ApplicationWindow {
     property var approvalSessionPhrases: []
     property var approvalPolicyPhrases: []
     property var approvalNetworkPolicyPhrases: []
+    property string gestureWakeBinding: "open_palm"
+    property string gestureStopBinding: "thumbs_down"
+    property string gestureApprovalOnceBinding: "none"
+    property string gestureApprovalDenyBinding: "none"
+    property string gestureApprovalSessionBinding: "none"
+    property string gestureApprovalPolicyBinding: "none"
+    property string gestureRunningMode: "off"
     property string codexThreadId: ""
     property bool codexAlwaysStartNewThread: false
     property bool micEnabled: true
@@ -120,6 +128,21 @@ ApplicationWindow {
             sessionAllowPhrases: "세션 허용 문구",
             policyAllowPhrases: "계속 허용 문구",
             networkPolicyAllowPhrases: "네트워크 계속 허용 문구",
+            gestureWake: "제스처 호출",
+            gestureStop: "제스처 정지",
+            gestureApprovalOnce: "제스처 허용",
+            gestureApprovalDeny: "제스처 거부",
+            gestureApprovalSession: "제스처 세션 허용",
+            gestureApprovalPolicy: "제스처 계속 허용",
+            gestureRunningMode: "제스처 실행 모드",
+            gestureNone: "없음",
+            gestureOpenPalm: "손바닥 펼침",
+            gestureThumbsDown: "엄지 아래",
+            gestureFist: "주먹",
+            gesturePeace: "브이",
+            gestureThumbsUp: "엄지 위",
+            gestureRunOff: "끔",
+            gestureRunEmergencyOnly: "긴급 정지만",
             codexThreadRestart: "Codex thread id (재시작 후 적용)",
             alwaysStartNewThread: "항상 새 스레드로 시작",
             restoreDefaults: "기본값 복원",
@@ -157,6 +180,8 @@ ApplicationWindow {
             sessionAllowHelp: "현재 세션 동안 허용으로 처리할 문구입니다.",
             policyAllowHelp: "같은 명령 또는 같은 실행 정책을 계속 허용으로 처리할 문구입니다.",
             networkPolicyAllowHelp: "같은 네트워크, 호스트, 도메인을 계속 허용으로 처리할 문구입니다.",
+            gestureHelp: "카메라 손모양을 호출, 정지, 권한 응답에 매핑합니다. 카메라는 --cam으로 실행한 경우에만 켜집니다.",
+            gestureRunningModeHelp: "off는 작업 실행 중 카메라를 끕니다. emergency_only는 낮은 FPS로 정지 제스처만 감시합니다.",
             threadHelp: "다음 재시작 때 이어갈 Codex thread id입니다.",
             newThreadHelp: "체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다."
         }
@@ -214,6 +239,21 @@ ApplicationWindow {
             sessionAllowPhrases: "Session allow phrases",
             policyAllowPhrases: "Persistent allow phrases",
             networkPolicyAllowPhrases: "Network persistent allow phrases",
+            gestureWake: "Gesture wake",
+            gestureStop: "Gesture stop",
+            gestureApprovalOnce: "Gesture allow",
+            gestureApprovalDeny: "Gesture deny",
+            gestureApprovalSession: "Gesture session",
+            gestureApprovalPolicy: "Gesture persistent",
+            gestureRunningMode: "Gesture run mode",
+            gestureNone: "None",
+            gestureOpenPalm: "Open palm",
+            gestureThumbsDown: "Thumbs down",
+            gestureFist: "Fist",
+            gesturePeace: "Peace",
+            gestureThumbsUp: "Thumbs up",
+            gestureRunOff: "Off",
+            gestureRunEmergencyOnly: "Emergency only",
             codexThreadRestart: "Codex thread id (applies after restart)",
             alwaysStartNewThread: "Always start new thread",
             restoreDefaults: "Restore Defaults",
@@ -251,6 +291,8 @@ ApplicationWindow {
             sessionAllowHelp: "Phrases that approve for the current session.",
             policyAllowHelp: "Phrases that keep allowing the same command or execution policy.",
             networkPolicyAllowHelp: "Phrases that keep allowing the same network, host, or domain.",
+            gestureHelp: "Maps camera hand shapes to wake, stop, and approval actions. Camera still starts only with --cam.",
+            gestureRunningModeHelp: "off turns camera off while the agent runs. emergency_only watches only the stop gesture at low FPS.",
             threadHelp: "Codex thread id to resume after restart.",
             newThreadHelp: "Starts a new Codex thread on restart when checked; resumes the last thread when unchecked."
         }
@@ -373,6 +415,22 @@ ApplicationWindow {
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
                 type: "control",
+                action: "update_gesture_wake_settings",
+                gestureWake: {
+                    runningMode: root.selectedOptionValue(gestureRunningModeBox, "off"),
+                    bindings: {
+                        wake: root.selectedOptionValue(gestureWakeBox, "open_palm"),
+                        stop: root.selectedOptionValue(gestureStopBox, "thumbs_down"),
+                        "approval.once": root.selectedOptionValue(gestureApprovalOnceBox, "none"),
+                        "approval.deny": root.selectedOptionValue(gestureApprovalDenyBox, "none"),
+                        "approval.session": root.selectedOptionValue(gestureApprovalSessionBox, "none"),
+                        "approval.policy": root.selectedOptionValue(gestureApprovalPolicyBox, "none")
+                    }
+                }
+            }))
+            socket.sendTextMessage(JSON.stringify({
+                op: "voice-agent-ui",
+                type: "control",
                 action: "update_codex_thread_id",
                 codexThreadId: codexThreadField.text.trim(),
                 codexAlwaysStartNewThread: newThreadCheck.checked
@@ -400,6 +458,13 @@ ApplicationWindow {
         root.speakWakeRejectedWarnings = true
         root.codexAlwaysStartNewThread = false
         root.chatPanelOpen = true
+        root.applyGestureWakeSettings({
+            runningMode: "off",
+            bindings: {
+                wake: "open_palm",
+                stop: "thumbs_down"
+            }
+        })
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (maxUtteranceSlider) maxUtteranceSlider.value = root.maxUtteranceSeconds
         if (chatHistoryCheck) chatHistoryCheck.checked = true
@@ -419,6 +484,69 @@ ApplicationWindow {
             if (values[index] === value) return index
         }
         return 0
+    }
+
+    function gestureOptions() {
+        return ["open_palm", "thumbs_down", "fist", "peace", "thumbs_up"]
+    }
+
+    function optionalGestureOptions() {
+        return ["none"].concat(root.gestureOptions())
+    }
+
+    function gestureDisplayName(value) {
+        if (value === "none") return root.uiText("gestureNone")
+        if (value === "open_palm") return root.uiText("gestureOpenPalm")
+        if (value === "thumbs_down") return root.uiText("gestureThumbsDown")
+        if (value === "fist") return root.uiText("gestureFist")
+        if (value === "peace") return root.uiText("gesturePeace")
+        if (value === "thumbs_up") return root.uiText("gestureThumbsUp")
+        return value
+    }
+
+    function gestureOptionModel(allowNone) {
+        var values = allowNone ? root.optionalGestureOptions() : root.gestureOptions()
+        var result = []
+        for (var index = 0; index < values.length; index += 1) {
+            result.push({ value: values[index], label: root.gestureDisplayName(values[index]) })
+        }
+        return result
+    }
+
+    function runningModeDisplayName(value) {
+        if (value === "emergency_only") return root.uiText("gestureRunEmergencyOnly")
+        if (value === "off") return root.uiText("gestureRunOff")
+        return value
+    }
+
+    function runningModeOptionModel() {
+        var values = ["off", "emergency_only"]
+        var result = []
+        for (var index = 0; index < values.length; index += 1) {
+            result.push({ value: values[index], label: root.runningModeDisplayName(values[index]) })
+        }
+        return result
+    }
+
+    function indexOfOptionValue(model, value) {
+        for (var index = 0; index < model.length; index += 1) {
+            var item = model[index]
+            var itemValue = item && item.value !== undefined ? item.value : item
+            if (itemValue === value) return index
+        }
+        return 0
+    }
+
+    function selectedOptionValue(combo, fallback) {
+        if (!combo || combo.currentIndex < 0 || combo.currentIndex >= combo.model.length) return fallback
+        var item = combo.model[combo.currentIndex]
+        return item && item.value !== undefined ? item.value : fallback
+    }
+
+    function normalizedGestureName(value, allowNone) {
+        var normalized = String(value || "").trim()
+        if (allowNone && normalized === "none") return "none"
+        return root.gestureOptions().indexOf(normalized) >= 0 ? normalized : "none"
     }
 
     function applyTtsSettings(settings) {
@@ -454,11 +582,30 @@ ApplicationWindow {
         if (approvalNetworkPolicyField) approvalNetworkPolicyField.text = root.approvalNetworkPolicyPhrases.join("\n")
     }
 
+    function applyGestureWakeSettings(settings) {
+        var bindings = (settings && settings.bindings) || {}
+        root.gestureWakeBinding = root.normalizedGestureName(bindings.wake || "open_palm", false)
+        root.gestureStopBinding = root.normalizedGestureName(bindings.stop || "thumbs_down", false)
+        root.gestureApprovalOnceBinding = root.normalizedGestureName(bindings["approval.once"] || "none", true)
+        root.gestureApprovalDenyBinding = root.normalizedGestureName(bindings["approval.deny"] || "none", true)
+        root.gestureApprovalSessionBinding = root.normalizedGestureName(bindings["approval.session"] || "none", true)
+        root.gestureApprovalPolicyBinding = root.normalizedGestureName(bindings["approval.policy"] || "none", true)
+        root.gestureRunningMode = settings && settings.runningMode === "emergency_only" ? "emergency_only" : "off"
+        if (gestureWakeBox) gestureWakeBox.currentIndex = root.indexOfOptionValue(gestureWakeBox.model, root.gestureWakeBinding)
+        if (gestureStopBox) gestureStopBox.currentIndex = root.indexOfOptionValue(gestureStopBox.model, root.gestureStopBinding)
+        if (gestureApprovalOnceBox) gestureApprovalOnceBox.currentIndex = root.indexOfOptionValue(gestureApprovalOnceBox.model, root.gestureApprovalOnceBinding)
+        if (gestureApprovalDenyBox) gestureApprovalDenyBox.currentIndex = root.indexOfOptionValue(gestureApprovalDenyBox.model, root.gestureApprovalDenyBinding)
+        if (gestureApprovalSessionBox) gestureApprovalSessionBox.currentIndex = root.indexOfOptionValue(gestureApprovalSessionBox.model, root.gestureApprovalSessionBinding)
+        if (gestureApprovalPolicyBox) gestureApprovalPolicyBox.currentIndex = root.indexOfOptionValue(gestureApprovalPolicyBox.model, root.gestureApprovalPolicyBinding)
+        if (gestureRunningModeBox) gestureRunningModeBox.currentIndex = root.indexOfOptionValue(gestureRunningModeBox.model, root.gestureRunningMode)
+    }
+
     function applyVisualSettings(event) {
         if (event.tts) root.applyTtsSettings(event.tts)
         if (event.visual) root.applyRuntimeVisualSettings(event.visual)
         if (event.wakePhrases) root.applyWakePhrases(event.wakePhrases)
         if (event.approvalPhrases) root.applyApprovalPhrases(event.approvalPhrases)
+        if (event.gestureWake) root.applyGestureWakeSettings(event.gestureWake)
         if (event.codexThreadId !== undefined) root.applyCodexThreadId(event.codexThreadId)
         if (event.codexAlwaysStartNewThread !== undefined) root.applyCodexAlwaysStartNewThread(event.codexAlwaysStartNewThread)
         if (event.micEnabled !== undefined) root.micEnabled = !!event.micEnabled
@@ -526,6 +673,18 @@ ApplicationWindow {
         return entries.map(function(entry, index) {
             return (index + 1) + ". " + entry
         }).join("\n")
+    }
+
+    function formatCameraStatus(event) {
+        var enabled = event.enabled ? "ON" : "OFF"
+        var mode = event.mode || "off"
+        var wakeGesture = event.wakeGesture || "-"
+        var stopGesture = event.stopGesture || "-"
+        var runningMode = event.runningMode || "off"
+        if (event.text && event.text.length > 0) {
+            return "Camera: " + enabled + " · " + mode + " · " + event.text
+        }
+        return "Camera: " + enabled + " · " + mode + " · wake " + root.gestureDisplayName(wakeGesture) + " · stop " + root.gestureDisplayName(stopGesture) + " · " + root.runningModeDisplayName(runningMode)
     }
 
     function referenceSummaryText() {
@@ -701,6 +860,8 @@ ApplicationWindow {
                 root.pushChat("assistant", "status", event.text)
             } else if (event.type === "usage") {
                 root.usageText = event.text || ""
+            } else if (event.type === "camera") {
+                root.cameraText = root.formatCameraStatus(event)
             } else if (event.type === "context") {
                 root.contextEntries = event.entries || []
                 if (root.contextEntries.length === 0) contextInput.text = ""
@@ -830,6 +991,29 @@ ApplicationWindow {
             horizontalAlignment: Text.AlignLeft
             text: root.usageText.length > 0 ? root.uiText("usagePrefix") + root.usageText : ""
             color: "#b8ccec"
+            font.pixelSize: 11
+            font.family: "Menlo"
+            elide: Text.ElideRight
+        }
+    }
+
+    Item {
+        id: cameraBadge
+        anchors.top: usageBadge.visible ? usageBadge.bottom : sessionBadge.bottom
+        anchors.left: parent.left
+        anchors.leftMargin: 16
+        anchors.topMargin: 2
+        width: Math.min(root.width - guideButton.width - 56, 560)
+        height: 18
+        visible: root.cameraText.length > 0
+        z: 12
+
+        Text {
+            anchors.fill: parent
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: Text.AlignLeft
+            text: root.cameraText
+            color: "#adc8df"
             font.pixelSize: 11
             font.family: "Menlo"
             elide: Text.ElideRight
@@ -1780,6 +1964,111 @@ ApplicationWindow {
                     value: root.maxUtteranceSeconds
                     stepSize: 1
                     onValueChanged: root.maxUtteranceSeconds = value
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("gestureWake"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    ComboBox {
+                        id: gestureWakeBox
+                        Layout.fillWidth: true
+                        textRole: "label"
+                        model: root.gestureOptionModel(false)
+                        currentIndex: root.indexOfOptionValue(model, root.gestureWakeBinding)
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("gestureHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("gestureStop"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    ComboBox {
+                        id: gestureStopBox
+                        Layout.fillWidth: true
+                        textRole: "label"
+                        model: root.gestureOptionModel(false)
+                        currentIndex: root.indexOfOptionValue(model, root.gestureStopBinding)
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("gestureHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("gestureApprovalOnce"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    ComboBox {
+                        id: gestureApprovalOnceBox
+                        Layout.fillWidth: true
+                        textRole: "label"
+                        model: root.gestureOptionModel(true)
+                        currentIndex: root.indexOfOptionValue(model, root.gestureApprovalOnceBinding)
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("gestureHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("gestureApprovalDeny"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    ComboBox {
+                        id: gestureApprovalDenyBox
+                        Layout.fillWidth: true
+                        textRole: "label"
+                        model: root.gestureOptionModel(true)
+                        currentIndex: root.indexOfOptionValue(model, root.gestureApprovalDenyBinding)
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("gestureHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("gestureApprovalSession"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    ComboBox {
+                        id: gestureApprovalSessionBox
+                        Layout.fillWidth: true
+                        textRole: "label"
+                        model: root.gestureOptionModel(true)
+                        currentIndex: root.indexOfOptionValue(model, root.gestureApprovalSessionBinding)
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("gestureHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("gestureApprovalPolicy"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    ComboBox {
+                        id: gestureApprovalPolicyBox
+                        Layout.fillWidth: true
+                        textRole: "label"
+                        model: root.gestureOptionModel(true)
+                        currentIndex: root.indexOfOptionValue(model, root.gestureApprovalPolicyBinding)
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("gestureHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("gestureRunningMode"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    ComboBox {
+                        id: gestureRunningModeBox
+                        Layout.fillWidth: true
+                        textRole: "label"
+                        model: root.runningModeOptionModel()
+                        currentIndex: root.indexOfOptionValue(model, root.gestureRunningMode)
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("gestureRunningModeHelp") }
                 }
 
                 RowLayout {

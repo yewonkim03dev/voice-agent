@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 
+import type { GestureCameraMode, GestureRunningMode, GestureWakeFileConfig } from "../gesture/GestureWakeConfig.ts";
+
 type WriteLine = (line: string) => void;
 
 export type VisualUiState =
@@ -30,6 +32,7 @@ export type VisualControlAction =
   | "reset_settings"
   | "update_wake_phrases"
   | "update_approval_phrases"
+  | "update_gesture_wake_settings"
   | "update_codex_thread_id"
   | "update_visual_settings"
   | "update_tts_settings";
@@ -53,6 +56,8 @@ export interface VisualRuntimeSettings {
   speakWakeRejectedWarnings?: boolean;
   maxUtteranceSeconds?: number;
 }
+
+export type VisualGestureWakeSettings = GestureWakeFileConfig;
 
 export interface VisualApprovalPhrases {
   onceApprove?: string[];
@@ -139,9 +144,20 @@ export type VisualEvent =
     }
   | {
       op: "voice-agent-ui";
+      type: "camera";
+      enabled: boolean;
+      mode: GestureCameraMode;
+      wakeGesture: string;
+      stopGesture: string;
+      runningMode: GestureRunningMode;
+      text?: string;
+    }
+  | {
+      op: "voice-agent-ui";
       type: "settings";
       tts?: VisualTtsSettings;
       visual?: VisualRuntimeSettings;
+      gestureWake?: VisualGestureWakeSettings;
       approvalPhrases?: VisualApprovalPhrases;
       wakePhrases?: string[];
       codexThreadId?: string;
@@ -156,6 +172,7 @@ export interface VisualControlEvent {
   text?: string;
   tts?: VisualTtsSettings;
   visual?: VisualRuntimeSettings;
+  gestureWake?: VisualGestureWakeSettings;
   approvalPhrases?: VisualApprovalPhrases;
   wakePhrases?: string[];
   codexThreadId?: string;
@@ -290,12 +307,14 @@ export class VisualBridge implements VisualBridgeLike {
       type: "settings",
       ...(this.latestSettings?.tts !== undefined ? { tts: { ...this.latestSettings.tts } } : {}),
       ...(this.latestSettings?.visual !== undefined ? { visual: { ...this.latestSettings.visual } } : {}),
+      ...(this.latestSettings?.gestureWake !== undefined ? { gestureWake: cloneGestureWakeSettings(this.latestSettings.gestureWake) } : {}),
       ...(this.latestSettings?.approvalPhrases !== undefined ? { approvalPhrases: cloneApprovalPhrases(this.latestSettings.approvalPhrases) } : {}),
       ...(this.latestSettings?.wakePhrases !== undefined ? { wakePhrases: [...this.latestSettings.wakePhrases] } : {}),
       ...(this.latestSettings?.codexThreadId !== undefined ? { codexThreadId: this.latestSettings.codexThreadId } : {}),
       ...(this.latestSettings?.codexAlwaysStartNewThread !== undefined ? { codexAlwaysStartNewThread: this.latestSettings.codexAlwaysStartNewThread } : {}),
       ...(event.tts !== undefined ? { tts: { ...event.tts } } : {}),
       ...(event.visual !== undefined ? { visual: { ...event.visual } } : {}),
+      ...(event.gestureWake !== undefined ? { gestureWake: cloneGestureWakeSettings(event.gestureWake) } : {}),
       ...(event.approvalPhrases !== undefined ? { approvalPhrases: cloneApprovalPhrases(event.approvalPhrases) } : {}),
       ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {}),
       ...(event.codexThreadId !== undefined ? { codexThreadId: event.codexThreadId } : {}),
@@ -365,6 +384,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "reset_settings" &&
     record.action !== "update_wake_phrases" &&
     record.action !== "update_approval_phrases" &&
+    record.action !== "update_gesture_wake_settings" &&
     record.action !== "update_codex_thread_id" &&
     record.action !== "update_tts_settings" &&
     record.action !== "update_visual_settings"
@@ -379,6 +399,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     ...(typeof record.text === "string" ? { text: record.text } : {}),
     ...(isRecord(record.tts) ? { tts: parseVisualTtsSettings(record.tts) } : {}),
     ...(isRecord(record.visual) ? { visual: parseVisualRuntimeSettings(record.visual) } : {}),
+    ...(isRecord(record.gestureWake) ? { gestureWake: record.gestureWake as VisualGestureWakeSettings } : {}),
     ...(isRecord(record.approvalPhrases) ? { approvalPhrases: parseVisualApprovalPhrases(record.approvalPhrases) } : {}),
     ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {}),
     ...(typeof record.codexThreadId === "string" ? { codexThreadId: record.codexThreadId.trim() } : {}),
@@ -393,6 +414,16 @@ function parsePhrases(values: unknown): string[] | undefined {
     .filter((value): value is string => typeof value === "string")
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function cloneGestureWakeSettings(settings: VisualGestureWakeSettings): VisualGestureWakeSettings {
+  return {
+    ...settings,
+    ...(settings.resolution !== undefined && typeof settings.resolution === "object"
+      ? { resolution: { ...settings.resolution } }
+      : {}),
+    ...(settings.bindings !== undefined ? { bindings: { ...settings.bindings } } : {})
+  };
 }
 
 function parseWakePhrases(values: unknown[]): string[] {
