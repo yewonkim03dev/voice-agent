@@ -139,7 +139,7 @@ function detectFuzzyConfiguredWakePhrase(
   if (tokens.length === 0) return null;
 
   for (const phrase of phrases) {
-    const phraseComparable = wakeComparable(phrase);
+    const phraseComparable = wakePhraseComparable(phrase);
     const maxTokens = Math.min(tokens.length, Math.max(1, phraseComparable.length + 1));
 
     for (let tokenCount = 1; tokenCount <= maxTokens; tokenCount += 1) {
@@ -206,6 +206,10 @@ function commandAfterTokens(
 
 function wakeComparable(value: string): string {
   return value.toLowerCase().replace(/[\s,.:;!?，。]+/gu, "");
+}
+
+function wakePhraseComparable(value: string): string {
+  return stripVocativeYa(wakeComparable(value));
 }
 
 function wakeCandidateComparable(value: string): string {

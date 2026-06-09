@@ -89,6 +89,25 @@ test("detects wake phrases split by STT spaces", () => {
   });
 });
 
+test("normalizes Korean vocative ya on configured wake phrases", () => {
+  assert.deepEqual(detectConfiguredWakePhrase("휴지 야", ["휴지야"]), {
+    phrase: "휴지야",
+    commandText: "",
+    strategy: "normalized",
+    heardText: "휴지",
+    normalizedText: "휴지",
+    distance: 0
+  });
+  assert.deepEqual(detectConfiguredWakePhrase("휴지 야 테스트 돌려줘", ["휴지야"]), {
+    phrase: "휴지야",
+    commandText: "테스트 돌려줘",
+    strategy: "normalized",
+    heardText: "휴지",
+    normalizedText: "휴지",
+    distance: 0
+  });
+});
+
 test("detects lightly misrecognized wake phrases with fuzzy prefix matching", () => {
   assert.deepEqual(detectConfiguredWakePhrase("코넥스 테스트 돌려줘", ["코덱스"]), {
     phrase: "코덱스",
