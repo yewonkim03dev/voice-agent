@@ -473,6 +473,9 @@ export class AlwaysOnVoiceHarnessRunner {
       await this.routeCandidateTranscript(transcript, provisionalWake);
     } catch (error) {
       const details = formatError(error);
+      if (source === "candidate") {
+        this.cancelWakeFollowUpCandidate(details);
+      }
       if (!this.shouldSuppressTranscriptionError(source, details)) {
         this.writeLine(`[voice:error] ${details}`);
       }
@@ -637,6 +640,21 @@ export class AlwaysOnVoiceHarnessRunner {
     if (!followUp || followUp.phrase !== phrase || followUp.inputStarted) return;
 
     this.writeLine(`[wake:followup] expired phrase="${followUp.phrase}"`);
+    this.clearWakeFollowUp();
+    if (!this.terminalHarness.hasPendingApproval() && !this.terminalHarness.isAgentRequestActive()) {
+      this.terminalHarness.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "idle"
+      });
+    }
+  }
+
+  private cancelWakeFollowUpCandidate(reason: string): void {
+    const followUp = this.wakeFollowUp;
+    if (!followUp?.inputStarted) return;
+
+    this.writeLine(`[wake:followup] canceled phrase="${followUp.phrase}" reason="${compactLogText(reason)}"`);
     this.clearWakeFollowUp();
     if (!this.terminalHarness.hasPendingApproval() && !this.terminalHarness.isAgentRequestActive()) {
       this.terminalHarness.sendVisualEvent({
@@ -1615,6 +1633,12 @@ function formatSupplementalTextList(entries: readonly string[]): string {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function compactLogText(text: string): string {
+  const compact = text.trim().replace(/\s+/gu, " ");
+  if (compact.length <= 120) return compact;
+  return `${compact.slice(0, 117).trimEnd()}...`;
 }
 
 function formatSimilarity(result: EchoGuardResult): string {

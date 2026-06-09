@@ -1261,6 +1261,34 @@ test("always-on voice runner expires wake follow-up before the next speech start
   assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "idle"), true);
 });
 
+test("always-on voice runner clears wake follow-up when follow-up noise has no transcript", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const speechProcessor = new SequenceSpeechProcessor([
+    {
+      text: "코덱스",
+      language: "ko"
+    },
+    new Error("Apple Speech produced no transcript.")
+  ]);
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([], {
+    speechProcessor,
+    visualBridge,
+    debug: true
+  });
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.ok(logs.includes('[wake:armed] phrase="코덱스" timeoutMs=10000'));
+  assert.ok(logs.includes('[wake:followup] canceled phrase="코덱스" reason="Apple Speech produced no transcript."'));
+  assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "idle"), true);
+});
+
 test("always-on voice runner does not create ready TTS echo after wake-only speech", async () => {
   const voiceOutput = new InspectableTestVoiceOutput();
   const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
