@@ -19,6 +19,7 @@ export type VisualUiState =
 
 export type VisualControlAction =
   | "tts_stop"
+  | "mic_toggle"
   | "exit"
   | "clear_commands"
   | "add_context"
@@ -134,6 +135,7 @@ export type VisualEvent =
       wakePhrases?: string[];
       codexThreadId?: string;
       codexAlwaysStartNewThread?: boolean;
+      micEnabled?: boolean;
     };
 
 export interface VisualControlEvent {
@@ -147,6 +149,7 @@ export interface VisualControlEvent {
   wakePhrases?: string[];
   codexThreadId?: string;
   codexAlwaysStartNewThread?: boolean;
+  micEnabled?: boolean;
 }
 
 export interface VisualBridgeLike {
@@ -309,6 +312,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
   if (record.op !== "voice-agent-ui" || record.type !== "control") return null;
   if (
     record.action !== "tts_stop" &&
+    record.action !== "mic_toggle" &&
     record.action !== "exit" &&
     record.action !== "clear_commands" &&
     record.action !== "add_context" &&
@@ -335,7 +339,8 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     ...(isRecord(record.approvalPhrases) ? { approvalPhrases: parseVisualApprovalPhrases(record.approvalPhrases) } : {}),
     ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {}),
     ...(typeof record.codexThreadId === "string" ? { codexThreadId: record.codexThreadId.trim() } : {}),
-    ...(typeof record.codexAlwaysStartNewThread === "boolean" ? { codexAlwaysStartNewThread: record.codexAlwaysStartNewThread } : {})
+    ...(typeof record.codexAlwaysStartNewThread === "boolean" ? { codexAlwaysStartNewThread: record.codexAlwaysStartNewThread } : {}),
+    ...(typeof record.micEnabled === "boolean" ? { micEnabled: record.micEnabled } : {})
   };
 }
 

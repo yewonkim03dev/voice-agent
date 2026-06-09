@@ -78,6 +78,12 @@ test("visual bridge parses allowed control events only", () => {
     type: "control",
     action: "tts_stop"
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"mic_toggle","micEnabled":false}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "mic_toggle",
+    micEnabled: false
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"add_context","text":"README 참고"}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -400,6 +406,11 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Text\.ElideNone/u);
   assert.doesNotMatch(qml, /Layout\.fillHeight: true\s*\n\s*radius: 8/u);
   assert.match(qml, /TTS Stop/u);
+  assert.match(qml, /🔇/u);
+  assert.match(qml, /microphoneOn: "microphone on"/u);
+  assert.match(qml, /microphoneOff: "microphone off"/u);
+  assert.match(qml, /displayText\(event\.text \|\| "", event\.state\)/u);
+  assert.match(qml, /mic_toggle/u);
   assert.match(qml, /STOP/u);
   assert.match(qml, /emergency_stop/u);
   assert.match(qml, /Settings/u);
@@ -553,6 +564,10 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /\.now\(\) \+ 3\.6/u);
   assert.doesNotMatch(swift, /greaterThanOrEqualToConstant:\s*180/u);
   assert.match(swift, /TTS Stop/u);
+  assert.match(swift, /🔇/u);
+  assert.match(swift, /"microphoneOn": "microphone on"/u);
+  assert.match(swift, /case "microphone on": return localizedText\("microphoneOn", language: language\)/u);
+  assert.match(swift, /mic_toggle/u);
   assert.match(swift, /STOP/u);
   assert.match(swift, /emergency_stop/u);
   assert.match(swift, /Settings/u);
@@ -615,6 +630,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.doesNotMatch(swift, /hudCircle\.statusText = text\.isEmpty \? state : text/u);
   assert.match(swift, /func updateQuestion\(_ question: String\)/u);
   assert.match(swift, /func updateContext\(_ entries: \[String\]\)/u);
+  assert.match(swift, /func updateMicEnabled\(_ enabled: Bool\)/u);
   const hudUpdateMessage = swift.match(/func updateMessage\(_ text: String\) \{[\s\S]*?\n    \}/u);
   assert.ok(hudUpdateMessage);
   assert.match(hudUpdateMessage[0], /hudDetailLabel\.stringValue = trimmed/u);

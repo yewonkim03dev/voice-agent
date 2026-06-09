@@ -205,6 +205,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private manualRecording = false;
+  private micEnabled = true;
   private candidateVisualState = false;
   private provisionalWake: WakeStreamEvent | undefined;
   private recentProvisionalWakeCue: WakeStreamEvent | undefined;
@@ -253,11 +254,13 @@ export class AlwaysOnVoiceHarnessRunner {
 
     await this.terminalHarness.start();
     this.sendVisualWakeSettings();
+    this.sendVisualMicSettings();
     await this.audioInput.start();
     this.started = true;
     this.writeLine("  Voice input: always-on wake listening enabled.");
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ")}`);
     this.writeLine("  Manual fallback: /record to start, /record again to stop.");
+    this.writeLine("  /mic toggles microphone listening on/off.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
@@ -288,6 +291,11 @@ export class AlwaysOnVoiceHarnessRunner {
       return "continue";
     }
 
+    if (isMicToggleCommand(text)) {
+      this.toggleMicInput();
+      return "continue";
+    }
+
     if (text === "/quit") {
       await this.stop();
       this.writeLine("Harness stopped.");
@@ -314,6 +322,8 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private consumeFrame(frame: AudioFrame): void {
+    if (!this.micEnabled) return;
+
     this.emitFrameVolume(frame);
 
     if (this.manualRecording) {
@@ -326,6 +336,12 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private toggleManualRecording(): void {
+    if (!this.micEnabled) {
+      this.writeLine("[voice:mic] microphone is off. Type /mic to turn it on.");
+      this.sendVisualMicSettings();
+      return;
+    }
+
     if (this.manualRecording) {
       this.finishManualRecording();
       this.writeLine("[voice] recording stopped.");
@@ -527,7 +543,38 @@ export class AlwaysOnVoiceHarnessRunner {
     this.wakeFollowUp = undefined;
   }
 
+  toggleMicInput(enabled = !this.micEnabled): void {
+    if (this.micEnabled === enabled) {
+      this.sendVisualMicSettings();
+      return;
+    }
+
+    this.micEnabled = enabled;
+    if (!enabled) {
+      if (this.manualRecording) {
+        this.manualRecorder.cancel("mic disabled");
+        this.manualRecording = false;
+      }
+      this.wakeGate.reset();
+      this.wakeStreamDetector.reset();
+      this.provisionalWake = undefined;
+      this.recentProvisionalWakeCue = undefined;
+      this.candidateVisualState = false;
+      this.clearWakeFollowUp();
+    }
+
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "state",
+      state: "idle",
+      text: enabled ? "microphone on" : "microphone off"
+    });
+    this.writeLine(`[voice:mic] ${enabled ? "on" : "off"}`);
+    this.sendVisualMicSettings();
+  }
+
   private handleProvisionalWake(event: WakeStreamEvent): void {
+    if (!this.micEnabled) return;
     if (this.manualRecording) return;
     if (this.provisionalWake) return;
     if (this.activeWakeFollowUp()) return;
@@ -582,6 +629,14 @@ export class AlwaysOnVoiceHarnessRunner {
       op: "voice-agent-ui",
       type: "settings",
       wakePhrases: [...this.wakePhrases]
+    });
+  }
+
+  private sendVisualMicSettings(): void {
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      micEnabled: this.micEnabled
     });
   }
 
@@ -1205,10 +1260,15 @@ function bindVisualContextControls(textContext: SupplementalTextBuffer, visualBr
 }
 
 function bindVisualWakeSettingsControls(
-  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds">,
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "toggleMicInput">,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
+    if (event.action === "mic_toggle") {
+      runner.toggleMicInput(event.micEnabled);
+      return;
+    }
+
     if (event.action === "update_wake_phrases") {
       runner.updateWakePhrases(event.wakePhrases ?? []);
       return;
@@ -1276,6 +1336,10 @@ function parseAddContextCommand(text: string): { matched: boolean; argument: str
 
 function isShowContextCommand(text: string): boolean {
   return /^\/(?:refs?|references|context)$/iu.test(text.trim());
+}
+
+function isMicToggleCommand(text: string): boolean {
+  return /^\/(?:mic|mic-toggle|microphone)$/iu.test(text.trim());
 }
 
 function formatSupplementalTextList(entries: readonly string[]): string {

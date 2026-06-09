@@ -45,6 +45,10 @@ private let visualTextEn: [String: String] = [
     "stop": "STOP",
     "ttsStop": "TTS Stop",
     "tts": "TTS",
+    "micOn": "🎙",
+    "micOff": "🔇",
+    "microphoneOn": "microphone on",
+    "microphoneOff": "microphone off",
     "clearCmds": "Clear Cmds",
     "exit": "Exit",
     "add": "Add",
@@ -141,6 +145,10 @@ private let visualTextKo: [String: String] = [
     "stop": "정지",
     "ttsStop": "TTS 정지",
     "tts": "TTS",
+    "micOn": "🎙",
+    "micOff": "🔇",
+    "microphoneOn": "마이크 켜짐",
+    "microphoneOff": "마이크 꺼짐",
     "clearCmds": "명령 지우기",
     "exit": "종료",
     "add": "추가",
@@ -239,6 +247,8 @@ private func displayText(_ rawText: String, state: String, language: UiLanguage)
     case "connecting": return localizedText("connecting", language: language)
     case "connected": return localizedText("connected", language: language)
     case "bridge disconnected": return localizedText("bridgeDisconnected", language: language)
+    case "microphone on": return localizedText("microphoneOn", language: language)
+    case "microphone off": return localizedText("microphoneOff", language: language)
     case "idle": return localizedText("idle", language: language)
     default: return trimmed
     }
@@ -762,6 +772,7 @@ final class VisualRootView: NSView {
     private let controls: NSStackView
     private var chatHistoryEnabled = true
     private var chatPanelOpen = true
+    private var micEnabled = true
     private var currentSessionId = ""
     private var currentUsage = ""
     private var currentContextCount = 0
@@ -1123,6 +1134,11 @@ final class VisualRootView: NSView {
         needsLayout = true
     }
 
+    func updateMicEnabled(_ enabled: Bool) {
+        micEnabled = enabled
+        applyLocalization()
+    }
+
     @objc private func toggleChatPanel() {
         chatPanelOpen.toggle()
         needsLayout = true
@@ -1138,7 +1154,14 @@ final class VisualRootView: NSView {
         updateUsage(currentUsage)
         updateContextSummary(currentContextCount)
         chatView.uiLanguage = uiLanguage
-        let titles = [localizedText("stop", language: uiLanguage), localizedText("settings", language: uiLanguage), localizedText("ttsStop", language: uiLanguage), localizedText("clearCmds", language: uiLanguage), localizedText("exit", language: uiLanguage)]
+        let titles = [
+            localizedText("stop", language: uiLanguage),
+            localizedText("settings", language: uiLanguage),
+            localizedText("ttsStop", language: uiLanguage),
+            localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage),
+            localizedText("clearCmds", language: uiLanguage),
+            localizedText("exit", language: uiLanguage)
+        ]
         for (index, subview) in controls.arrangedSubviews.enumerated() {
             guard index < titles.count, let button = subview as? NSButton else { continue }
             button.title = titles[index]
@@ -1602,12 +1625,14 @@ final class MenuBarCompanion {
     private weak var popoverTitleLabel: NSTextField?
     private weak var popoverStopButton: NSButton?
     private weak var popoverTtsStopButton: NSButton?
+    private weak var popoverMicButton: NSButton?
     private weak var popoverShowButton: NSButton?
     private weak var hudAddReferenceButton: NSButton?
     private weak var hudShowReferenceButton: NSButton?
     private weak var hudClearReferenceButton: NSButton?
     private weak var hudStopButton: NSButton?
     private weak var hudTtsStopButton: NSButton?
+    private weak var hudMicButton: NSButton?
     private weak var hudShowButton: NSButton?
     private let stateLabel = NSTextField(labelWithString: "idle")
     private let detailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
@@ -1626,7 +1651,9 @@ final class MenuBarCompanion {
     private var onAddContext: ((String) -> Void)?
     private var onClearContext: (() -> Void)?
     private var onShowContext: (() -> Void)?
+    private var onMicToggle: (() -> Void)?
     private var hudEnabled = true
+    private var micEnabled = true
     private var currentState = "idle"
     private var currentDetail = "waiting for bridge"
     private var currentQuestion = ""
@@ -1639,7 +1666,8 @@ final class MenuBarCompanion {
         onShowWindow: @escaping () -> Void,
         onAddContext: @escaping (String) -> Void,
         onClearContext: @escaping () -> Void,
-        onShowContext: @escaping () -> Void
+        onShowContext: @escaping () -> Void,
+        onMicToggle: @escaping () -> Void
     ) {
         self.onStop = onStop
         self.onTtsStop = onTtsStop
@@ -1647,6 +1675,7 @@ final class MenuBarCompanion {
         self.onAddContext = onAddContext
         self.onClearContext = onClearContext
         self.onShowContext = onShowContext
+        self.onMicToggle = onMicToggle
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VA \(compactState("idle"))"
@@ -1669,6 +1698,11 @@ final class MenuBarCompanion {
         } else {
             hudPanel?.orderOut(nil)
         }
+    }
+
+    func updateMicEnabled(_ enabled: Bool) {
+        micEnabled = enabled
+        applyLocalization()
     }
 
     func update(state: String, text: String) {
@@ -1739,6 +1773,10 @@ final class MenuBarCompanion {
 
     @objc private func stopTts() {
         onTtsStop?()
+    }
+
+    @objc private func toggleMic() {
+        onMicToggle?()
     }
 
     @objc private func showWindow() {
@@ -1853,12 +1891,17 @@ final class MenuBarCompanion {
 
         let ttsStop = NSButton(title: localizedText("ttsStop", language: uiLanguage), target: self, action: #selector(stopTts))
         popoverTtsStopButton = ttsStop
-        ttsStop.frame = NSRect(x: 102, y: 14, width: 88, height: 28)
+        ttsStop.frame = NSRect(x: 96, y: 14, width: 72, height: 28)
         view.addSubview(ttsStop)
+
+        let mic = NSButton(title: localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage), target: self, action: #selector(toggleMic))
+        popoverMicButton = mic
+        mic.frame = NSRect(x: 176, y: 14, width: 62, height: 28)
+        view.addSubview(mic)
 
         let show = NSButton(title: localizedText("show", language: uiLanguage), target: self, action: #selector(showWindow))
         popoverShowButton = show
-        show.frame = NSRect(x: 200, y: 14, width: 88, height: 28)
+        show.frame = NSRect(x: 246, y: 14, width: 58, height: 28)
         view.addSubview(show)
         applyLocalization()
 
@@ -1937,12 +1980,17 @@ final class MenuBarCompanion {
 
         let ttsStop = NSButton(title: localizedText("tts", language: uiLanguage), target: self, action: #selector(stopTts))
         hudTtsStopButton = ttsStop
-        ttsStop.frame = NSRect(x: 94, y: 48, width: 62, height: 26)
+        ttsStop.frame = NSRect(x: 88, y: 48, width: 56, height: 26)
         view.addSubview(ttsStop)
+
+        let mic = NSButton(title: localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage), target: self, action: #selector(toggleMic))
+        hudMicButton = mic
+        mic.frame = NSRect(x: 152, y: 48, width: 62, height: 26)
+        view.addSubview(mic)
 
         let show = NSButton(title: localizedText("show", language: uiLanguage), target: self, action: #selector(showWindow))
         hudShowButton = show
-        show.frame = NSRect(x: 164, y: 48, width: 68, height: 26)
+        show.frame = NSRect(x: 222, y: 48, width: 58, height: 26)
         view.addSubview(show)
         applyLocalization()
 
@@ -1963,12 +2011,14 @@ final class MenuBarCompanion {
         popoverTitleLabel?.stringValue = "Voice Agent"
         popoverStopButton?.title = localizedText("stop", language: uiLanguage)
         popoverTtsStopButton?.title = localizedText("ttsStop", language: uiLanguage)
+        popoverMicButton?.title = localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage)
         popoverShowButton?.title = localizedText("show", language: uiLanguage)
         hudAddReferenceButton?.title = localizedText("add", language: uiLanguage)
         hudShowReferenceButton?.title = localizedText("refs", language: uiLanguage)
         hudClearReferenceButton?.title = localizedText("clear", language: uiLanguage)
         hudStopButton?.title = localizedText("stop", language: uiLanguage)
         hudTtsStopButton?.title = localizedText("tts", language: uiLanguage)
+        hudMicButton?.title = localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage)
         hudShowButton?.title = localizedText("show", language: uiLanguage)
         hudContextField.placeholderString = localizedText("referenceText", language: uiLanguage)
         update(state: currentState, text: currentDetail)
@@ -2035,6 +2085,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var responseLanguage = "auto"
     private var chatHistoryEnabled = true
     private var hudEnabled = true
+    private var micEnabled = true
     private var speakWakeRejectedWarnings = true
     private var codexAlwaysStartNewThread = false
     private var wakePhrases: [String] = []
@@ -2071,9 +2122,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             onShowWindow: { [weak self] in self?.showMainWindow() },
             onAddContext: { [weak self] text in self?.submitContext(text) },
             onClearContext: { [weak self] in self?.clearContext() },
-            onShowContext: { [weak self] in self?.showContext() }
+            onShowContext: { [weak self] in self?.showContext() },
+            onMicToggle: { [weak self] in self?.toggleMicInput() }
         )
         menuBarCompanion.uiLanguage = uiLanguage
+        menuBarCompanion.updateMicEnabled(micEnabled)
         connect()
     }
 
@@ -2104,6 +2157,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         controls.addArrangedSubview(emergencyButton())
         controls.addArrangedSubview(button(localizedText("settings", language: uiLanguage), action: #selector(showSettings)))
         controls.addArrangedSubview(button(localizedText("ttsStop", language: uiLanguage), action: #selector(stopTts)))
+        controls.addArrangedSubview(button(localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage), action: #selector(toggleMicInput)))
         controls.addArrangedSubview(button(localizedText("clearCmds", language: uiLanguage), action: #selector(clearCommands)))
         controls.addArrangedSubview(button(localizedText("exit", language: uiLanguage), action: #selector(exitVisual)))
 
@@ -2124,6 +2178,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         self.rootView = rootView
         rootView.updateSessionId(codexThreadId)
         rootView.updateChatHistory(enabled: chatHistoryEnabled)
+        rootView.updateMicEnabled(micEnabled)
         return rootView
     }
 
@@ -2283,6 +2338,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             if let alwaysNewThread = event["codexAlwaysStartNewThread"] as? Bool {
                 updateCodexAlwaysStartNewThread(alwaysNewThread)
             }
+            if let micEnabled = event["micEnabled"] as? Bool {
+                updateMicEnabled(micEnabled)
+            }
         default:
             break
         }
@@ -2300,6 +2358,12 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     @objc private func stopTts() {
         sendControl("tts_stop")
+    }
+
+    @objc private func toggleMicInput() {
+        let next = !micEnabled
+        updateMicEnabled(next)
+        sendControl("mic_toggle", micEnabled: next)
     }
 
     @objc private func emergencyStop() {
@@ -2538,6 +2602,12 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private func updateCodexAlwaysStartNewThread(_ value: Bool) {
         codexAlwaysStartNewThread = value
         syncSettingsControls()
+    }
+
+    private func updateMicEnabled(_ enabled: Bool) {
+        micEnabled = enabled
+        rootView?.updateMicEnabled(enabled)
+        menuBarCompanion.updateMicEnabled(enabled)
     }
 
     private func makeSettingsWindow() -> NSWindow {
@@ -2796,7 +2866,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         ])
     }
 
-    private func sendControl(_ action: String, text: String? = nil) {
+    private func sendControl(_ action: String, text: String? = nil, micEnabled: Bool? = nil) {
         var payload: [String: Any] = [
             "op": "voice-agent-ui",
             "type": "control",
@@ -2804,6 +2874,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         ]
         if let text {
             payload["text"] = text
+        }
+        if let micEnabled {
+            payload["micEnabled"] = micEnabled
         }
         sendPayload(payload)
     }

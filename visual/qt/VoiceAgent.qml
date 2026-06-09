@@ -55,6 +55,7 @@ ApplicationWindow {
     property var approvalNetworkPolicyPhrases: []
     property string codexThreadId: ""
     property bool codexAlwaysStartNewThread: false
+    property bool micEnabled: true
     property string uiLanguage: "en"
     property bool uiLanguageInitialized: false
     property string voiceGuideText: root.uiText("voiceGuide")
@@ -120,6 +121,10 @@ ApplicationWindow {
             apply: "적용",
             stop: "정지",
             ttsStop: "TTS 정지",
+            micOn: "🎙",
+            micOff: "🔇",
+            microphoneOn: "마이크 켜짐",
+            microphoneOff: "마이크 꺼짐",
             clearCmds: "명령 지우기",
             exit: "종료",
             speech: "음성",
@@ -204,6 +209,10 @@ ApplicationWindow {
             apply: "Apply",
             stop: "STOP",
             ttsStop: "TTS Stop",
+            micOn: "🎙",
+            micOff: "🔇",
+            microphoneOn: "microphone on",
+            microphoneOff: "microphone off",
             clearCmds: "Clear Cmds",
             exit: "Exit",
             speech: "speech",
@@ -250,6 +259,19 @@ ApplicationWindow {
         return state
     }
 
+    function displayText(rawText, state) {
+        var trimmed = String(rawText || "").trim()
+        if (trimmed.length === 0 || trimmed === state) return root.stateText(state)
+        if (trimmed === "microphone on") return root.uiText("microphoneOn")
+        if (trimmed === "microphone off") return root.uiText("microphoneOff")
+        if (trimmed === "waiting for bridge") return root.uiText("waitingForBridge")
+        if (trimmed === "connecting") return root.uiText("connecting")
+        if (trimmed === "connected") return root.uiText("connected")
+        if (trimmed === "bridge disconnected") return root.uiText("bridgeDisconnected")
+        if (trimmed === "idle") return root.uiText("idle")
+        return trimmed
+    }
+
     function normalizeUiLanguage(value) {
         return value === "ko" ? "ko" : "en"
     }
@@ -283,6 +305,7 @@ ApplicationWindow {
                 action: action
             }
             if (text !== undefined) payload.text = text
+            if (action === "mic_toggle") payload.micEnabled = !root.micEnabled
             socket.sendTextMessage(JSON.stringify(payload))
         }
 
@@ -291,6 +314,7 @@ ApplicationWindow {
             commandText = ""
         }
         if (action === "clear_context") contextEntries = []
+        if (action === "mic_toggle") root.micEnabled = !root.micEnabled
         if (action === "exit") exitTimer.restart()
     }
 
@@ -418,6 +442,7 @@ ApplicationWindow {
         if (event.approvalPhrases) root.applyApprovalPhrases(event.approvalPhrases)
         if (event.codexThreadId !== undefined) root.applyCodexThreadId(event.codexThreadId)
         if (event.codexAlwaysStartNewThread !== undefined) root.applyCodexAlwaysStartNewThread(event.codexAlwaysStartNewThread)
+        if (event.micEnabled !== undefined) root.micEnabled = !!event.micEnabled
     }
 
     function applyRuntimeVisualSettings(settings) {
@@ -582,7 +607,7 @@ ApplicationWindow {
 
             if (event.type === "state") {
                 root.uiState = event.state
-                root.statusText = event.text || root.stateText(event.state)
+                root.statusText = root.displayText(event.text || "", event.state)
                 if (root.isThinkingAudioState(event.state) && !root.isThinkingAudioState(previousState)) {
                     root.glow = Math.max(root.glow, 0.18)
                     thinkingEffect.play()
@@ -2029,6 +2054,11 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 text: root.uiText("ttsStop")
                 onClicked: root.sendControl("tts_stop")
+            }
+            Button {
+                Layout.fillWidth: true
+                text: root.micEnabled ? root.uiText("micOff") : root.uiText("micOn")
+                onClicked: root.sendControl("mic_toggle")
             }
             Button {
                 Layout.fillWidth: true

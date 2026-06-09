@@ -349,6 +349,79 @@ test("always-on voice runner applies visual max utterance seconds to wake candid
   assert.ok(logs.includes("[wake:candidate] end reason=max_duration speechDurationMs=5200"));
 });
 
+test("always-on voice runner toggles microphone from terminal command", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput, speechProcessor, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 테스트 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  await runner.processLine("/mic");
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+
+  assert.equal(speechProcessor.audio.length, 0);
+  assert.equal(backend.prompts.length, 0);
+  assert.ok(logs.includes("[voice:mic] off"));
+  assert.equal(lastStateEvent(visualBridge.events)?.text, "microphone off");
+  assert.equal(
+    visualBridge.events
+      .filter((event): event is Extract<VisualEvent, { type: "settings" }> => event.type === "settings" && event.micEnabled !== undefined)
+      .at(-1)?.micEnabled,
+    false
+  );
+
+  await runner.processLine("/mic");
+  assert.equal(lastStateEvent(visualBridge.events)?.text, "microphone on");
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(speechProcessor.audio.length, 1);
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.ok(logs.includes("[voice:mic] on"));
+});
+
+test("always-on voice runner toggles microphone from visual control", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput, speechProcessor } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 다시 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  visualBridge.emitMicToggle(false);
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  assert.equal(speechProcessor.audio.length, 0);
+  assert.equal(backend.prompts.length, 0);
+
+  visualBridge.emitMicToggle(true);
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(speechProcessor.audio.length, 1);
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "다시 돌려줘");
+});
+
 test("always-on voice runner routes a configured custom wake phrase", async () => {
   const { backend, runner, audioInput, speechProcessor } = createAlwaysOnRunner(
     [
@@ -2306,6 +2379,17 @@ class FakeVisualBridge implements VisualBridgeLike {
         action,
         ...(text ? { text } : {}),
         ...(wakePhrases ? { wakePhrases } : {})
+      })
+    );
+  }
+
+  emitMicToggle(micEnabled: boolean): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action: "mic_toggle",
+        micEnabled
       })
     );
   }
