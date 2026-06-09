@@ -57,6 +57,13 @@ test("visual bridge serializes UI events as JSON", () => {
     },
     {
       op: "voice-agent-ui",
+      type: "popup",
+      title: "공부 노트",
+      text: "# 개념\n긴 설명입니다.",
+      format: "markdown"
+    },
+    {
+      op: "voice-agent-ui",
       type: "usage",
       text: "5h 63% left · 1w 88% left",
       primaryText: "5h 63% left",
@@ -150,7 +157,7 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"popupPreferred":true,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
@@ -160,6 +167,7 @@ test("visual bridge parses allowed control events only", () => {
       chatHistoryEnabled: false,
       hudEnabled: false,
       hudCompact: true,
+      popupPreferred: true,
       speakWakeRejectedWarnings: false,
       maxUtteranceSeconds: 80
     }
@@ -620,6 +628,15 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /width: 16, height: 16/u);
   assert.match(swift, /"maxSpeechHelp": "한 번에 받을 always-on 발화 최대 길이입니다/u);
   assert.match(swift, /settingsHudCheckbox/u);
+  assert.match(swift, /settingsPopupPreferredCheckbox/u);
+  assert.match(swift, /Prefer popup for long answers/u);
+  assert.match(swift, /"popupPreferred": popupPreferred/u);
+  assert.match(swift, /case "popup":/u);
+  assert.match(swift, /final class PopupPanelController/u);
+  assert.match(swift, /private func markdownAttributedString/u);
+  assert.match(swift, /NSPasteboard\.general\.setString\(rawText, forType: \.string\)/u);
+  assert.match(swift, /toggleButton\.action = #selector\(toggleMode\)/u);
+  assert.match(swift, /styleMask: \[\.titled, \.closable, \.resizable, \.utilityWindow\]/u);
   assert.match(swift, /Show floating HUD/u);
   assert.match(swift, /Thinking Fx/u);
   assert.match(swift, /thinkingPulseSound\.volume/u);

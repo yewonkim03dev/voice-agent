@@ -1,4 +1,4 @@
-export type VoiceAgentEventType = "speech" | "command" | "status" | "error";
+export type VoiceAgentEventType = "speech" | "command" | "status" | "error" | "popup";
 export type VoiceAgentSpeechRole = "progress" | "final" | "message";
 
 export interface VoiceAgentEvent {
@@ -22,6 +22,20 @@ export const voiceAgentProtocolPrompt = [
   "Before tool/file/search/command work, emit a brief speech progress event. During long work, emit short progress after meaningful milestones.",
   "Never put raw commands/paths/URLs/logs in speech. No markdown fences. Use the configured response language for speech text."
 ].join("\n");
+
+export const voiceAgentPopupProtocolPrompt = [
+  "Popup channel:",
+  "When popup preference is enabled, you may emit at most one popup event per assistant answer:",
+  "{\"op\":\"voice-agent\",\"type\":\"popup\",\"text\":\"markdown or plain text content\",\"title\":\"optional title\"}",
+  "Use popup for long explanations, study notes, markdown-heavy answers, tables, or math content better read visually than spoken.",
+  "Do not speak the popup body. You may still emit a short speech final summary with role=\"final\".",
+  "Across all NDJSON lines for one answer, emit no more than one popup event."
+].join("\n");
+
+export function voiceAgentProtocolPromptForSettings(options: { popupPreferred?: boolean } = {}): string {
+  if (!options.popupPreferred) return voiceAgentProtocolPrompt;
+  return `${voiceAgentProtocolPrompt}\n\n${voiceAgentPopupProtocolPrompt}`;
+}
 
 export function parseVoiceAgentEventLine(line: string): VoiceAgentEvent | null {
   const trimmed = line.trim();
@@ -117,7 +131,7 @@ function findJsonObjectEnd(text: string, start: number): number {
 }
 
 function isVoiceAgentEventType(value: unknown): value is VoiceAgentEventType {
-  return value === "speech" || value === "command" || value === "status" || value === "error";
+  return value === "speech" || value === "command" || value === "status" || value === "error" || value === "popup";
 }
 
 function parseSpeechRole(value: unknown): VoiceAgentSpeechRole {

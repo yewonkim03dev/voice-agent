@@ -118,7 +118,7 @@ export class CodexAppServerBackend implements AgentBackend {
   private readonly cwd: string;
   private readonly env: Record<string, string | undefined>;
   private readonly voiceAgentProtocol: boolean;
-  private readonly protocolPrompt: string;
+  private protocolPrompt: string;
   private readonly now: () => number;
   private readonly writeLine: WriteLine;
   private readonly spawnProcess: SpawnCodexAppServerProcess;
@@ -267,6 +267,10 @@ export class CodexAppServerBackend implements AgentBackend {
       this.turnId = turnId;
       this.rememberTurnSession(turnId, prompt.sessionId);
     }
+  }
+
+  setVoiceAgentProtocolPrompt(prompt: string): void {
+    this.protocolPrompt = prompt;
   }
 
   async sendPermission(decision: PermissionDecision): Promise<void> {

@@ -36,6 +36,7 @@ import { createVoiceOutput } from "../voice/createVoiceOutput.ts";
 import {
   parseVoiceAgentEventLine,
   parseVoiceAgentEventSequence,
+  voiceAgentProtocolPromptForSettings,
   type VoiceAgentEvent
 } from "../voice/VoiceAgentEvent.ts";
 import {
@@ -98,6 +99,7 @@ export class InMemoryAgentBackend implements AgentBackend {
   readonly interrupts: string[] = [];
   readonly outputs: CodexOutputEvent[] = [];
   readonly permissionRequests: PermissionRequest[] = [];
+  readonly protocolPrompts: string[] = [];
 
   private readonly now: () => number;
   private readonly writeLine: WriteLine;
@@ -138,6 +140,10 @@ export class InMemoryAgentBackend implements AgentBackend {
       process: "running",
       task: "thinking"
     });
+  }
+
+  setVoiceAgentProtocolPrompt(prompt: string): void {
+    this.protocolPrompts.push(prompt);
   }
 
   async sendPermission(decision: PermissionDecision): Promise<void> {
@@ -275,6 +281,7 @@ export class TerminalHarness {
   private lastVisualUsageText: string | undefined;
   private readonly passthroughOutputBuffers = new Map<string, string>();
   private readonly passthroughStructuredSpeechSessions = new Set<string>();
+  private readonly passthroughPopupGenerations = new Set<string>();
   private readonly interruptedPassthroughSessions = new Set<string>();
   private readonly scheduledVoiceTasks = new Set<Promise<void>>();
   private voiceQueue: Promise<void> = Promise.resolve();
@@ -327,6 +334,7 @@ export class TerminalHarness {
       this.restoreVisualStateAfterSpeech();
       this.playPermissionReadyCue(id);
     });
+    this.updateBackendProtocolPrompt();
     this.visualBridge?.onControl((event) => {
       void this.handleVisualControl(event);
     });
@@ -603,6 +611,7 @@ export class TerminalHarness {
   private async sendPassthroughTranscript(transcript: Transcript, options: ProcessTranscriptOptions = {}): Promise<void> {
     this.startAgentTurn();
     const generation = ++this.passthroughGeneration;
+    this.passthroughPopupGenerations.delete(popupGenerationKey(transcript.sessionId, generation));
     this.activePassthroughGeneration = generation;
     this.currentSessionId = transcript.sessionId;
     this.sessionGenerations.set(transcript.sessionId, generation);
@@ -775,6 +784,9 @@ export class TerminalHarness {
       if (outputGeneration !== undefined && outputGeneration === this.activePassthroughGeneration) {
         this.activePassthroughGeneration = undefined;
       }
+      if (outputGeneration !== undefined) {
+        this.passthroughPopupGenerations.delete(popupGenerationKey(output.sessionId, outputGeneration));
+      }
       this.sessionGenerations.delete(output.sessionId);
       this.sendVisualQuestion("");
       if (!this.passthroughStructuredSpeechSessions.has(output.sessionId)) {
@@ -933,6 +945,16 @@ export class TerminalHarness {
   }
 
   private handleStaleVoiceAgentEvent(event: VoiceAgentEvent): void {
+    if (event.type === "popup") {
+      this.writeLine("[agent:stale:popup] ignored stale popup");
+      this.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "status",
+        text: "stale popup ignored"
+      });
+      return;
+    }
+
     this.printAgentOutputBlock(`stale:${event.type}`, event.text);
     this.sendVisualEvent({
       op: "voice-agent-ui",
@@ -978,7 +1000,41 @@ export class TerminalHarness {
         });
         this.scheduleSpeak(event.text, "error");
         return;
+      case "popup":
+        this.handlePopupVoiceAgentEvent(sessionId, event);
+        return;
     }
+  }
+
+  private handlePopupVoiceAgentEvent(sessionId: string, event: VoiceAgentEvent): void {
+    if (this.visualSettings.popupPreferred !== true) {
+      this.writeLine("[agent:popup:ignored] popup preference disabled");
+      return;
+    }
+
+    const generation = this.sessionGenerations.get(sessionId);
+    const key = popupGenerationKey(sessionId, generation);
+    if (this.passthroughPopupGenerations.has(key)) {
+      this.writeLine("[agent:popup:ignored] duplicate popup for this turn");
+      return;
+    }
+
+    this.passthroughPopupGenerations.add(key);
+    const title = typeof event.raw.title === "string" ? event.raw.title.trim() : "";
+    const format = event.raw.format === "plain" ? "plain" : "markdown";
+    this.writeLine(`[agent:popup] ${title || "popup opened"}`);
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "popup",
+      text: event.text,
+      ...(title ? { title } : {}),
+      format
+    });
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "status",
+      text: "popup opened"
+    });
   }
 
   private printAgentOutputBlock(type: string, text: string): void {
@@ -1563,6 +1619,7 @@ export class TerminalHarness {
 
   private async updateVisualSettings(settings: VisualRuntimeSettings): Promise<void> {
     this.visualSettings = sanitizeVisualRuntimeSettings(settings, this.visualSettings);
+    this.updateBackendProtocolPrompt();
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "settings",
@@ -1571,6 +1628,12 @@ export class TerminalHarness {
     await this.persistSettings({
       visual: this.currentVisualRuntimeSettings()
     });
+  }
+
+  private updateBackendProtocolPrompt(): void {
+    this.backend.setVoiceAgentProtocolPrompt?.(voiceAgentProtocolPromptForSettings({
+      popupPreferred: this.visualSettings.popupPreferred === true
+    }));
   }
 
   private async updateApprovalPhrases(phrases: VisualApprovalPhrases): Promise<void> {
@@ -1626,6 +1689,7 @@ export class TerminalHarness {
       chatHistoryEnabled: this.visualSettings.chatHistoryEnabled ?? true,
       hudEnabled: this.visualSettings.hudEnabled ?? true,
       hudCompact: this.visualSettings.hudCompact ?? false,
+      popupPreferred: this.visualSettings.popupPreferred ?? false,
       speakWakeRejectedWarnings: this.visualSettings.speakWakeRejectedWarnings ?? true,
       maxUtteranceSeconds: this.visualSettings.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
     };
@@ -2138,6 +2202,7 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
     chatHistoryEnabled: true,
     hudEnabled: true,
     hudCompact: false,
+    popupPreferred: false,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: defaultMaxUtteranceSeconds
   };
@@ -2161,6 +2226,7 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
     chatHistoryEnabled: typeof settings?.chatHistoryEnabled === "boolean" ? settings.chatHistoryEnabled : undefined,
     hudEnabled: typeof settings?.hudEnabled === "boolean" ? settings.hudEnabled : undefined,
     hudCompact: typeof settings?.hudCompact === "boolean" ? settings.hudCompact : undefined,
+    popupPreferred: typeof settings?.popupPreferred === "boolean" ? settings.popupPreferred : undefined,
     speakWakeRejectedWarnings: typeof settings?.speakWakeRejectedWarnings === "boolean"
       ? settings.speakWakeRejectedWarnings
       : undefined,
@@ -2182,6 +2248,7 @@ function sanitizeVisualRuntimeSettings(
     chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true,
     hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true,
     hudCompact: settings.hudCompact ?? fallback.hudCompact ?? false,
+    popupPreferred: settings.popupPreferred ?? fallback.popupPreferred ?? false,
     speakWakeRejectedWarnings: settings.speakWakeRejectedWarnings ?? fallback.speakWakeRejectedWarnings ?? true,
     maxUtteranceSeconds: settings.maxUtteranceSeconds === undefined
       ? fallback.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
@@ -2449,6 +2516,10 @@ function hasEnabledNetworkPermission(value: unknown): boolean {
 
 function passthroughOutputBufferKey(sessionId: string, type: CodexOutputEvent["type"]): string {
   return `${sessionId}\u0000${type}`;
+}
+
+function popupGenerationKey(sessionId: string, generation: number | undefined): string {
+  return `${sessionId}\u0000${generation ?? "unknown"}`;
 }
 
 function parsePassthroughOutputBufferKey(key: string): { sessionId: string; type: CodexOutputEvent["type"] } {

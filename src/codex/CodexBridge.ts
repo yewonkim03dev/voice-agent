@@ -14,6 +14,7 @@ export interface AgentBackend {
   start(config?: CodexProcessConfig): Promise<void>;
   stop(): Promise<void>;
   sendPrompt(prompt: CodexPrompt): Promise<void>;
+  setVoiceAgentProtocolPrompt?(prompt: string): void;
   sendPermission(decision: PermissionDecision): Promise<void>;
   interrupt(reason: string): Promise<void>;
   onOutput(callback: (event: CodexOutputEvent) => void): void;

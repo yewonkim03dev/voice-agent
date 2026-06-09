@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createTerminalHarnessFromArgs, InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness } from "../src/app/harness.ts";
+import { createTerminalHarnessFromArgs, InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness, type TerminalHarnessOptions } from "../src/app/harness.ts";
 import type { VoiceLocalSettingsOverride, VoiceSettingsPersistence } from "../src/app/voice-config.ts";
 import {
   parseVoiceAgentEventLine,
   parseVoiceAgentEventSequence,
-  voiceAgentProtocolPrompt
+  voiceAgentProtocolPrompt,
+  voiceAgentProtocolPromptForSettings
 } from "../src/voice/VoiceAgentEvent.ts";
 import { TtsVoiceOutput } from "../src/voice/TtsVoiceOutput.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
@@ -223,6 +224,7 @@ test("visual settings apply persists TTS and visual overrides", async () => {
     chatHistoryEnabled: false,
     hudEnabled: false,
     hudCompact: true,
+    popupPreferred: true,
     speakWakeRejectedWarnings: false,
     maxUtteranceSeconds: 80
   });
@@ -247,6 +249,7 @@ test("visual settings apply persists TTS and visual overrides", async () => {
         chatHistoryEnabled: false,
         hudEnabled: false,
         hudCompact: true,
+        popupPreferred: true,
         speakWakeRejectedWarnings: false,
         maxUtteranceSeconds: 55
       }
@@ -357,6 +360,7 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
     chatHistoryEnabled: true,
     hudEnabled: true,
     hudCompact: false,
+    popupPreferred: false,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: 15
   });
@@ -395,6 +399,7 @@ test("visual reset_settings clears persisted overrides", async () => {
     chatHistoryEnabled: true,
     hudEnabled: true,
     hudCompact: false,
+    popupPreferred: false,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: 15
   });
@@ -945,8 +950,23 @@ test("parses voice-agent NDJSON speech events", () => {
   assert.equal(parseVoiceAgentEventLine(
     '{"op":"voice-agent","type":"speech","role":"unknown","text":"일반 메시지야."}'
   )?.role, "message");
+  assert.deepEqual(parseVoiceAgentEventLine(
+    '{"op":"voice-agent","type":"popup","title":"공부 노트","text":"# 개념\\n긴 설명입니다."}'
+  ), {
+    op: "voice-agent",
+    type: "popup",
+    text: "# 개념\n긴 설명입니다.",
+    role: "message",
+    raw: {
+      op: "voice-agent",
+      type: "popup",
+      title: "공부 노트",
+      text: "# 개념\n긴 설명입니다."
+    }
+  });
   assert.equal(parseVoiceAgentEventLine("plain text"), null);
   assert.equal(parseVoiceAgentEventLine('{"op":"other","type":"speech","text":"no"}'), null);
+  assert.equal(parseVoiceAgentEventLine('{"op":"voice-agent","type":"popup","text":"   "}'), null);
 });
 
 test("parses adjacent voice-agent events defensively", () => {
@@ -979,6 +999,40 @@ test("voice-agent protocol prefers speech for audible progress", () => {
   assert.match(voiceAgentProtocolPrompt, /display only, never spoken/u);
   assert.match(voiceAgentProtocolPrompt, /status: silent UI state/u);
   assert.match(voiceAgentProtocolPrompt, /Use the configured response language/u);
+  assert.doesNotMatch(voiceAgentProtocolPrompt, /Popup channel/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /Popup channel/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /at most one popup event per assistant answer/u);
+});
+
+test("visual popup preference updates backend protocol prompt and persists", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const settingsPersistence = new FakeSettingsPersistence();
+  const harness = createPassthroughHarness(backend, [], visualBridge, undefined, undefined, {
+    settingsPersistence
+  });
+
+  await harness.start();
+  assert.equal(backend.protocolPrompts.at(-1)?.includes("Popup channel"), false);
+
+  visualBridge.emitVisualControl({
+    popupPreferred: true
+  });
+  await flushAsync();
+
+  assert.equal(backend.protocolPrompts.at(-1)?.includes("Popup channel"), true);
+  assert.deepEqual(settingsPersistence.updates.at(-1), {
+    visual: {
+      thinkingVolume: 0.32,
+      responseLanguage: "auto",
+      chatHistoryEnabled: true,
+      hudEnabled: true,
+      hudCompact: false,
+      popupPreferred: true,
+      speakWakeRejectedWarnings: true,
+      maxUtteranceSeconds: 15
+    }
+  });
 });
 
 test("pass-through progress TTS keeps only the latest queued progress", async () => {
@@ -1243,6 +1297,109 @@ test("pass-through mode displays command events without speaking them", async ()
   });
 });
 
+test("pass-through popup opens once per turn and is not spoken", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new StoppableVoiceOutput();
+  const harness = createPassthroughHarness(backend, lines, visualBridge, undefined, voiceOutput, {
+    visualConfig: {
+      popupPreferred: true
+    }
+  });
+
+  await harness.start();
+  await harness.processLine("코덱스 설명해줘");
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      '{"op":"voice-agent","type":"popup","title":"정리","text":"# 긴 설명\\n본문입니다."}\n' +
+      '{"op":"voice-agent","type":"popup","title":"두번째","text":"두 번째 본문"}\n' +
+      '{"op":"voice-agent","type":"speech","role":"final","text":"팝업으로 열었습니다."}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(visualBridge.events.filter((event) => event.type === "popup"), [
+    {
+      op: "voice-agent-ui",
+      type: "popup",
+      title: "정리",
+      text: "# 긴 설명\n본문입니다.",
+      format: "markdown"
+    }
+  ]);
+  assert.equal(lines.some((line) => line.includes("[agent:popup] 정리")), true);
+  assert.equal(lines.some((line) => line.includes("duplicate popup")), true);
+  assert.deepEqual(voiceOutput.messages.map((message) => message.text), ["팝업으로 열었습니다."]);
+});
+
+test("pass-through popup guard resets on next turn", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge, undefined, undefined, {
+    visualConfig: {
+      popupPreferred: true
+    }
+  });
+
+  await harness.start();
+  await harness.processLine("첫 질문");
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"popup","text":"첫 팝업"}\n',
+    timestamp: 1000
+  });
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "task_complete",
+    text: "Task complete",
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  await harness.processLine("두 번째 질문");
+  const secondSessionId = backend.prompts.at(-1)?.sessionId ?? "sess_2";
+  backend.emitOutput({
+    sessionId: secondSessionId,
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"popup","text":"두 번째 팝업"}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.deepEqual(
+    visualBridge.events
+      .filter((event): event is Extract<VisualEvent, { type: "popup" }> => event.type === "popup")
+      .map((event) => event.text),
+    ["첫 팝업", "두 번째 팝업"]
+  );
+});
+
+test("pass-through popup is ignored when popup preference is disabled", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new StoppableVoiceOutput();
+  const harness = createPassthroughHarness(backend, lines, visualBridge, undefined, voiceOutput);
+
+  await harness.start();
+  await harness.processLine("코덱스 설명해줘");
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"popup","text":"비활성 팝업"}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(visualBridge.events.some((event) => event.type === "popup"), false);
+  assert.equal(lines.some((line) => line.includes("popup preference disabled")), true);
+  assert.equal(voiceOutput.messages.length, 0);
+});
+
 test("pass-through mode handles status and error events", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
@@ -1482,11 +1639,13 @@ function createPassthroughHarness(
   lines: string[] = [],
   visualBridge?: VisualBridgeLike,
   onExitRequest?: () => void | Promise<void>,
-  voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] }
+  voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] },
+  options: Partial<TerminalHarnessOptions> = {}
 ): TerminalHarness {
   let id = 0;
 
   return new TerminalHarness({
+    ...options,
     backend,
     backendLabel: "codex-test",
     routingMode: "passthrough",

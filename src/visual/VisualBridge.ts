@@ -49,6 +49,7 @@ export interface VisualRuntimeSettings {
   chatHistoryEnabled?: boolean;
   hudEnabled?: boolean;
   hudCompact?: boolean;
+  popupPreferred?: boolean;
   speakWakeRejectedWarnings?: boolean;
   maxUtteranceSeconds?: number;
 }
@@ -105,6 +106,13 @@ export type VisualEvent =
       op: "voice-agent-ui";
       type: "error";
       text: string;
+    }
+  | {
+      op: "voice-agent-ui";
+      type: "popup";
+      text: string;
+      title?: string;
+      format?: "markdown" | "plain";
     }
   | {
       op: "voice-agent-ui";
@@ -440,6 +448,7 @@ function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRunt
     ...(typeof record.chatHistoryEnabled === "boolean" ? { chatHistoryEnabled: record.chatHistoryEnabled } : {}),
     ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
     ...(typeof record.hudCompact === "boolean" ? { hudCompact: record.hudCompact } : {}),
+    ...(typeof record.popupPreferred === "boolean" ? { popupPreferred: record.popupPreferred } : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
       : {}),

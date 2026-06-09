@@ -43,6 +43,10 @@ private let visualTextEn: [String: String] = [
     "guideTooltip": "Voice Agent guide",
     "ok": "OK",
     "settings": "Settings",
+    "popup": "Popup",
+    "copy": "Copy",
+    "plainText": "Text",
+    "markdownView": "Markdown",
     "stop": "STOP",
     "ttsStop": "TTS Stop",
     "tts": "TTS",
@@ -70,6 +74,7 @@ private let visualTextEn: [String: String] = [
     "recentQa": "Recent Q/A",
     "showRecentQa": "Show Recent Q/A panel",
     "showFloatingHud": "Show floating HUD",
+    "popupPreferred": "Prefer popup for long answers",
     "speakWakeWarning": "Speak wake warning",
     "alwaysStartNewThread": "Always start new thread",
     "language": "Language",
@@ -102,6 +107,7 @@ private let visualTextEn: [String: String] = [
     "newThreadHelp": "Starts a new Codex thread on restart when checked; resumes the last thread when unchecked.",
     "chatHelp": "Shows or hides the Recent Q/A panel.",
     "hudHelp": "Shows or hides the floating HUD above other apps.",
+    "popupHelp": "Lets long or study-oriented answers open in a native popup instead of being spoken in full.",
     "wakeWarningHelp": "Controls whether wake mismatch warnings are spoken aloud.",
     "wakePhrasesHelp": "Wake phrase list. One phrase per line replaces the current list.",
     "approvalAllowHelp": "Phrases that approve once during permission prompts. One phrase per line.",
@@ -151,6 +157,10 @@ private let visualTextKo: [String: String] = [
     "guideTooltip": "Voice Agent 안내",
     "ok": "확인",
     "settings": "설정",
+    "popup": "팝업",
+    "copy": "복사",
+    "plainText": "텍스트",
+    "markdownView": "마크다운",
     "stop": "정지",
     "ttsStop": "TTS 정지",
     "tts": "TTS",
@@ -178,6 +188,7 @@ private let visualTextKo: [String: String] = [
     "recentQa": "최근 Q/A",
     "showRecentQa": "최근 Q/A 패널 표시",
     "showFloatingHud": "floating HUD 표시",
+    "popupPreferred": "긴 답변 팝업 선호",
     "speakWakeWarning": "호출어 경고 말하기",
     "alwaysStartNewThread": "항상 새 스레드로 시작",
     "language": "언어",
@@ -210,6 +221,7 @@ private let visualTextKo: [String: String] = [
     "newThreadHelp": "체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다.",
     "chatHelp": "최근 질문과 답변 패널 표시 여부입니다.",
     "hudHelp": "다른 앱 위에 뜨는 floating HUD 표시 여부입니다.",
+    "popupHelp": "긴 설명이나 공부용 답변을 전부 읽지 않고 네이티브 팝업으로 띄웁니다.",
     "wakeWarningHelp": "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
     "wakePhrasesHelp": "호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.",
     "approvalAllowHelp": "권한 요청에서 한 번만 허용으로 처리할 문구입니다. 줄마다 하나씩 입력합니다.",
@@ -2193,12 +2205,183 @@ final class MenuBarCompanion {
     }
 }
 
+final class PopupPanelController: NSObject {
+    private var panel: NSPanel?
+    private let textView = NSTextView(frame: .zero)
+    private let toggleButton = NSButton(title: "", target: nil, action: nil)
+    private let copyButton = NSButton(title: "", target: nil, action: nil)
+    private let closeButton = NSButton(title: "", target: nil, action: nil)
+    private var rawText = ""
+    private var showingRaw = false
+    private var currentLanguage: UiLanguage = .en
+
+    func show(title: String, text: String, format: String, language: UiLanguage) {
+        currentLanguage = language
+        rawText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        showingRaw = format == "plain"
+        ensurePanel()
+        updateLocalization()
+        renderContent()
+        panel?.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? localizedText("popup", language: language)
+            : title.trimmingCharacters(in: .whitespacesAndNewlines)
+        panel?.orderFront(nil)
+    }
+
+    func updateLanguage(_ language: UiLanguage) {
+        currentLanguage = language
+        updateLocalization()
+    }
+
+    private func ensurePanel() {
+        guard panel == nil else { return }
+
+        let size = NSSize(width: 640, height: 480)
+        let window = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.hidesOnDeactivate = false
+        window.minSize = NSSize(width: 420, height: 260)
+
+        let content = NSView(frame: NSRect(origin: .zero, size: size))
+        content.autoresizingMask = [.width, .height]
+        content.wantsLayer = true
+        content.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 0.96).cgColor
+
+        let scrollView = NSScrollView(frame: NSRect(x: 16, y: 58, width: size.width - 32, height: size.height - 74))
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+
+        textView.frame = scrollView.bounds
+        textView.autoresizingMask = [.width, .height]
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = true
+        textView.backgroundColor = NSColor(calibratedRed: 0.07, green: 0.10, blue: 0.15, alpha: 1)
+        textView.textColor = NSColor(calibratedRed: 0.91, green: 0.94, blue: 0.98, alpha: 1)
+        textView.textContainerInset = NSSize(width: 14, height: 14)
+        textView.textContainer?.widthTracksTextView = true
+        scrollView.documentView = textView
+        content.addSubview(scrollView)
+
+        toggleButton.target = self
+        toggleButton.action = #selector(toggleMode)
+        toggleButton.frame = NSRect(x: 16, y: 18, width: 112, height: 28)
+        content.addSubview(toggleButton)
+
+        copyButton.target = self
+        copyButton.action = #selector(copyText)
+        copyButton.frame = NSRect(x: 136, y: 18, width: 84, height: 28)
+        content.addSubview(copyButton)
+
+        closeButton.target = self
+        closeButton.action = #selector(close)
+        closeButton.frame = NSRect(x: size.width - 100, y: 18, width: 84, height: 28)
+        closeButton.autoresizingMask = [.minXMargin]
+        content.addSubview(closeButton)
+
+        window.contentView = content
+        panel = window
+    }
+
+    private func updateLocalization() {
+        toggleButton.title = localizedText(showingRaw ? "markdownView" : "plainText", language: currentLanguage)
+        copyButton.title = localizedText("copy", language: currentLanguage)
+        closeButton.title = localizedText("ok", language: currentLanguage)
+    }
+
+    private func renderContent() {
+        updateLocalization()
+        if showingRaw {
+            textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            textView.string = rawText
+            return
+        }
+
+        textView.textStorage?.setAttributedString(markdownAttributedString(rawText))
+    }
+
+    @objc private func toggleMode() {
+        showingRaw.toggle()
+        renderContent()
+    }
+
+    @objc private func copyText() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(rawText, forType: .string)
+    }
+
+    @objc private func close() {
+        panel?.orderOut(nil)
+    }
+}
+
+private func markdownAttributedString(_ markdown: String) -> NSAttributedString {
+    let output = NSMutableAttributedString()
+    var inCodeBlock = false
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineSpacing = 4
+
+    for line in markdown.components(separatedBy: .newlines) {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("```") {
+            inCodeBlock.toggle()
+            continue
+        }
+
+        let font: NSFont
+        let color: NSColor
+        let text: String
+
+        if inCodeBlock {
+            font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            color = NSColor(calibratedRed: 0.79, green: 0.87, blue: 0.96, alpha: 1)
+            text = line
+        } else if trimmed.hasPrefix("### ") {
+            font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+            color = NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.98, alpha: 1)
+            text = String(trimmed.dropFirst(4))
+        } else if trimmed.hasPrefix("## ") {
+            font = NSFont.systemFont(ofSize: 17, weight: .semibold)
+            color = NSColor(calibratedRed: 0.90, green: 0.94, blue: 1.0, alpha: 1)
+            text = String(trimmed.dropFirst(3))
+        } else if trimmed.hasPrefix("# ") {
+            font = NSFont.systemFont(ofSize: 20, weight: .bold)
+            color = NSColor(calibratedRed: 0.94, green: 0.97, blue: 1.0, alpha: 1)
+            text = String(trimmed.dropFirst(2))
+        } else {
+            font = NSFont.systemFont(ofSize: 14, weight: .regular)
+            color = NSColor(calibratedRed: 0.91, green: 0.94, blue: 0.98, alpha: 1)
+            text = line
+        }
+
+        output.append(NSAttributedString(
+            string: "\(text)\n",
+            attributes: [
+                .font: font,
+                .foregroundColor: color,
+                .paragraphStyle: paragraph
+            ]
+        ))
+    }
+
+    return output
+}
+
 final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
     private weak var rootView: VisualRootView?
     private var mainWindow: NSWindow?
     private let menuBarCompanion = MenuBarCompanion()
+    private let popupPanel = PopupPanelController()
     private let commandView = NSTextView(frame: .zero)
     private let contextField = NSTextField(string: "")
     private let contextSummary = NSTextField(labelWithString: "No references queued")
@@ -2218,6 +2401,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsMaxUtteranceField = NSTextField(string: "15")
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
     private let settingsHudCheckbox = NSButton(checkboxWithTitle: "Show floating HUD", target: nil, action: nil)
+    private let settingsPopupPreferredCheckbox = NSButton(checkboxWithTitle: "Prefer popup for long answers", target: nil, action: nil)
     private let settingsWakeRejectedWarningCheckbox = NSButton(checkboxWithTitle: "Speak wake warning", target: nil, action: nil)
     private let settingsNewThreadCheckbox = NSButton(checkboxWithTitle: "Always start new thread", target: nil, action: nil)
     private let settingsCodexThreadField = NSTextField(string: "")
@@ -2239,6 +2423,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var chatHistoryEnabled = true
     private var hudEnabled = true
     private var hudCompact = false
+    private var popupPreferred = false
     private var micEnabled = true
     private var speakWakeRejectedWarnings = true
     private var codexAlwaysStartNewThread = false
@@ -2465,6 +2650,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             circleView.statusText = error
             rootView?.pushChat(role: "assistant", kind: "error", text: error)
             menuBarCompanion.update(state: "error", text: error)
+        case "popup":
+            let popupText = event["text"] as? String ?? ""
+            guard !popupText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { break }
+            let title = event["title"] as? String ?? localizedText("popup", language: uiLanguage)
+            let format = event["format"] as? String ?? "markdown"
+            popupPanel.show(title: title, text: popupText, format: format, language: uiLanguage)
+            rootView?.pushChat(role: "assistant", kind: "status", text: localizedText("popup", language: uiLanguage))
+            menuBarCompanion.updateMessage(localizedText("popup", language: uiLanguage))
         case "approval":
             circleView.state = "approval_pending"
             let approval = event["text"] as? String ?? stateText("approval_pending", language: uiLanguage)
@@ -2631,6 +2824,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         responseLanguage = ttsLanguage
         chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
         hudEnabled = settingsHudCheckbox.state == .on
+        popupPreferred = settingsPopupPreferredCheckbox.state == .on
         speakWakeRejectedWarnings = settingsWakeRejectedWarningCheckbox.state == .on
         codexAlwaysStartNewThread = settingsNewThreadCheckbox.state == .on
         thinkingPulseSound.volume = Float(thinkingVolume)
@@ -2657,6 +2851,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         chatHistoryEnabled = true
         hudEnabled = true
         hudCompact = false
+        popupPreferred = false
         speakWakeRejectedWarnings = true
         codexAlwaysStartNewThread = false
         thinkingPulseSound.volume = Float(thinkingVolume)
@@ -2717,8 +2912,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsWindow = nil
         settingsChatHistoryCheckbox.title = localizedText("showRecentQa", language: uiLanguage)
         settingsHudCheckbox.title = localizedText("showFloatingHud", language: uiLanguage)
+        settingsPopupPreferredCheckbox.title = localizedText("popupPreferred", language: uiLanguage)
         settingsWakeRejectedWarningCheckbox.title = localizedText("speakWakeWarning", language: uiLanguage)
         settingsNewThreadCheckbox.title = localizedText("alwaysStartNewThread", language: uiLanguage)
+        popupPanel.updateLanguage(uiLanguage)
         circleView.statusText = displayText(circleView.statusText, state: circleView.state, language: uiLanguage)
         menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
     }
@@ -2744,6 +2941,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         }
         if let value = settings["hudCompact"] as? Bool {
             updateHudCompact(value, sendSettings: false)
+        }
+        if let value = settings["popupPreferred"] as? Bool {
+            popupPreferred = value
         }
         if let value = settings["speakWakeRejectedWarnings"] as? Bool {
             speakWakeRejectedWarnings = value
@@ -2899,33 +3099,36 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsHudCheckbox.frame = NSRect(x: 132, y: 176, width: 216, height: 22)
         view.addSubview(settingsHudCheckbox)
         addSettingsHelp(view, y: 174, text: localizedText("hudHelp", language: uiLanguage))
-        settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 154, width: 216, height: 22)
+        settingsPopupPreferredCheckbox.frame = NSRect(x: 132, y: 154, width: 216, height: 22)
+        view.addSubview(settingsPopupPreferredCheckbox)
+        addSettingsHelp(view, y: 152, text: localizedText("popupHelp", language: uiLanguage))
+        settingsWakeRejectedWarningCheckbox.frame = NSRect(x: 132, y: 132, width: 216, height: 22)
         view.addSubview(settingsWakeRejectedWarningCheckbox)
-        addSettingsHelp(view, y: 152, text: localizedText("wakeWarningHelp", language: uiLanguage))
+        addSettingsHelp(view, y: 130, text: localizedText("wakeWarningHelp", language: uiLanguage))
 
         let wakeLabel = NSTextField(labelWithString: localizedText("wake", language: uiLanguage))
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        wakeLabel.frame = NSRect(x: 26, y: 124, width: 96, height: 20)
+        wakeLabel.frame = NSRect(x: 26, y: 102, width: 96, height: 20)
         view.addSubview(wakeLabel)
-        addSettingsHelp(view, y: 120, text: localizedText("wakePhrasesHelp", language: uiLanguage))
+        addSettingsHelp(view, y: 98, text: localizedText("wakePhrasesHelp", language: uiLanguage))
 
-        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 64, width: 216, height: 72))
+        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 38, width: 216, height: 54))
         wakeScroll.borderType = .bezelBorder
         wakeScroll.hasVerticalScroller = true
         settingsWakePhrasesView.isVerticallyResizable = true
         settingsWakePhrasesView.isHorizontallyResizable = false
         settingsWakePhrasesView.autoresizingMask = [.width]
-        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 216, height: 94)
+        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 216, height: 76)
         settingsWakePhrasesView.font = NSFont.systemFont(ofSize: 13)
         wakeScroll.documentView = settingsWakePhrasesView
         view.addSubview(wakeScroll)
 
         let reset = button(localizedText("restoreDefaults", language: uiLanguage), action: #selector(resetSettings))
-        reset.frame = NSRect(x: 26, y: 18, width: 150, height: 28)
+        reset.frame = NSRect(x: 26, y: 8, width: 150, height: 28)
         view.addSubview(reset)
 
         let apply = button(localizedText("apply", language: uiLanguage), action: #selector(applySettings))
-        apply.frame = NSRect(x: 236, y: 18, width: 112, height: 28)
+        apply.frame = NSRect(x: 236, y: 8, width: 112, height: 28)
         view.addSubview(apply)
 
         return window
@@ -2984,6 +3187,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsMaxUtteranceField.stringValue = String(format: "%.0f", maxUtteranceSeconds)
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
         settingsHudCheckbox.state = hudEnabled ? .on : .off
+        settingsPopupPreferredCheckbox.state = popupPreferred ? .on : .off
         settingsWakeRejectedWarningCheckbox.state = speakWakeRejectedWarnings ? .on : .off
         settingsNewThreadCheckbox.state = codexAlwaysStartNewThread ? .on : .off
         settingsCodexThreadField.stringValue = codexThreadId
@@ -3028,6 +3232,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "chatHistoryEnabled": chatHistoryEnabled,
                 "hudEnabled": hudEnabled,
                 "hudCompact": hudCompact,
+                "popupPreferred": popupPreferred,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])
@@ -3045,6 +3250,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "chatHistoryEnabled": chatHistoryEnabled,
                 "hudEnabled": hudEnabled,
                 "hudCompact": hudCompact,
+                "popupPreferred": popupPreferred,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])
