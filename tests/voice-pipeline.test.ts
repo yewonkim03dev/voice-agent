@@ -37,7 +37,9 @@ import { EchoGuard } from "../src/voice/EchoGuard.ts";
 import type { VoiceMessage } from "../src/voice/VoiceMessage.ts";
 import type { VoiceOutput } from "../src/voice/VoiceOutput.ts";
 import type { VisualBridgeLike, VisualControlEvent, VisualEvent, VisualRuntimeSettings } from "../src/visual/VisualBridge.ts";
+import { CommandWakeStreamDetector, type SpawnWakeStreamProcess } from "../src/wake/CommandWakeStreamDetector.ts";
 import { defaultWakePhrases } from "../src/wake/WakePhraseRouter.ts";
+import type { WakeStreamDetector, WakeStreamEvent } from "../src/wake/WakeStreamDetector.ts";
 
 test("ManualRecordingGate opens and closes through toggle", async () => {
   const gate = new ManualRecordingGate({
@@ -817,6 +819,138 @@ test("always-on voice runner keeps agent visual state during non-wake background
   await runner.stop();
 });
 
+test("streaming wake updates visual before final STT and final transcript routes codex command", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const wakeStreamDetector = new FakeWakeStreamDetector({
+    phrase: "codex",
+    text: "codex",
+    confidence: 0.92
+  });
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "codex run tests",
+        language: "en"
+      }
+    ],
+    {
+      visualBridge,
+      wakeStreamDetector
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  const wakeIndex = visualBridge.events.findIndex((event) => event.type === "wake");
+  const listeningIndex = visualBridge.events.findIndex((event) => event.type === "state" && event.state === "listening");
+  const transcriptStatusIndex = visualBridge.events.findIndex((event) => event.type === "status" && event.text === "codex run tests");
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "run tests");
+  assert.ok(wakeIndex >= 0);
+  assert.ok(listeningIndex > wakeIndex);
+  assert.ok(transcriptStatusIndex > wakeIndex);
+  assert.equal(visualBridge.events.filter((event) => event.type === "wake").length, 1);
+  assert.equal(logs.some((line) => line.startsWith("[wake:stream] provisional")), true);
+});
+
+test("streaming wake-only opens follow-up without duplicate wake cue", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const wakeStreamDetector = new FakeWakeStreamDetector({
+    phrase: "코덱스",
+    text: "코덱스"
+  });
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스",
+        language: "ko"
+      },
+      {
+        text: "테스트 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge,
+      wakeStreamDetector
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.ok(logs.includes('[wake:armed] phrase="코덱스" timeoutMs=10000'));
+  assert.ok(logs.includes('[wake:followup] phrase="코덱스" command="테스트 돌려줘"'));
+  assert.equal(visualBridge.events.filter((event) => event.type === "wake").length, 1);
+});
+
+test("streaming wake false positive returns to idle without routing or wake rejection", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const voiceOutput = new InspectableTestVoiceOutput();
+  const wakeStreamDetector = new FakeWakeStreamDetector({
+    phrase: "코덱스",
+    text: "코덱스"
+  });
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "그냥 배경 발화",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge,
+      voiceOutput,
+      wakeStreamDetector
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.equal(voiceOutput.messages.length, 0);
+  assert.equal(logs.some((line) => line.startsWith("[wake:stream] false_positive")), true);
+  assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "wake_rejected"), false);
+  assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "idle"), true);
+});
+
+test("without streaming wake provider final-STT wake behavior is preserved", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 테스트 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "테스트 돌려줘");
+  assert.equal(visualBridge.events.filter((event) => event.type === "wake").length, 1);
+});
+
 test("wake-only response arms follow-up without speaking ready TTS", async () => {
   const visualBridge = new FakeVisualBridge();
   const voiceOutput = new InspectableTestVoiceOutput();
@@ -1280,11 +1414,13 @@ test("voice harness config loads user-configured wake phrases from env", async (
     env: {
       VOICE_AGENT_RECORDER_COMMAND: "recorder",
       VOICE_AGENT_STT_COMMAND: "stt {audio}",
+      VOICE_AGENT_WAKE_STREAM_COMMAND: "partial-stt",
       VOICE_AGENT_WAKE_PHRASES: "자비스,컴퓨터"
     }
   });
 
   assert.equal(resolution.config?.recorderCommand, "recorder");
+  assert.equal(resolution.config?.wakeStreamCommand, "partial-stt");
   assert.deepEqual(resolution.config?.wakePhrases, ["자비스", "컴퓨터"]);
 });
 
@@ -1680,7 +1816,40 @@ test("voice setup detection prefers the macOS Swift provider on Mac", async () =
   assert.deepEqual(detection.errors, []);
   assert.equal(detection.config?.recorderCommand, "exec swift src/audio/macos-record-pcm.swift");
   assert.equal(detection.config?.sttCommand, "swift src/speech/macos-transcribe.swift {audio}");
+  assert.equal(detection.config?.wakeStreamCommand, "swift src/wake/macos-wake-partial.swift");
   assert.deepEqual(detection.providerIds, ["macos-swift"]);
+});
+
+test("command wake stream detector emits a provisional wake from partial output once per reset", () => {
+  const process = new FakeWakeStreamProcess();
+  const detector = new CommandWakeStreamDetector({
+    command: "partial-wake",
+    wakePhrases: ["코덱스"],
+    spawnProcess: (() => process) as SpawnWakeStreamProcess,
+    now: () => 1234
+  });
+  const events: WakeStreamEvent[] = [];
+  detector.onWake((event) => events.push(event));
+
+  detector.consume(fakePcmFrame(0.2, 1000));
+  process.emitStdout('{"text":"코덱스 테스트 돌려줘","confidence":0.72,"provider":"fake-partial"}\n');
+  process.emitStdout('{"text":"코덱스 테스트 다시 돌려줘","confidence":0.9,"provider":"fake-partial"}\n');
+
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    phrase: "코덱스",
+    text: "코덱스 테스트 돌려줘",
+    provider: "fake-partial",
+    timestamp: 1234,
+    strategy: "exact",
+    confidence: 0.72
+  });
+  assert.equal(process.writes.length, 1);
+
+  detector.reset();
+  process.emitStdout('{"text":"코덱스 다음 명령"}\n');
+
+  assert.equal(events.length, 2);
 });
 
 test("voice setup detection accepts custom providers for future platforms", async () => {
@@ -1787,6 +1956,7 @@ function createAlwaysOnRunner(
     voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] };
     visualBridge?: VisualBridgeLike;
     speechProcessor?: SpeechProcessor;
+    wakeStreamDetector?: WakeStreamDetector;
     debug?: boolean;
   } = {}
 ): {
@@ -1819,6 +1989,7 @@ function createAlwaysOnRunner(
     terminalHarness: harness,
     audioInput,
     wakeGate: createTestWakeGate(createId),
+    wakeStreamDetector: options.wakeStreamDetector,
     speechProcessor,
     wakePhrases: options.wakePhrases ?? defaultWakePhrases,
     visualBridge: options.visualBridge,
@@ -1974,6 +2145,109 @@ class SequenceSpeechProcessor implements SpeechProcessor {
   }
 }
 
+class FakeWakeStreamDetector implements WakeStreamDetector {
+  private readonly callbacks: Array<(event: WakeStreamEvent) => void> = [];
+  private readonly event: WakeStreamEvent | undefined;
+  private emitted = false;
+  consumedFrames = 0;
+  resets = 0;
+
+  constructor(event?: Partial<WakeStreamEvent>) {
+    this.event = event
+      ? {
+          phrase: event.phrase ?? "코덱스",
+          text: event.text ?? event.phrase ?? "코덱스",
+          provider: event.provider ?? "fake",
+          timestamp: event.timestamp ?? 1000,
+          strategy: event.strategy ?? "exact",
+          ...(event.confidence !== undefined ? { confidence: event.confidence } : {})
+        }
+      : undefined;
+  }
+
+  consume(frame: AudioFrame): void {
+    this.consumedFrames += 1;
+    if (!this.event || this.emitted || !isSpeechFrame(frame)) return;
+
+    this.emitted = true;
+    this.callbacks.forEach((callback) =>
+      callback({
+        ...this.event,
+        timestamp: frame.timestamp
+      })
+    );
+  }
+
+  reset(): void {
+    this.resets += 1;
+    this.emitted = false;
+  }
+
+  onWake(callback: (event: WakeStreamEvent) => void): void {
+    this.callbacks.push(callback);
+  }
+}
+
+class FakeWakeStreamProcess {
+  readonly writes: Buffer[] = [];
+  readonly stdin = new FakeProcessWritable(this.writes);
+  readonly stdout = new FakeProcessReadable();
+  readonly stderr = new FakeProcessReadable();
+  private readonly errorListeners: Array<(error: Error) => void> = [];
+  private readonly exitListeners: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = [];
+
+  kill(_signal?: NodeJS.Signals): boolean {
+    this.exitListeners.forEach((listener) => listener(null, "SIGTERM"));
+    return true;
+  }
+
+  on(event: "error", callback: (error: Error) => void): unknown;
+  on(event: "exit", callback: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  on(event: "error" | "exit", callback: unknown): unknown {
+    if (event === "error") {
+      this.errorListeners.push(callback as (error: Error) => void);
+    } else {
+      this.exitListeners.push(callback as (code: number | null, signal: NodeJS.Signals | null) => void);
+    }
+  }
+
+  emitStdout(text: string): void {
+    this.stdout.emit(text);
+  }
+}
+
+class FakeProcessReadable {
+  private readonly listeners: Array<(chunk: Buffer | string) => void> = [];
+
+  on(event: "data", callback: (chunk: Buffer | string) => void): unknown {
+    if (event === "data") this.listeners.push(callback);
+  }
+
+  emit(text: string): void {
+    this.listeners.forEach((listener) => listener(text));
+  }
+}
+
+class FakeProcessWritable {
+  private readonly writes: Buffer[];
+  private readonly errorListeners: Array<(error: Error) => void> = [];
+
+  constructor(writes: Buffer[]) {
+    this.writes = writes;
+  }
+
+  write(chunk: Buffer): boolean {
+    this.writes.push(Buffer.from(chunk));
+    return true;
+  }
+
+  end(): void {}
+
+  on(event: "error", callback: (error: Error) => void): unknown {
+    if (event === "error") this.errorListeners.push(callback);
+  }
+}
+
 class InspectableTestVoiceOutput implements VoiceOutput {
   readonly messages: VoiceMessage[] = [];
   private readonly finishedListeners: Array<(id: string) => void> = [];
@@ -2075,4 +2349,11 @@ function fakePcmFrame(amplitude: number, timestamp: number, samples = 160): Audi
     format: "pcm_s16le",
     data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
   };
+}
+
+function isSpeechFrame(frame: AudioFrame): boolean {
+  if (frame.format !== "pcm_s16le" || frame.data.byteLength < 2) return frame.data.byteLength > 0;
+
+  const view = new DataView(frame.data);
+  return Math.abs(view.getInt16(0, true)) > 0;
 }

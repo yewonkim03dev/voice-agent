@@ -19,6 +19,8 @@ import { EchoGuard, type EchoGuardResult } from "../voice/EchoGuard.ts";
 import type { VisualProvider } from "../visual/VisualConfig.ts";
 import { VisualBridge, type VisualBridgeLike } from "../visual/VisualBridge.ts";
 import { launchVisualCompanion } from "../visual/run-visual.ts";
+import { createWakeStreamDetectorFromConfig } from "../wake/createWakeStreamDetector.ts";
+import { NoopWakeStreamDetector, type WakeStreamDetector, type WakeStreamEvent } from "../wake/WakeStreamDetector.ts";
 import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 import { readCodexThreadSettings } from "./codex-thread-config.ts";
 import { createTerminalHarnessFromArgs, parseHarnessCliArgs, TerminalHarness } from "./harness.ts";
@@ -49,6 +51,7 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   terminalHarness: TerminalHarness;
   audioInput: AudioInput;
   wakeGate: AlwaysOnWakeGate;
+  wakeStreamDetector?: WakeStreamDetector;
   speechProcessor: SpeechProcessor;
   wakePhrases: string[];
   visualBridge?: VisualBridgeLike;
@@ -188,6 +191,7 @@ export class AlwaysOnVoiceHarnessRunner {
 
   private readonly audioInput: AudioInput;
   private readonly wakeGate: AlwaysOnWakeGate;
+  private readonly wakeStreamDetector: WakeStreamDetector;
   private readonly speechProcessor: SpeechProcessor;
   private readonly defaultWakePhrases: string[];
   private wakePhrases: string[];
@@ -202,6 +206,8 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private manualRecording = false;
   private candidateVisualState = false;
+  private provisionalWake: WakeStreamEvent | undefined;
+  private recentProvisionalWakeCue: WakeStreamEvent | undefined;
   private started = false;
   private lastVolumeEventAt = 0;
   private wakeFollowUp:
@@ -216,6 +222,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.terminalHarness = options.terminalHarness;
     this.audioInput = options.audioInput;
     this.wakeGate = options.wakeGate;
+    this.wakeStreamDetector = options.wakeStreamDetector ?? new NoopWakeStreamDetector();
     this.speechProcessor = options.speechProcessor;
     this.defaultWakePhrases = normalizedWakePhrases(options.wakePhrases);
     this.wakePhrases = [...this.defaultWakePhrases];
@@ -235,6 +242,8 @@ export class AlwaysOnVoiceHarnessRunner {
       createId: this.createId
     });
     this.audioInput.onFrame((frame) => this.consumeFrame(frame));
+    this.wakeStreamDetector.onWake((event) => this.handleProvisionalWake(event));
+    this.wakeStreamDetector.updateWakePhrases?.(this.wakePhrases);
     this.wakeGate.onUtterance((audio) => this.queueTranscription(audio, "candidate"));
     this.wakeGate.onEvent((event) => this.printWakeEvent(event));
   }
@@ -264,6 +273,7 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     await this.audioInput.stop();
+    await this.wakeStreamDetector.stop?.();
     await this.drain();
     await this.terminalHarness.stop();
     this.started = false;
@@ -312,6 +322,7 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     this.wakeGate.consume(frame);
+    this.wakeStreamDetector.consume(frame);
   }
 
   private toggleManualRecording(): void {
@@ -322,6 +333,8 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     this.wakeGate.reset();
+    this.wakeStreamDetector.reset();
+    this.provisionalWake = undefined;
     void this.terminalHarness.stopVoiceOutput();
     this.manualRecorder.begin(this.createId("voice_sess"), {
       mode: "manual",
@@ -340,13 +353,18 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private queueTranscription(audio: UtteranceAudio, source: "candidate" | "manual"): void {
-    const task = this.transcribeAndRoute(audio, source).finally(() => {
+    const provisionalWake = source === "candidate" ? this.provisionalWake : undefined;
+    const task = this.transcribeAndRoute(audio, source, provisionalWake).finally(() => {
       this.pendingTranscripts.delete(task);
     });
     this.pendingTranscripts.add(task);
   }
 
-  private async transcribeAndRoute(audio: UtteranceAudio, source: "candidate" | "manual"): Promise<void> {
+  private async transcribeAndRoute(
+    audio: UtteranceAudio,
+    source: "candidate" | "manual",
+    provisionalWake?: WakeStreamEvent
+  ): Promise<void> {
     try {
       this.printAudioDiagnostics(audio);
       const transcript = await this.speechProcessor.transcribe(audio);
@@ -362,7 +380,7 @@ export class AlwaysOnVoiceHarnessRunner {
       if (this.shouldShowCandidateTranscript(transcript)) {
         this.printTranscript(transcript);
       }
-      await this.routeCandidateTranscript(transcript);
+      await this.routeCandidateTranscript(transcript, provisionalWake);
     } catch (error) {
       const details = formatError(error);
       if (!this.shouldSuppressTranscriptionError(source, details)) {
@@ -373,7 +391,7 @@ export class AlwaysOnVoiceHarnessRunner {
     }
   }
 
-  private async routeCandidateTranscript(transcript: Transcript): Promise<void> {
+  private async routeCandidateTranscript(transcript: Transcript, provisionalWake?: WakeStreamEvent): Promise<void> {
     if (this.terminalHarness.hasPendingApproval()) {
       this.writeLine("[wake:approval] pending native approval; routing speech without wake phrase.");
       await this.terminalHarness.processTranscript(transcript);
@@ -392,6 +410,17 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     if (!wake) {
+      if (provisionalWake) {
+        this.writeLine(`[wake:stream] false_positive phrase="${provisionalWake.phrase}" text="${transcript.text.trim()}"`);
+        this.recentProvisionalWakeCue = undefined;
+        this.terminalHarness.sendVisualEvent({
+          op: "voice-agent-ui",
+          type: "state",
+          state: "idle"
+        });
+        return;
+      }
+
       this.writeLine("[wake:discard] no configured wake phrase matched.");
       if (!this.terminalHarness.isAgentRequestActive()) {
         const visualText = formatWakeRejectedVisualText(this.wakePhrases);
@@ -400,7 +429,13 @@ export class AlwaysOnVoiceHarnessRunner {
       return;
     }
 
-    await this.routeWakeMatch(transcript, wake);
+    const suppressWakeCue =
+      provisionalWake !== undefined ||
+      (this.recentProvisionalWakeCue !== undefined && this.recentProvisionalWakeCue.phrase === wake.phrase);
+    this.recentProvisionalWakeCue = undefined;
+    await this.routeWakeMatch(transcript, wake, {
+      suppressWakeCue
+    });
   }
 
   private async routeWakeMatch(
@@ -408,7 +443,8 @@ export class AlwaysOnVoiceHarnessRunner {
     wake: {
       phrase: string;
       commandText: string;
-    }
+    },
+    options: { suppressWakeCue?: boolean } = {}
   ): Promise<void> {
     this.writeLine(`[wake:matched] phrase="${wake.phrase}" command="${wake.commandText}"`);
     if (wake.strategy === "normalized" && wake.heardText && wake.normalizedText) {
@@ -417,11 +453,13 @@ export class AlwaysOnVoiceHarnessRunner {
     if (wake.strategy === "fuzzy" && wake.heardText && wake.distance !== undefined) {
       this.writeLine(`[wake:fuzzy] heard="${wake.heardText}" matched="${wake.phrase}" distance=${wake.distance}`);
     }
-    this.terminalHarness.sendVisualEvent({
-      op: "voice-agent-ui",
-      type: "wake",
-      phrase: wake.phrase
-    });
+    if (options.suppressWakeCue !== true) {
+      this.terminalHarness.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "wake",
+        phrase: wake.phrase
+      });
+    }
 
     if (!wake.commandText) {
       this.armWakeFollowUp(wake.phrase);
@@ -489,8 +527,30 @@ export class AlwaysOnVoiceHarnessRunner {
     this.wakeFollowUp = undefined;
   }
 
+  private handleProvisionalWake(event: WakeStreamEvent): void {
+    if (this.manualRecording) return;
+    if (this.provisionalWake) return;
+    if (this.activeWakeFollowUp()) return;
+    if (this.terminalHarness.hasPendingApproval()) return;
+    if (this.terminalHarness.isAgentRequestActive()) return;
+    if (this.terminalHarness.ttsPlaybackState.isSpeakingOrRecent(this.now())) return;
+
+    this.provisionalWake = event;
+    this.recentProvisionalWakeCue = event;
+    this.writeLine(
+      `[wake:stream] provisional provider=${event.provider} phrase="${event.phrase}" strategy=${event.strategy}`
+    );
+    this.terminalHarness.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "wake",
+      phrase: event.phrase
+    });
+    this.sendListeningVisualState("listening");
+  }
+
   updateWakePhrases(wakePhrases: readonly string[], options: { persist?: boolean } = {}): void {
     this.wakePhrases = normalizedWakePhrases(wakePhrases);
+    this.wakeStreamDetector.updateWakePhrases?.(this.wakePhrases);
     this.clearWakeFollowUp();
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ") || "(none)"}`);
     this.sendVisualWakeSettings();
@@ -581,6 +641,8 @@ export class AlwaysOnVoiceHarnessRunner {
   private printWakeEvent(event: AlwaysOnWakeGateEvent): void {
     switch (event.type) {
       case "candidate_start":
+        this.provisionalWake = undefined;
+        this.wakeStreamDetector.reset();
         this.candidateVisualState = this.shouldShowCandidateVisualState();
         if (this.candidateVisualState) this.sendListeningVisualState("listening");
         if (this.debug) {
@@ -763,6 +825,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     audioInput?: AudioInput;
     speechProcessor?: SpeechProcessor;
     wakeGate?: AlwaysOnWakeGate;
+    wakeStreamDetector?: WakeStreamDetector;
     wakePhrases?: string[];
     debug?: boolean;
     visualBridge?: VisualBridgeLike;
@@ -817,8 +880,12 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
         detector: new EndOfSpeechDetector({
           maxUtteranceMs: sanitizeMaxUtteranceSeconds(config.visual?.maxUtteranceSeconds) * 1000
         })
-      }),
+    }),
     speechProcessor,
+    wakeStreamDetector: options.wakeStreamDetector ?? createWakeStreamDetectorFromConfig(config, {
+      diagnosticLine: options.debug ? writeLine : undefined,
+      now: options.now
+    }),
     wakePhrases: options.wakePhrases ?? config.wakePhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,

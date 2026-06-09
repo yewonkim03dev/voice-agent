@@ -17,6 +17,7 @@ export const maxMaxUtteranceSeconds = 55;
 export interface VoiceHarnessConfig {
   recorderCommand: string;
   sttCommand: string;
+  wakeStreamCommand?: string;
   sampleRate: number;
   channels: number;
   wakePhrases: string[];
@@ -73,6 +74,7 @@ export interface VoiceSetupCandidate {
   providerId: string;
   recorderCommand?: string;
   sttCommand?: string;
+  wakeStreamCommand?: string;
 }
 
 export interface VoiceSetupProvider {
@@ -128,8 +130,10 @@ export async function detectVoiceSetup(
   });
   const recorderCandidate = candidates.find((candidate) => candidate.recorderCommand);
   const sttCandidate = candidates.find((candidate) => candidate.sttCommand);
+  const wakeStreamCandidate = candidates.find((candidate) => candidate.wakeStreamCommand);
   const recorder = recorderCandidate?.recorderCommand;
   const stt = sttCandidate?.sttCommand;
+  const wakeStream = wakeStreamCandidate?.wakeStreamCommand;
   const errors: string[] = [];
 
   if (!recorder) {
@@ -153,6 +157,7 @@ export async function detectVoiceSetup(
     config: {
       recorderCommand: recorder,
       sttCommand: stt,
+      ...(wakeStream ? { wakeStreamCommand: wakeStream } : {}),
       sampleRate: 16_000,
       channels: 1,
       wakePhrases: defaultWakePhrases
@@ -160,7 +165,11 @@ export async function detectVoiceSetup(
     errors,
     recorder,
     stt,
-    providerIds: [...new Set([recorderCandidate.providerId, sttCandidate.providerId])]
+    providerIds: [...new Set([
+      recorderCandidate.providerId,
+      sttCandidate.providerId,
+      ...(wakeStreamCandidate ? [wakeStreamCandidate.providerId] : [])
+    ])]
   };
 }
 
@@ -330,6 +339,7 @@ export async function resetVoiceLocalSettings(options: {
 function configFromEnv(env: NodeJS.ProcessEnv): VoiceHarnessResolution {
   const recorderCommand = env.VOICE_AGENT_RECORDER_COMMAND?.trim() ?? "";
   const sttCommand = env.VOICE_AGENT_STT_COMMAND?.trim() ?? "";
+  const wakeStreamCommand = env.VOICE_AGENT_WAKE_STREAM_COMMAND?.trim() ?? "";
   const wakePhrases = parseWakePhrases(env.VOICE_AGENT_WAKE_PHRASES);
 
   if (!recorderCommand && !sttCommand) {
@@ -359,6 +369,7 @@ function configFromEnv(env: NodeJS.ProcessEnv): VoiceHarnessResolution {
     config: {
       recorderCommand,
       sttCommand,
+      ...(wakeStreamCommand ? { wakeStreamCommand } : {}),
       sampleRate: parsePositiveInteger(env.VOICE_AGENT_SAMPLE_RATE, 16_000),
       channels: parsePositiveInteger(env.VOICE_AGENT_CHANNELS, 1),
       wakePhrases
@@ -396,6 +407,7 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
 
     const recorderCommand = typeof parsed.recorderCommand === "string" ? parsed.recorderCommand.trim() : "";
     const sttCommand = typeof parsed.sttCommand === "string" ? parsed.sttCommand.trim() : "";
+    const wakeStreamCommand = typeof parsed.wakeStreamCommand === "string" ? parsed.wakeStreamCommand.trim() : "";
     const errors: string[] = [];
 
     if (!recorderCommand) errors.push(`Voice config file ${configPath} is missing recorderCommand.`);
@@ -412,6 +424,7 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
       config: {
         recorderCommand,
         sttCommand,
+        ...(wakeStreamCommand ? { wakeStreamCommand } : {}),
         sampleRate: parsePositiveInteger(String(parsed.sampleRate ?? ""), 16_000),
         channels: parsePositiveInteger(String(parsed.channels ?? ""), 1),
         wakePhrases: parseWakePhrases(parsed.wakePhrases),
@@ -466,6 +479,7 @@ function readNestedObject(value: unknown): Record<string, unknown> {
 function hasVoiceConfigFields(parsed: Record<string, unknown>): boolean {
   return "recorderCommand" in parsed ||
     "sttCommand" in parsed ||
+    "wakeStreamCommand" in parsed ||
     "sampleRate" in parsed ||
     "channels" in parsed ||
     "wakePhrases" in parsed ||
@@ -638,7 +652,8 @@ export const defaultVoiceSetupProviders: VoiceSetupProvider[] = [
       return {
         providerId: "macos-swift",
         recorderCommand: "exec swift src/audio/macos-record-pcm.swift",
-        sttCommand: "swift src/speech/macos-transcribe.swift {audio}"
+        sttCommand: "swift src/speech/macos-transcribe.swift {audio}",
+        wakeStreamCommand: "swift src/wake/macos-wake-partial.swift"
       };
     }
   },
