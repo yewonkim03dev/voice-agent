@@ -145,7 +145,12 @@ ApplicationWindow {
             gesturePeace: "브이",
             gestureThumbsUp: "엄지 위",
             gestureCustomName: "커스텀 이름",
+            gestureCustomManage: "커스텀 제스처 관리",
+            gestureCustomEmpty: "저장된 커스텀 제스처 없음",
+            gestureCustomCountSuffix: "개 저장됨",
             gestureCapture: "캡처",
+            gestureDelete: "삭제",
+            gestureDeleteAll: "전부 삭제",
             gestureClear: "삭제",
             gestureRunOff: "끔",
             gestureRunEmergencyOnly: "긴급 정지만",
@@ -276,7 +281,12 @@ ApplicationWindow {
             gesturePeace: "Peace",
             gestureThumbsUp: "Thumbs up",
             gestureCustomName: "Custom name",
+            gestureCustomManage: "Custom gestures",
+            gestureCustomEmpty: "No custom gestures saved",
+            gestureCustomCountSuffix: " saved",
             gestureCapture: "Capture",
+            gestureDelete: "Delete",
+            gestureDeleteAll: "Delete all",
             gestureClear: "Delete",
             gestureRunOff: "Off",
             gestureRunEmergencyOnly: "Emergency only",
@@ -2141,14 +2151,90 @@ ApplicationWindow {
                             text: root.customGestureName
                         }))
                     }
-                    Button {
-                        text: root.uiText("gestureClear")
-                        Layout.preferredWidth: 72
-                        onClicked: socket.sendTextMessage(JSON.stringify({
-                            op: "voice-agent-ui",
-                            type: "control",
-                            action: "reset_gesture_wake_settings"
-                        }))
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        Text { text: root.uiText("gestureCustomManage"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                        Text {
+                            Layout.fillWidth: true
+                            color: "#dce9f9"
+                            text: root.customGestureTemplates.length > 0 ? root.customGestureTemplates.length + root.uiText("gestureCustomCountSuffix") : root.uiText("gestureCustomEmpty")
+                            elide: Text.ElideRight
+                        }
+                        Button {
+                            text: root.uiText("gestureDeleteAll")
+                            Layout.preferredWidth: 88
+                            enabled: root.customGestureTemplates.length > 0
+                            onClicked: socket.sendTextMessage(JSON.stringify({
+                                op: "voice-agent-ui",
+                                type: "control",
+                                action: "clear_custom_gesture_templates"
+                            }))
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.max(42, Math.min(132, root.customGestureTemplates.length * 34 + 10))
+                        visible: root.customGestureTemplates.length > 0
+                        radius: 6
+                        color: "#081421"
+                        border.color: "#1b344d"
+
+                        ScrollView {
+                            anchors.fill: parent
+                            anchors.margins: 5
+                            clip: true
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                            ColumnLayout {
+                                width: parent.width
+                                spacing: 6
+
+                                Repeater {
+                                    model: root.customGestureTemplates
+
+                                    RowLayout {
+                                        width: parent ? parent.width : 0
+                                        spacing: 8
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            color: "#dce9f9"
+                                            font.pixelSize: 12
+                                            text: modelData && modelData.label ? modelData.label : (modelData && modelData.name ? modelData.name : "")
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            Layout.preferredWidth: 118
+                                            color: "#7f93aa"
+                                            font.family: "monospace"
+                                            font.pixelSize: 11
+                                            text: modelData && modelData.name ? modelData.name : ""
+                                            elide: Text.ElideMiddle
+                                        }
+                                        Button {
+                                            text: root.uiText("gestureDelete")
+                                            Layout.preferredWidth: 64
+                                            onClicked: socket.sendTextMessage(JSON.stringify({
+                                                op: "voice-agent-ui",
+                                                type: "control",
+                                                action: "delete_gesture_template",
+                                                text: modelData && modelData.name ? modelData.name : ""
+                                            }))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

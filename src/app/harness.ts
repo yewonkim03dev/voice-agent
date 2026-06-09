@@ -1472,6 +1472,8 @@ export class TerminalHarness {
       case "update_wake_phrases":
       case "update_gesture_wake_settings":
       case "capture_gesture_template":
+      case "delete_gesture_template":
+      case "clear_custom_gesture_templates":
       case "reset_gesture_wake_settings":
         return;
       case "update_approval_phrases":

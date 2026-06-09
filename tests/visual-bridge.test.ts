@@ -161,6 +161,17 @@ test("visual bridge parses allowed control events only", () => {
     action: "capture_gesture_template",
     text: "wave"
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"delete_gesture_template","text":"custom:wave"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "delete_gesture_template",
+    text: "custom:wave"
+  });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"clear_custom_gesture_templates"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "clear_custom_gesture_templates"
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"reset_gesture_wake_settings"}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -476,7 +487,9 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /update_approval_phrases/u);
   assert.match(qml, /update_gesture_wake_settings/u);
   assert.match(qml, /capture_gesture_template/u);
-  assert.match(qml, /reset_gesture_wake_settings/u);
+  assert.match(qml, /delete_gesture_template/u);
+  assert.match(qml, /clear_custom_gesture_templates/u);
+  assert.match(qml, /gestureCustomManage/u);
   assert.match(qml, /Delete/u);
   assert.match(qml, /customGestureTemplates/u);
   assert.match(qml, /Approval allow phrases/u);
@@ -663,6 +676,9 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsGestureRunningModePopup/u);
   assert.match(swift, /settingsCustomGestureNameField/u);
   assert.match(swift, /capture_gesture_template/u);
+  assert.match(swift, /delete_gesture_template/u);
+  assert.match(swift, /clear_custom_gesture_templates/u);
+  assert.match(swift, /settingsCustomGestureListContainer/u);
   assert.match(swift, /settingsCustomGestureClearButton/u);
   assert.match(swift, /reset_gesture_wake_settings/u);
   assert.match(swift, /settingsCodexThreadField/u);

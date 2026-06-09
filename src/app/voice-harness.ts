@@ -20,6 +20,7 @@ import { GestureActionStateMachine, type GestureTrigger } from "../gesture/Gestu
 import {
   customGestureNameFromLabel,
   gestureWakeConfigForRuntime,
+  isCustomGestureName,
   sanitizeGestureWakeConfig,
   type CustomGestureTemplate,
   type GestureCameraMode,
@@ -439,6 +440,17 @@ export class AlwaysOnVoiceHarnessRunner {
       return "continue";
     }
 
+    const gestureDelete = parseGestureDeleteCommand(text);
+    if (gestureDelete.matched) {
+      this.deleteCustomGestureTemplate(gestureDelete.argument);
+      return "continue";
+    }
+
+    if (isCustomGestureClearCommand(text)) {
+      this.clearCustomGestureTemplates();
+      return "continue";
+    }
+
     if (isGestureResetCommand(text)) {
       this.resetGestureWakeSettings();
       return "continue";
@@ -480,6 +492,8 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /cam toggles camera gesture wake on/off.");
     this.writeLine("  /cam-test shows camera gesture test steps and current status.");
     this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
+    this.writeLine("  /gesture-delete <name> deletes one custom camera gesture template.");
+    this.writeLine("  /gesture-clear-custom deletes all custom camera gesture templates.");
     this.writeLine("  /gesture-reset clears local gesture mappings and custom templates.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
@@ -1215,6 +1229,71 @@ export class AlwaysOnVoiceHarnessRunner {
     }
   }
 
+  deleteCustomGestureTemplate(nameOrLabel: string, options: { persist?: boolean } = {}): void {
+    const name = resolveCustomGestureTemplateName(nameOrLabel, this.gestureWake.customGestures);
+    if (!name) {
+      this.writeLine("[camera:custom] usage: /gesture-delete <name>");
+      this.sendVisualCameraStatus(this.gestureStateMachine.getCameraMode(), "custom gesture name required");
+      return;
+    }
+
+    const customGestures = this.gestureWake.customGestures.filter((template) => template.name !== name);
+    if (customGestures.length === this.gestureWake.customGestures.length) {
+      this.writeLine(`[camera:custom] no custom gesture named ${name}`);
+      this.sendVisualGestureSettings();
+      return;
+    }
+
+    const sanitized = sanitizeGestureWakeConfig({
+      ...this.gestureWake,
+      bindings: gestureBindingsWithoutCustomNames(this.gestureWake.bindings, new Set([name])),
+      customGestures
+    });
+    this.gestureWake = gestureWakeConfigForRuntime(sanitized, this.cameraGestureEnabledByCli);
+    this.gestureStateMachine = new GestureActionStateMachine({
+      config: this.gestureWake,
+      now: this.now
+    });
+    this.writeLine(`[camera:custom] deleted name=${name}`);
+    this.sendVisualGestureSettings();
+    this.reconfigureCameraGestureAfterSettingsUpdate();
+    if (options.persist !== false) {
+      this.trackSettingsWrite(this.persistGestureWakeSettings({
+        ...sanitized,
+        enabled: false
+      }));
+    }
+  }
+
+  clearCustomGestureTemplates(options: { persist?: boolean } = {}): void {
+    const deletedNames = new Set(this.gestureWake.customGestures.map((template) => template.name));
+    if (deletedNames.size === 0) {
+      this.writeLine("[camera:custom] no custom gestures to delete");
+      this.sendVisualGestureSettings();
+      return;
+    }
+
+    const sanitized = sanitizeGestureWakeConfig({
+      ...this.gestureWake,
+      bindings: gestureBindingsWithoutCustomNames(this.gestureWake.bindings, deletedNames),
+      customGestures: []
+    });
+    this.gestureWake = gestureWakeConfigForRuntime(sanitized, this.cameraGestureEnabledByCli);
+    this.gestureStateMachine = new GestureActionStateMachine({
+      config: this.gestureWake,
+      now: this.now
+    });
+    this.writeLine(`[camera:custom] deleted ${deletedNames.size} custom gesture(s)`);
+    this.sendVisualGestureSettings();
+    this.reconfigureCameraGestureAfterSettingsUpdate();
+    if (options.persist !== false) {
+      this.trackSettingsWrite(this.persistGestureWakeSettings({
+        ...sanitized,
+        enabled: false
+      }));
+    }
+  }
+
   private async saveCustomGestureTemplate(template: CustomGestureTemplate): Promise<void> {
     const customGestures = [
       ...this.gestureWake.customGestures.filter((existing) => existing.name !== template.name),
@@ -1810,7 +1889,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 }
 
 function isVisibleHelpCommandLine(visible: string): boolean {
-  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-reset|gesture-clear|add|refs)(?:\s|$)/u.test(visible);
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-delete|gesture-remove|gesture-rm|gesture-clear-custom|gestures-clear-custom|gesture-delete-all|gestures-delete-all|gesture-reset|gesture-clear|add|refs)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {
@@ -2118,7 +2197,7 @@ function bindVisualDirectGoControls(
 }
 
 function bindVisualWakeSettingsControls(
-  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "resetGestureWakeSettings" | "captureCustomGestureTemplate" | "toggleMicInput" | "toggleCameraGestureInput">,
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "resetGestureWakeSettings" | "captureCustomGestureTemplate" | "deleteCustomGestureTemplate" | "clearCustomGestureTemplates" | "toggleMicInput" | "toggleCameraGestureInput">,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
@@ -2144,6 +2223,16 @@ function bindVisualWakeSettingsControls(
 
     if (event.action === "capture_gesture_template") {
       void runner.captureCustomGestureTemplate(event.text ?? "");
+      return;
+    }
+
+    if (event.action === "delete_gesture_template") {
+      runner.deleteCustomGestureTemplate(event.text ?? "");
+      return;
+    }
+
+    if (event.action === "clear_custom_gesture_templates") {
+      runner.clearCustomGestureTemplates();
       return;
     }
 
@@ -2251,6 +2340,63 @@ function parseGestureCaptureCommand(text: string): { matched: boolean; argument:
     matched: true,
     argument: (match[1] ?? "").trim()
   };
+}
+
+function parseGestureDeleteCommand(text: string): { matched: boolean; argument: string } {
+  const match = text.match(/^\/(?:gesture-delete|gesture-remove|gesture-rm)(?:\s+([\s\S]*))?$/iu);
+
+  if (!match) {
+    return {
+      matched: false,
+      argument: ""
+    };
+  }
+
+  return {
+    matched: true,
+    argument: (match[1] ?? "").trim()
+  };
+}
+
+function isCustomGestureClearCommand(text: string): boolean {
+  return /^\/(?:gesture-clear-custom|gestures-clear-custom|gesture-delete-all|gestures-delete-all)$/iu.test(text.trim());
+}
+
+function resolveCustomGestureTemplateName(
+  value: string,
+  templates: CustomGestureTemplate[]
+): CustomGestureTemplate["name"] | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (isCustomGestureName(trimmed)) return trimmed;
+  const lower = trimmed.toLocaleLowerCase();
+  const match = templates.find((template) => (
+    template.label.toLocaleLowerCase() === lower ||
+    template.name.slice("custom:".length).toLocaleLowerCase() === lower
+  ));
+  if (match) return match.name;
+  return customGestureNameFromLabel(trimmed);
+}
+
+function gestureBindingsWithoutCustomNames(
+  bindings: GestureWakeConfig["bindings"],
+  deletedNames: Set<string>
+): GestureWakeFileConfig["bindings"] {
+  const next: GestureWakeFileConfig["bindings"] = { ...bindings };
+  if (deletedNames.has(bindings.wake)) {
+    next.wake = "open_palm";
+  }
+  if (deletedNames.has(bindings.stop)) {
+    next.stop = "thumbs_down";
+  }
+
+  for (const action of ["approval.once", "approval.deny", "approval.session", "approval.policy"] as const) {
+    if (bindings[action] !== undefined && deletedNames.has(bindings[action])) {
+      next[action] = "none";
+    }
+  }
+
+  return next;
 }
 
 function isGestureResetCommand(text: string): boolean {

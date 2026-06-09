@@ -123,7 +123,11 @@ private let visualTextEn: [String: String] = [
     "gesturePeace": "Peace",
     "gestureThumbsUp": "Thumbs up",
     "gestureCustomName": "Custom name",
+    "gestureCustomManage": "Custom gestures",
+    "gestureCustomEmpty": "No custom gestures saved",
     "gestureCapture": "Capture",
+    "gestureDelete": "Delete",
+    "gestureDeleteAll": "Delete all",
     "gestureClear": "Delete",
     "gestureRunOff": "Off",
     "gestureRunEmergencyOnly": "Emergency only",
@@ -273,7 +277,11 @@ private let visualTextKo: [String: String] = [
     "gesturePeace": "브이",
     "gestureThumbsUp": "엄지 위",
     "gestureCustomName": "커스텀 이름",
+    "gestureCustomManage": "커스텀 제스처 관리",
+    "gestureCustomEmpty": "저장된 커스텀 제스처 없음",
     "gestureCapture": "캡처",
+    "gestureDelete": "삭제",
+    "gestureDeleteAll": "전부 삭제",
     "gestureClear": "삭제",
     "gestureRunOff": "끔",
     "gestureRunEmergencyOnly": "긴급 정지만",
@@ -2787,6 +2795,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsCustomGestureNameField = NSTextField(string: "")
     private let settingsCustomGestureCaptureButton = NSButton(title: "Capture", target: nil, action: nil)
     private let settingsCustomGestureClearButton = NSButton(title: "Clear", target: nil, action: nil)
+    private let settingsCustomGestureListContainer = NSView(frame: .zero)
+    private var settingsCustomGestureDeleteButtons: [NSButton] = []
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
     private var ttsVoiceName = ""
@@ -3282,6 +3292,17 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         sendControl("capture_gesture_template", text: text)
     }
 
+    @objc private func deleteCustomGestureFromSettings(_ sender: NSButton) {
+        let index = sender.tag
+        guard index >= 0, index < customGestureTemplates.count else { return }
+        let name = (customGestureTemplates[index]["name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        sendControl("delete_gesture_template", text: name)
+    }
+
+    @objc private func clearCustomGestureTemplatesFromSettings() {
+        sendControl("clear_custom_gesture_templates")
+    }
+
     @objc private func resetGestureWakeSettingsFromSettings() {
         sendControl("reset_gesture_wake_settings")
     }
@@ -3402,6 +3423,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         if let templates = settings["customGestures"] as? [[String: Any]] {
             customGestureTemplates = templates
             reloadGestureOptionControls()
+            reloadCustomGestureList()
         }
         if let bindings = settings["bindings"] as? [String: Any] {
             for key in ["wake", "stop", "approval.once", "approval.deny", "approval.session", "approval.policy"] {
@@ -3445,7 +3467,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let contentWidth: CGFloat = 380
-        let contentHeight: CGFloat = 1220
+        let contentHeight: CGFloat = 1320
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -3479,25 +3501,26 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsCustomGestureCaptureButton.title = localizedText("gestureCapture", language: uiLanguage)
         settingsCustomGestureCaptureButton.target = self
         settingsCustomGestureCaptureButton.action = #selector(captureCustomGestureFromSettings)
-        settingsCustomGestureClearButton.title = localizedText("gestureClear", language: uiLanguage)
+        settingsCustomGestureClearButton.title = localizedText("gestureDeleteAll", language: uiLanguage)
         settingsCustomGestureClearButton.target = self
-        settingsCustomGestureClearButton.action = #selector(resetGestureWakeSettingsFromSettings)
+        settingsCustomGestureClearButton.action = #selector(clearCustomGestureTemplatesFromSettings)
 
-        addSettingsRow(view, label: localizedText("gestureWake", language: uiLanguage), control: settingsGestureWakePopup, y: 1146)
-        addSettingsHelp(view, y: 1146, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureStop", language: uiLanguage), control: settingsGestureStopPopup, y: 1112)
-        addSettingsHelp(view, y: 1112, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureApprovalOnce", language: uiLanguage), control: settingsGestureApprovalOncePopup, y: 1078)
-        addSettingsHelp(view, y: 1078, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureApprovalDeny", language: uiLanguage), control: settingsGestureApprovalDenyPopup, y: 1044)
-        addSettingsHelp(view, y: 1044, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureApprovalSession", language: uiLanguage), control: settingsGestureApprovalSessionPopup, y: 1010)
-        addSettingsHelp(view, y: 1010, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureApprovalPolicy", language: uiLanguage), control: settingsGestureApprovalPolicyPopup, y: 976)
-        addSettingsHelp(view, y: 976, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureRunningMode", language: uiLanguage), control: settingsGestureRunningModePopup, y: 942)
-        addSettingsHelp(view, y: 942, text: localizedText("gestureRunningModeHelp", language: uiLanguage))
-        addCustomGestureCaptureRow(view, y: 906)
+        addSettingsRow(view, label: localizedText("gestureWake", language: uiLanguage), control: settingsGestureWakePopup, y: 1246)
+        addSettingsHelp(view, y: 1246, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureStop", language: uiLanguage), control: settingsGestureStopPopup, y: 1212)
+        addSettingsHelp(view, y: 1212, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalOnce", language: uiLanguage), control: settingsGestureApprovalOncePopup, y: 1178)
+        addSettingsHelp(view, y: 1178, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalDeny", language: uiLanguage), control: settingsGestureApprovalDenyPopup, y: 1144)
+        addSettingsHelp(view, y: 1144, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalSession", language: uiLanguage), control: settingsGestureApprovalSessionPopup, y: 1110)
+        addSettingsHelp(view, y: 1110, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalPolicy", language: uiLanguage), control: settingsGestureApprovalPolicyPopup, y: 1076)
+        addSettingsHelp(view, y: 1076, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureRunningMode", language: uiLanguage), control: settingsGestureRunningModePopup, y: 1042)
+        addSettingsHelp(view, y: 1042, text: localizedText("gestureRunningModeHelp", language: uiLanguage))
+        addCustomGestureCaptureRow(view, y: 1006)
+        addCustomGestureManagement(view, y: 912)
 
         addSettingsPhraseArea(
             view,
@@ -3624,12 +3647,29 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         labelView.frame = NSRect(x: 26, y: y + 4, width: 96, height: 20)
         settingsCustomGestureNameField.frame = NSRect(x: 132, y: y, width: 82, height: 26)
         settingsCustomGestureCaptureButton.frame = NSRect(x: 222, y: y, width: 58, height: 26)
-        settingsCustomGestureClearButton.frame = NSRect(x: 288, y: y, width: 58, height: 26)
+        settingsCustomGestureClearButton.frame = NSRect(x: 284, y: y, width: 64, height: 26)
         view.addSubview(labelView)
         view.addSubview(settingsCustomGestureNameField)
         view.addSubview(settingsCustomGestureCaptureButton)
         view.addSubview(settingsCustomGestureClearButton)
         addSettingsHelp(view, y: y, text: localizedText("gestureHelp", language: uiLanguage))
+    }
+
+    private func addCustomGestureManagement(_ view: NSView, y: CGFloat) {
+        let labelView = NSTextField(labelWithString: localizedText("gestureCustomManage", language: uiLanguage))
+        labelView.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
+        labelView.frame = NSRect(x: 26, y: y + 70, width: 96, height: 20)
+        view.addSubview(labelView)
+        addSettingsHelp(view, y: y + 66, text: localizedText("gestureHelp", language: uiLanguage))
+
+        let scroll = NSScrollView(frame: NSRect(x: 132, y: y, width: 216, height: 82))
+        scroll.borderType = .bezelBorder
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        settingsCustomGestureListContainer.frame = NSRect(x: 0, y: 0, width: 216, height: 82)
+        scroll.documentView = settingsCustomGestureListContainer
+        view.addSubview(scroll)
+        reloadCustomGestureList()
     }
 
     private func addSettingsPhraseArea(
@@ -3660,6 +3700,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func syncSettingsControls() {
         reloadGestureOptionControls()
+        reloadCustomGestureList()
         settingsLanguagePopup.selectItem(withTitle: ttsLanguage)
         settingsGenderPopup.selectItem(withTitle: ttsGender)
         settingsVoiceField.stringValue = ttsVoiceName
@@ -3698,6 +3739,53 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsGestureApprovalDenyPopup.replaceValueItems(optionalOptions) { self.gestureOptionTitle($0) }
         settingsGestureApprovalSessionPopup.replaceValueItems(optionalOptions) { self.gestureOptionTitle($0) }
         settingsGestureApprovalPolicyPopup.replaceValueItems(optionalOptions) { self.gestureOptionTitle($0) }
+    }
+
+    private func reloadCustomGestureList() {
+        settingsCustomGestureDeleteButtons.removeAll()
+        settingsCustomGestureListContainer.subviews.forEach { $0.removeFromSuperview() }
+        settingsCustomGestureClearButton.isEnabled = !customGestureTemplates.isEmpty
+
+        if customGestureTemplates.isEmpty {
+            let empty = NSTextField(labelWithString: localizedText("gestureCustomEmpty", language: uiLanguage))
+            empty.textColor = NSColor(calibratedRed: 0.50, green: 0.58, blue: 0.67, alpha: 1)
+            empty.font = NSFont.systemFont(ofSize: 12)
+            empty.frame = NSRect(x: 8, y: 30, width: 196, height: 18)
+            settingsCustomGestureListContainer.addSubview(empty)
+            settingsCustomGestureListContainer.frame = NSRect(x: 0, y: 0, width: 216, height: 82)
+            return
+        }
+
+        let rowHeight: CGFloat = 28
+        let documentHeight = max(82, CGFloat(customGestureTemplates.count) * rowHeight + 6)
+        settingsCustomGestureListContainer.frame = NSRect(x: 0, y: 0, width: 216, height: documentHeight)
+
+        for (index, template) in customGestureTemplates.enumerated() {
+            let name = template["name"] as? String ?? ""
+            let label = (template["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let display = label?.isEmpty == false ? label! : name
+            let y = documentHeight - CGFloat(index + 1) * rowHeight - 2
+
+            let title = NSTextField(labelWithString: display)
+            title.textColor = NSColor(calibratedRed: 0.86, green: 0.91, blue: 0.98, alpha: 1)
+            title.font = NSFont.systemFont(ofSize: 12)
+            title.lineBreakMode = .byTruncatingTail
+            title.frame = NSRect(x: 8, y: y + 6, width: 96, height: 18)
+            settingsCustomGestureListContainer.addSubview(title)
+
+            let value = NSTextField(labelWithString: name)
+            value.textColor = NSColor(calibratedRed: 0.50, green: 0.58, blue: 0.67, alpha: 1)
+            value.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+            value.lineBreakMode = .byTruncatingMiddle
+            value.frame = NSRect(x: 108, y: y + 7, width: 52, height: 16)
+            settingsCustomGestureListContainer.addSubview(value)
+
+            let deleteButton = NSButton(title: localizedText("gestureDelete", language: uiLanguage), target: self, action: #selector(deleteCustomGestureFromSettings(_:)))
+            deleteButton.tag = index
+            deleteButton.frame = NSRect(x: 164, y: y + 2, width: 46, height: 24)
+            settingsCustomGestureListContainer.addSubview(deleteButton)
+            settingsCustomGestureDeleteButtons.append(deleteButton)
+        }
     }
 
     private func gestureOptionValues() -> [String] {

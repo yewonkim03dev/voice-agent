@@ -445,6 +445,8 @@ test("always-on voice runner prints complete voice help", async () => {
   assert.ok(logs.includes("  /mic-reconnect rebuilds or restarts microphone input."));
   assert.ok(logs.includes("  /cam toggles camera gesture wake on/off."));
   assert.ok(logs.includes("  /cam-test shows camera gesture test steps and current status."));
+  assert.ok(logs.includes("  /gesture-delete <name> deletes one custom camera gesture template."));
+  assert.ok(logs.includes("  /gesture-clear-custom deletes all custom camera gesture templates."));
   assert.ok(logs.includes("  /add <text> queues additional info for the next voice transcript."));
   assert.ok(logs.includes("  /refs lists queued additional info."));
 });
@@ -1207,6 +1209,80 @@ test("always-on voice runner clears local gesture settings from terminal command
   assert.equal(camera.startConfigs.at(-1)?.bindings.wake, "open_palm");
   assert.equal(camera.startConfigs.at(-1)?.bindings.stop, "thumbs_down");
   assert.deepEqual(camera.startConfigs.at(-1)?.customGestures, []);
+});
+
+test("always-on voice runner manages custom gesture templates from visual controls", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const visualBridge = new FakeVisualBridge();
+  const settingsPersistence = new FakeSettingsPersistence();
+  const waveTemplate: CustomGestureTemplate = {
+    name: "custom:wave",
+    label: "wave",
+    vector: Array.from({ length: 42 }, (_, index) => index / 100),
+    threshold: 0.22,
+    samples: 4,
+    createdAt: 1000
+  };
+  const pinchTemplate: CustomGestureTemplate = {
+    name: "custom:pinch",
+    label: "pinch",
+    vector: Array.from({ length: 42 }, (_, index) => index / 80),
+    threshold: 0.2,
+    samples: 5,
+    createdAt: 1001
+  };
+  const { runner, logs } = createAlwaysOnRunner([], {
+    visualBridge,
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized"),
+    settingsPersistence,
+    gestureWake: {
+      enabled: true,
+      fps: 5,
+      resolution: {
+        width: 640,
+        height: 480,
+        label: "640x480"
+      },
+      holdMs: 700,
+      cooldownMs: 1500,
+      runningMode: "off",
+      bindings: {
+        wake: "custom:wave",
+        stop: "custom:pinch",
+        "approval.once": "custom:wave"
+      },
+      customGestures: [waveTemplate, pinchTemplate]
+    }
+  });
+
+  await runner.start();
+  visualBridge.emitControl("delete_gesture_template", "custom:wave");
+  await runner.drain();
+
+  const deleteUpdate = settingsPersistence.updates.at(-1)?.gestureWake;
+  assert.equal(deleteUpdate?.bindings?.wake, "open_palm");
+  assert.equal(deleteUpdate?.bindings?.stop, "custom:pinch");
+  assert.equal(deleteUpdate?.bindings?.["approval.once"], undefined);
+  assert.deepEqual(deleteUpdate?.customGestures?.map((template) => template.name), ["custom:pinch"]);
+  assert.equal(camera.startConfigs.at(-1)?.bindings.wake, "open_palm");
+  assert.deepEqual(camera.startConfigs.at(-1)?.customGestures.map((template) => template.name), ["custom:pinch"]);
+
+  visualBridge.emitControl("clear_custom_gesture_templates");
+  await runner.drain();
+  await runner.stop();
+
+  const clearUpdate = settingsPersistence.updates.at(-1)?.gestureWake;
+  assert.equal(clearUpdate?.bindings?.wake, "open_palm");
+  assert.equal(clearUpdate?.bindings?.stop, "thumbs_down");
+  assert.deepEqual(clearUpdate?.customGestures, []);
+  assert.equal(logs.some((line) => line.includes("[camera:custom] deleted name=custom:wave")), true);
+  assert.equal(logs.some((line) => line.includes("[camera:custom] deleted 1 custom gesture(s)")), true);
+  assert.equal(visualBridge.events.some((event) =>
+    event.type === "settings" &&
+    event.gestureWake?.customGestures?.length === 0
+  ), true);
 });
 
 test("always-on voice runner keeps camera watcher active and shows running status while agent runs by default", async () => {
