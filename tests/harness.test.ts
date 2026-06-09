@@ -228,6 +228,7 @@ test("visual settings apply persists TTS and visual overrides", async () => {
     speakWakeRejectedWarnings: false,
     maxUtteranceSeconds: 80
   });
+  visualBridge.emitStopPhrasesControl(["얼음", "freeze"]);
   await flushAsync();
 
   assert.deepEqual(settingsPersistence.updates, [
@@ -253,6 +254,9 @@ test("visual settings apply persists TTS and visual overrides", async () => {
         speakWakeRejectedWarnings: false,
         maxUtteranceSeconds: 55
       }
+    },
+    {
+      stopPhrases: ["얼음", "freeze"]
     }
   ]);
 });
@@ -1783,6 +1787,17 @@ class FakeVisualBridge implements VisualBridgeLike {
         type: "control",
         action: "update_approval_phrases",
         approvalPhrases
+      })
+    );
+  }
+
+  emitStopPhrasesControl(stopPhrases: string[]): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action: "update_stop_phrases",
+        stopPhrases
       })
     );
   }

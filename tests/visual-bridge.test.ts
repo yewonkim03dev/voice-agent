@@ -130,6 +130,12 @@ test("visual bridge parses allowed control events only", () => {
     action: "update_wake_phrases",
     wakePhrases: ["코덱스", "자비스"]
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_stop_phrases","stopPhrases":["멈춰","  얼음  ",""]}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "update_stop_phrases",
+    stopPhrases: ["멈춰", "얼음"]
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_approval_phrases","approvalPhrases":{"onceApprove":["  해  ",""],"deny":["마"],"sessionApprove":["오늘만"],"policyApprove":["계속"],"networkPolicyApprove":["호스트"]}}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -226,6 +232,7 @@ test("visual bridge replays latest settings to late visual clients", async () =>
   assert.match(source, /readyClient\.send\(this\.latestSettings\)/u);
   assert.match(source, /readyClient\.send\(this\.latestUsage\)/u);
   assert.match(source, /event\.wakePhrases !== undefined/u);
+  assert.match(source, /event\.stopPhrases !== undefined/u);
   assert.match(source, /event\.approvalPhrases !== undefined/u);
   assert.match(source, /event\.gestureWake !== undefined/u);
   assert.match(source, /cloneGestureWakeSettings/u);
@@ -484,6 +491,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /cursorShape: Qt\.SizeFDiagCursor/u);
   assert.match(qml, /update_tts_settings/u);
   assert.match(qml, /update_wake_phrases/u);
+  assert.match(qml, /update_stop_phrases/u);
+  assert.match(qml, /id: stopField/u);
   assert.match(qml, /update_approval_phrases/u);
   assert.match(qml, /update_gesture_wake_settings/u);
   assert.match(qml, /capture_gesture_template/u);
@@ -599,6 +608,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsApprovalPolicyPhrasesView/u);
   assert.match(swift, /settingsApprovalNetworkPolicyPhrasesView/u);
   assert.match(swift, /update_approval_phrases/u);
+  assert.match(swift, /settingsStopPhrasesView/u);
+  assert.match(swift, /update_stop_phrases/u);
   assert.match(swift, /"policyApprove": approvalPolicyPhrases/u);
   assert.match(swift, /"networkPolicyApprove": approvalNetworkPolicyPhrases/u);
   assert.match(swift, /final class QuestionLabelView: NSView/u);

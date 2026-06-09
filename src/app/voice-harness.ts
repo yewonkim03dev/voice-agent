@@ -85,6 +85,7 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   debug?: boolean;
   echoGuard?: EchoGuard;
   bargeInPolicy?: BargeInPolicy;
+  stopPhrases?: string[];
   gestureWake?: GestureWakeConfig;
   cameraGestureEnabled?: boolean;
   cameraGestureWatcher?: CameraGestureWatcher;
@@ -318,7 +319,9 @@ export class AlwaysOnVoiceHarnessRunner {
     this.debug = options.debug ?? false;
     this.settingsPersistence = options.settingsPersistence;
     this.echoGuard = options.echoGuard ?? new EchoGuard();
-    this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy();
+    this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy({
+      stopPhrases: options.stopPhrases
+    });
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? ((prefix) => `${prefix}_${this.now()}`);
     this.wakeFollowUpWindowMs = options.wakeFollowUpWindowMs ?? wakeFollowUpWindowMs;
@@ -700,6 +703,15 @@ export class AlwaysOnVoiceHarnessRunner {
       });
     }
 
+    const bargeDecision = this.bargeInPolicy.decide(transcript.text, this.wakePhrases);
+    if (bargeDecision.action === "stop") {
+      this.clearWakeFollowUp();
+      await this.terminalHarness.stopActiveTurn("Stop requested from wake speech");
+      this.writeLine(`[barge:stop] phrase="${bargeDecision.wake.phrase}"`);
+      this.refreshGestureRuntimeState();
+      return;
+    }
+
     if (!wake.commandText) {
       this.armWakeFollowUp(wake.phrase);
     } else {
@@ -1020,7 +1032,7 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private async handleGestureStop(trigger: GestureTrigger): Promise<void> {
-    if (trigger.state === "running") {
+    if (trigger.state === "running" || trigger.state === "pending_approval") {
       await this.terminalHarness.stopActiveTurn("Stop requested from camera gesture");
       this.refreshGestureRuntimeState();
       return;
@@ -1068,6 +1080,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private currentGestureRuntimeState(): GestureRuntimeState {
     if (this.terminalHarness.hasPendingApproval()) return "pending_approval";
     if (this.terminalHarness.isAgentRequestActive()) return "running";
+    if (this.terminalHarness.ttsPlaybackState.isSpeakingOrRecent(this.now())) return "running";
     if (this.manualRecording || this.candidateVisualState || this.activeWakeFollowUp() || this.provisionalWake) return "listening";
     return "idle";
   }
@@ -1126,6 +1139,10 @@ export class AlwaysOnVoiceHarnessRunner {
     this.updateWakePhrases(this.defaultWakePhrases, {
       persist: false
     });
+  }
+
+  updateStopPhrases(stopPhrases: readonly string[]): void {
+    this.bargeInPolicy.updateStopPhrases([...stopPhrases]);
   }
 
   updateMaxUtteranceSeconds(value: unknown): void {
@@ -1648,6 +1665,7 @@ export function createVoiceHarnessRunnerFromConfig(
     ttsConfig: config.tts,
     visualConfig: config.visual,
     approvalPhrases: config.approvalPhrases,
+    stopPhrases: config.stopPhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
     codexThreadId: options.codexThreadId,
@@ -1724,6 +1742,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     ttsConfig: config.tts,
     visualConfig: config.visual,
     approvalPhrases: config.approvalPhrases,
+    stopPhrases: config.stopPhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
     codexThreadId: options.codexThreadId,
@@ -1765,6 +1784,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
       now: options.now
     }),
     wakePhrases: options.wakePhrases ?? config.wakePhrases,
+    stopPhrases: config.stopPhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
     gestureWake: config.gestureWake,
@@ -2197,7 +2217,7 @@ function bindVisualDirectGoControls(
 }
 
 function bindVisualWakeSettingsControls(
-  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "resetGestureWakeSettings" | "captureCustomGestureTemplate" | "deleteCustomGestureTemplate" | "clearCustomGestureTemplates" | "toggleMicInput" | "toggleCameraGestureInput">,
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "updateStopPhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "resetGestureWakeSettings" | "captureCustomGestureTemplate" | "deleteCustomGestureTemplate" | "clearCustomGestureTemplates" | "toggleMicInput" | "toggleCameraGestureInput">,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
@@ -2213,6 +2233,11 @@ function bindVisualWakeSettingsControls(
 
     if (event.action === "update_wake_phrases") {
       runner.updateWakePhrases(event.wakePhrases ?? []);
+      return;
+    }
+
+    if (event.action === "update_stop_phrases") {
+      runner.updateStopPhrases(event.stopPhrases ?? []);
       return;
     }
 

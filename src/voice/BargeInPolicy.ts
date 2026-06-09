@@ -22,7 +22,7 @@ export interface BargeInPolicyOptions {
   stopPhrases?: string[];
 }
 
-const defaultStopPhrases = [
+export const defaultStopPhrases = [
   "멈춰",
   "멈춰줘",
   "그만",
@@ -40,10 +40,14 @@ const defaultStopPhrases = [
 ];
 
 export class BargeInPolicy {
-  private readonly stopPhrases: string[];
+  private stopPhrases: string[];
 
   constructor(options: BargeInPolicyOptions = {}) {
-    this.stopPhrases = options.stopPhrases ?? defaultStopPhrases;
+    this.stopPhrases = normalizeStopPhrases(options.stopPhrases);
+  }
+
+  updateStopPhrases(stopPhrases: string[]): void {
+    this.stopPhrases = normalizeStopPhrases(stopPhrases);
   }
 
   decide(text: string, wakePhrases: readonly string[]): BargeInDecision {
@@ -83,12 +87,26 @@ export class BargeInPolicy {
   }
 }
 
-function isStopIntent(text: string, stopPhrases: readonly string[]): boolean {
+export function isStopIntent(text: string, stopPhrases: readonly string[] = defaultStopPhrases): boolean {
   const normalized = normalizeForBargeIn(text);
   return stopPhrases.some((phrase) => {
     const normalizedPhrase = normalizeForBargeIn(phrase);
     return normalized === normalizedPhrase || normalized.includes(normalizedPhrase);
   });
+}
+
+export function normalizeStopPhrases(values: readonly string[] | undefined): string[] {
+  const source = values && values.length > 0 ? values : defaultStopPhrases;
+  const result: string[] = [];
+
+  for (const value of source) {
+    const phrase = normalizeForBargeIn(value);
+    if (phrase && !result.includes(phrase)) {
+      result.push(phrase);
+    }
+  }
+
+  return result.length > 0 ? result : source === defaultStopPhrases ? [] : normalizeStopPhrases(defaultStopPhrases);
 }
 
 function normalizeForBargeIn(text: string): string {

@@ -32,6 +32,7 @@ export type VisualControlAction =
   | "emergency_stop"
   | "reset_settings"
   | "update_wake_phrases"
+  | "update_stop_phrases"
   | "update_approval_phrases"
   | "update_gesture_wake_settings"
   | "capture_gesture_template"
@@ -165,6 +166,7 @@ export type VisualEvent =
       gestureWake?: VisualGestureWakeSettings;
       approvalPhrases?: VisualApprovalPhrases;
       wakePhrases?: string[];
+      stopPhrases?: string[];
       codexThreadId?: string;
       codexAlwaysStartNewThread?: boolean;
       micEnabled?: boolean;
@@ -180,6 +182,7 @@ export interface VisualControlEvent {
   gestureWake?: VisualGestureWakeSettings;
   approvalPhrases?: VisualApprovalPhrases;
   wakePhrases?: string[];
+  stopPhrases?: string[];
   codexThreadId?: string;
   codexAlwaysStartNewThread?: boolean;
   micEnabled?: boolean;
@@ -315,6 +318,7 @@ export class VisualBridge implements VisualBridgeLike {
       ...(this.latestSettings?.gestureWake !== undefined ? { gestureWake: cloneGestureWakeSettings(this.latestSettings.gestureWake) } : {}),
       ...(this.latestSettings?.approvalPhrases !== undefined ? { approvalPhrases: cloneApprovalPhrases(this.latestSettings.approvalPhrases) } : {}),
       ...(this.latestSettings?.wakePhrases !== undefined ? { wakePhrases: [...this.latestSettings.wakePhrases] } : {}),
+      ...(this.latestSettings?.stopPhrases !== undefined ? { stopPhrases: [...this.latestSettings.stopPhrases] } : {}),
       ...(this.latestSettings?.codexThreadId !== undefined ? { codexThreadId: this.latestSettings.codexThreadId } : {}),
       ...(this.latestSettings?.codexAlwaysStartNewThread !== undefined ? { codexAlwaysStartNewThread: this.latestSettings.codexAlwaysStartNewThread } : {}),
       ...(event.tts !== undefined ? { tts: { ...event.tts } } : {}),
@@ -322,6 +326,7 @@ export class VisualBridge implements VisualBridgeLike {
       ...(event.gestureWake !== undefined ? { gestureWake: cloneGestureWakeSettings(event.gestureWake) } : {}),
       ...(event.approvalPhrases !== undefined ? { approvalPhrases: cloneApprovalPhrases(event.approvalPhrases) } : {}),
       ...(event.wakePhrases !== undefined ? { wakePhrases: [...event.wakePhrases] } : {}),
+      ...(event.stopPhrases !== undefined ? { stopPhrases: [...event.stopPhrases] } : {}),
       ...(event.codexThreadId !== undefined ? { codexThreadId: event.codexThreadId } : {}),
       ...(event.codexAlwaysStartNewThread !== undefined ? { codexAlwaysStartNewThread: event.codexAlwaysStartNewThread } : {})
     };
@@ -389,6 +394,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "emergency_stop" &&
     record.action !== "reset_settings" &&
     record.action !== "update_wake_phrases" &&
+    record.action !== "update_stop_phrases" &&
     record.action !== "update_approval_phrases" &&
     record.action !== "update_gesture_wake_settings" &&
     record.action !== "capture_gesture_template" &&
@@ -412,6 +418,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     ...(isRecord(record.gestureWake) ? { gestureWake: record.gestureWake as VisualGestureWakeSettings } : {}),
     ...(isRecord(record.approvalPhrases) ? { approvalPhrases: parseVisualApprovalPhrases(record.approvalPhrases) } : {}),
     ...(Array.isArray(record.wakePhrases) ? { wakePhrases: parseWakePhrases(record.wakePhrases) } : {}),
+    ...(Array.isArray(record.stopPhrases) ? { stopPhrases: parseWakePhrases(record.stopPhrases) } : {}),
     ...(typeof record.codexThreadId === "string" ? { codexThreadId: record.codexThreadId.trim() } : {}),
     ...(typeof record.codexAlwaysStartNewThread === "boolean" ? { codexAlwaysStartNewThread: record.codexAlwaysStartNewThread } : {}),
     ...(typeof record.micEnabled === "boolean" ? { micEnabled: record.micEnabled } : {})

@@ -109,6 +109,7 @@ private let visualTextEn: [String: String] = [
     "sessionAllow": "Session Allow",
     "policyAllow": "Persistent Allow",
     "networkPolicyAllow": "Network Allow",
+    "stopPhrases": "Stop Commands",
     "gestureWake": "Gesture Wake",
     "gestureStop": "Gesture Stop",
     "gestureApprovalOnce": "Gesture Allow",
@@ -149,6 +150,7 @@ private let visualTextEn: [String: String] = [
     "popupHelp": "Lets long or study-oriented answers open in a native popup instead of being spoken in full.",
     "wakeWarningHelp": "Controls whether wake mismatch warnings are spoken aloud.",
     "wakePhrasesHelp": "Wake phrase list. One phrase per line replaces the current list.",
+    "stopPhrasesHelp": "Phrases spoken after a wake phrase that stop current speech or work.",
     "approvalAllowHelp": "Phrases that approve once during permission prompts. One phrase per line.",
     "approvalDenyHelp": "Phrases that deny permission prompts. Overlaps with allow phrases may be treated as unknown.",
     "sessionAllowHelp": "Phrases that approve for the current session.",
@@ -263,6 +265,7 @@ private let visualTextKo: [String: String] = [
     "sessionAllow": "세션 허용",
     "policyAllow": "계속 허용",
     "networkPolicyAllow": "네트워크 계속 허용",
+    "stopPhrases": "정지 명령어",
     "gestureWake": "제스처 호출",
     "gestureStop": "제스처 정지",
     "gestureApprovalOnce": "제스처 허용",
@@ -303,6 +306,7 @@ private let visualTextKo: [String: String] = [
     "popupHelp": "긴 설명이나 공부용 답변을 전부 읽지 않고 네이티브 팝업으로 띄웁니다.",
     "wakeWarningHelp": "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
     "wakePhrasesHelp": "호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.",
+    "stopPhrasesHelp": "작업 중 호출어 뒤에 말하면 정지로 처리할 문구입니다.",
     "approvalAllowHelp": "권한 요청에서 한 번만 허용으로 처리할 문구입니다. 줄마다 하나씩 입력합니다.",
     "approvalDenyHelp": "권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 안전하게 unknown으로 처리될 수 있습니다.",
     "sessionAllowHelp": "현재 세션 동안 허용으로 처리할 문구입니다.",
@@ -2780,6 +2784,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsNewThreadCheckbox = NSButton(checkboxWithTitle: "Always start new thread", target: nil, action: nil)
     private let settingsCodexThreadField = NSTextField(string: "")
     private let settingsWakePhrasesView = NSTextView(frame: .zero)
+    private let settingsStopPhrasesView = NSTextView(frame: .zero)
     private let settingsApprovalOncePhrasesView = NSTextView(frame: .zero)
     private let settingsApprovalDenyPhrasesView = NSTextView(frame: .zero)
     private let settingsApprovalSessionPhrasesView = NSTextView(frame: .zero)
@@ -2815,6 +2820,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var speakWakeRejectedWarnings = true
     private var codexAlwaysStartNewThread = false
     private var wakePhrases: [String] = []
+    private var stopPhrases: [String] = []
     private var approvalOncePhrases: [String] = []
     private var approvalDenyPhrases: [String] = []
     private var approvalSessionPhrases: [String] = []
@@ -3086,6 +3092,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             if let phrases = event["wakePhrases"] as? [String] {
                 updateWakePhrases(phrases)
             }
+            if let phrases = event["stopPhrases"] as? [String] {
+                updateStopPhrases(phrases)
+            }
             if let phrases = event["approvalPhrases"] as? [String: Any] {
                 updateApprovalPhrases(phrases)
             }
@@ -3241,6 +3250,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         menuBarCompanion.setHudEnabled(hudEnabled)
         menuBarCompanion.setHudCompact(hudCompact)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
+        stopPhrases = normalizedPhrases([settingsStopPhrasesView.string])
         approvalOncePhrases = normalizedPhrases([settingsApprovalOncePhrasesView.string])
         approvalDenyPhrases = normalizedPhrases([settingsApprovalDenyPhrasesView.string])
         approvalSessionPhrases = normalizedPhrases([settingsApprovalSessionPhrasesView.string])
@@ -3258,6 +3268,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         codexThreadId = settingsCodexThreadField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         sendTtsSettings()
         sendWakePhrases()
+        sendStopPhrases()
         sendApprovalPhrases()
         sendGestureWakeSettings()
         sendCodexThreadId()
@@ -3273,6 +3284,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         popupPreferred = false
         speakWakeRejectedWarnings = true
         codexAlwaysStartNewThread = false
+        stopPhrases = []
         gestureWakeBindings = [
             "wake": "open_palm",
             "stop": "thumbs_down"
@@ -3440,6 +3452,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         syncSettingsControls()
     }
 
+    private func updateStopPhrases(_ phrases: [String]) {
+        stopPhrases = normalizedPhrases(phrases)
+        syncSettingsControls()
+    }
+
     private func updateCodexThreadId(_ threadId: String) {
         codexThreadId = threadId.trimmingCharacters(in: .whitespacesAndNewlines)
         rootView?.updateSessionId(codexThreadId)
@@ -3599,20 +3616,37 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
         let wakeLabel = NSTextField(labelWithString: localizedText("wake", language: uiLanguage))
         wakeLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
-        wakeLabel.frame = NSRect(x: 26, y: 102, width: 96, height: 20)
+        wakeLabel.frame = NSRect(x: 26, y: 126, width: 96, height: 20)
         view.addSubview(wakeLabel)
-        addSettingsHelp(view, y: 98, text: localizedText("wakePhrasesHelp", language: uiLanguage))
+        addSettingsHelp(view, y: 122, text: localizedText("wakePhrasesHelp", language: uiLanguage))
 
-        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 38, width: 216, height: 54))
+        let wakeScroll = NSScrollView(frame: NSRect(x: 132, y: 94, width: 216, height: 30))
         wakeScroll.borderType = .bezelBorder
         wakeScroll.hasVerticalScroller = true
         settingsWakePhrasesView.isVerticallyResizable = true
         settingsWakePhrasesView.isHorizontallyResizable = false
         settingsWakePhrasesView.autoresizingMask = [.width]
-        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 216, height: 76)
-        settingsWakePhrasesView.font = NSFont.systemFont(ofSize: 13)
+        settingsWakePhrasesView.frame = NSRect(x: 0, y: 0, width: 216, height: 52)
+        settingsWakePhrasesView.font = NSFont.systemFont(ofSize: 12)
         wakeScroll.documentView = settingsWakePhrasesView
         view.addSubview(wakeScroll)
+
+        let stopLabel = NSTextField(labelWithString: localizedText("stopPhrases", language: uiLanguage))
+        stopLabel.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
+        stopLabel.frame = NSRect(x: 26, y: 74, width: 96, height: 20)
+        view.addSubview(stopLabel)
+        addSettingsHelp(view, y: 70, text: localizedText("stopPhrasesHelp", language: uiLanguage))
+
+        let stopScroll = NSScrollView(frame: NSRect(x: 132, y: 42, width: 216, height: 30))
+        stopScroll.borderType = .bezelBorder
+        stopScroll.hasVerticalScroller = true
+        settingsStopPhrasesView.isVerticallyResizable = true
+        settingsStopPhrasesView.isHorizontallyResizable = false
+        settingsStopPhrasesView.autoresizingMask = [.width]
+        settingsStopPhrasesView.frame = NSRect(x: 0, y: 0, width: 216, height: 52)
+        settingsStopPhrasesView.font = NSFont.systemFont(ofSize: 12)
+        stopScroll.documentView = settingsStopPhrasesView
+        view.addSubview(stopScroll)
 
         let reset = button(localizedText("restoreDefaults", language: uiLanguage), action: #selector(resetSettings))
         reset.frame = NSRect(x: 26, y: 8, width: 150, height: 28)
@@ -3716,6 +3750,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsNewThreadCheckbox.state = codexAlwaysStartNewThread ? .on : .off
         settingsCodexThreadField.stringValue = codexThreadId
         settingsWakePhrasesView.string = wakePhrases.joined(separator: "\n")
+        settingsStopPhrasesView.string = stopPhrases.joined(separator: "\n")
         settingsApprovalOncePhrasesView.string = approvalOncePhrases.joined(separator: "\n")
         settingsApprovalDenyPhrasesView.string = approvalDenyPhrases.joined(separator: "\n")
         settingsApprovalSessionPhrasesView.string = approvalSessionPhrases.joined(separator: "\n")
@@ -3878,6 +3913,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             "type": "control",
             "action": "update_wake_phrases",
             "wakePhrases": wakePhrases
+        ])
+    }
+
+    private func sendStopPhrases() {
+        sendPayload([
+            "op": "voice-agent-ui",
+            "type": "control",
+            "action": "update_stop_phrases",
+            "stopPhrases": stopPhrases
         ])
     }
 

@@ -51,6 +51,7 @@ import {
 import type { VoiceMessage } from "../voice/VoiceMessage.ts";
 import type { SpawnTtsProcess } from "../voice/MacosAppleTtsProvider.ts";
 import { TtsPlaybackState } from "../voice/TtsPlaybackState.ts";
+import { defaultStopPhrases, isStopIntent, normalizeStopPhrases } from "../voice/BargeInPolicy.ts";
 import type {
   VisualApprovalPhrases,
   VisualBridgeLike,
@@ -241,6 +242,7 @@ export interface TerminalHarnessOptions {
   visualConfig?: VoiceVisualFileConfig;
   settingsPersistence?: VoiceSettingsPersistence;
   approvalPhrases?: ApprovalPhraseConfig;
+  stopPhrases?: string[];
   codexThreadId?: string;
   codexAlwaysStartNewThread?: boolean;
   onExitRequest?: () => void | Promise<void>;
@@ -263,6 +265,7 @@ export class TerminalHarness {
   private readonly onExitRequest: (() => void | Promise<void>) | undefined;
   private visualSettings: VisualRuntimeSettings;
   private approvalPhrases: ApprovalPhraseSet;
+  private stopPhrases: string[];
   private codexThreadId: string | undefined;
   private codexAlwaysStartNewThread: boolean;
   private idSequence = 0;
@@ -300,6 +303,7 @@ export class TerminalHarness {
     this.onExitRequest = options.onExitRequest;
     this.visualSettings = visualRuntimeSettingsFromFile(options.visualConfig);
     this.approvalPhrases = approvalPhraseSet(options.approvalPhrases);
+    this.stopPhrases = normalizeStopPhrases(options.stopPhrases);
     this.codexThreadId = parseOptionalThreadId(options.codexThreadId);
     this.codexAlwaysStartNewThread = options.codexAlwaysStartNewThread === true;
     this.routingMode =
@@ -1065,10 +1069,7 @@ export class TerminalHarness {
       return false;
     }
 
-    const normalized = text.trim().replace(/\s+/g, " ").toLowerCase();
-    return ["멈춰", "그만", "취소해", "잠깐", "stop", "cancel", "hold on"].some((phrase) =>
-      normalized.includes(phrase)
-    );
+    return isStopIntent(text, this.stopPhrases);
   }
 
   private async speak(
@@ -1476,6 +1477,9 @@ export class TerminalHarness {
       case "clear_custom_gesture_templates":
       case "reset_gesture_wake_settings":
         return;
+      case "update_stop_phrases":
+        await this.updateStopPhrases(event.stopPhrases ?? []);
+        return;
       case "update_approval_phrases":
         await this.updateApprovalPhrases(event.approvalPhrases ?? {});
         return;
@@ -1578,6 +1582,7 @@ export class TerminalHarness {
       tts: this.currentVisualTtsSettings(),
       visual: this.currentVisualRuntimeSettings(),
       approvalPhrases: this.currentVisualApprovalPhrases(),
+      stopPhrases: [...this.stopPhrases],
       codexThreadId: this.codexThreadId ?? "",
       codexAlwaysStartNewThread: this.codexAlwaysStartNewThread
     });
@@ -1621,6 +1626,7 @@ export class TerminalHarness {
     const applied = this.voiceOutput.updateSettings?.(defaultVisualTtsSettings()) ?? defaultVisualTtsSettings();
     this.visualSettings = defaultVisualRuntimeSettings();
     this.approvalPhrases = approvalPhraseSet();
+    this.stopPhrases = normalizeStopPhrases(defaultStopPhrases);
     this.codexAlwaysStartNewThread = false;
     await this.persistResetSettings();
     this.sendVisualEvent({
@@ -1629,6 +1635,7 @@ export class TerminalHarness {
       tts: visualTtsSettingsFromVoiceOutput(applied),
       visual: this.currentVisualRuntimeSettings(),
       approvalPhrases: this.currentVisualApprovalPhrases(),
+      stopPhrases: [...this.stopPhrases],
       codexAlwaysStartNewThread: this.codexAlwaysStartNewThread
     });
     this.sendVisualEvent({
@@ -1648,6 +1655,18 @@ export class TerminalHarness {
     });
     await this.persistSettings({
       visual: this.currentVisualRuntimeSettings()
+    });
+  }
+
+  async updateStopPhrases(phrases: string[]): Promise<void> {
+    this.stopPhrases = normalizeStopPhrases(phrases);
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "settings",
+      stopPhrases: [...this.stopPhrases]
+    });
+    await this.persistSettings({
+      stopPhrases: [...this.stopPhrases]
     });
   }
 
@@ -1731,6 +1750,7 @@ export class TerminalHarness {
     tts?: ReturnType<typeof ttsFileConfigFromVisualSettings>;
     visual?: VoiceVisualFileConfig;
     approvalPhrases?: ApprovalPhraseConfig;
+    stopPhrases?: string[];
     codexThreadId?: string | null;
     codexAlwaysStartNewThread?: boolean;
   }): Promise<void> {

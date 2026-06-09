@@ -93,8 +93,9 @@ export class GestureActionStateMachine {
       case "listening":
         return this.config.bindings.stop === gesture ? "stop" : undefined;
       case "running":
-        return this.config.runningMode === "emergency_only" && this.config.bindings.stop === gesture ? "stop" : undefined;
+        return this.config.bindings.stop === gesture ? "stop" : undefined;
       case "pending_approval":
+        if (this.config.bindings.stop === gesture) return "stop";
         return approvalActionForGesture(this.config.bindings, gesture);
     }
   }

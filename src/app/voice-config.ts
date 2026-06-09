@@ -11,6 +11,7 @@ import {
   type GestureWakeFileConfig
 } from "../gesture/GestureWakeConfig.ts";
 import type { VoiceTtsFileConfig } from "../voice/TtsConfig.ts";
+import { normalizeStopPhrases } from "../voice/BargeInPolicy.ts";
 import { defaultWakePhrases, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 
 export const defaultVoiceConfigPath = ".voice-agent.local.json";
@@ -26,6 +27,7 @@ export interface VoiceHarnessConfig {
   sampleRate: number;
   channels: number;
   wakePhrases: string[];
+  stopPhrases: string[];
   approvalPhrases?: ApprovalPhraseConfig;
   gestureWake?: GestureWakeConfig;
   tts?: VoiceTtsFileConfig;
@@ -45,6 +47,7 @@ export type VoiceVisualFileConfig = Partial<{
 
 export interface VoiceLocalSettingsOverride {
   wakePhrases?: string[];
+  stopPhrases?: string[];
   approvalPhrases?: ApprovalPhraseConfig;
   gestureWake?: GestureWakeFileConfig;
   tts?: VoiceTtsFileConfig;
@@ -170,7 +173,8 @@ export async function detectVoiceSetup(
       ...(wakeStream ? { wakeStreamCommand: wakeStream } : {}),
       sampleRate: 16_000,
       channels: 1,
-      wakePhrases: defaultWakePhrases
+      wakePhrases: defaultWakePhrases,
+      stopPhrases: normalizeStopPhrases(undefined)
     },
     errors,
     recorder,
@@ -268,6 +272,10 @@ export async function updateVoiceLocalSettings(
     next.wakePhrases = normalizedWakePhrases(overrides.wakePhrases);
   }
 
+  if (overrides.stopPhrases !== undefined) {
+    next.stopPhrases = normalizeStopPhrases(overrides.stopPhrases);
+  }
+
   if (overrides.approvalPhrases !== undefined) {
     next.approvalPhrases = sanitizeApprovalPhraseConfig(overrides.approvalPhrases);
   }
@@ -333,6 +341,7 @@ export async function resetVoiceLocalSettings(options: {
   const visual = readNestedObject(existing.visual);
 
   delete next.wakePhrases;
+  delete next.stopPhrases;
   delete next.approvalPhrases;
   delete next.gestureWake;
   delete next.tts;
@@ -383,6 +392,7 @@ function configFromEnv(env: NodeJS.ProcessEnv): VoiceHarnessResolution {
   const sttCommand = env.VOICE_AGENT_STT_COMMAND?.trim() ?? "";
   const wakeStreamCommand = env.VOICE_AGENT_WAKE_STREAM_COMMAND?.trim() ?? "";
   const wakePhrases = parseWakePhrases(env.VOICE_AGENT_WAKE_PHRASES);
+  const stopPhrases = parseStopPhrases(env.VOICE_AGENT_STOP_PHRASES);
 
   if (!recorderCommand && !sttCommand) {
     return {
@@ -414,7 +424,8 @@ function configFromEnv(env: NodeJS.ProcessEnv): VoiceHarnessResolution {
       ...(wakeStreamCommand ? { wakeStreamCommand } : {}),
       sampleRate: parsePositiveInteger(env.VOICE_AGENT_SAMPLE_RATE, 16_000),
       channels: parsePositiveInteger(env.VOICE_AGENT_CHANNELS, 1),
-      wakePhrases
+      wakePhrases,
+      stopPhrases
     },
     errors,
     source: "env"
@@ -470,6 +481,7 @@ async function readVoiceConfigFile(configPath: string): Promise<VoiceHarnessReso
         sampleRate: parsePositiveInteger(String(parsed.sampleRate ?? ""), 16_000),
         channels: parsePositiveInteger(String(parsed.channels ?? ""), 1),
         wakePhrases: parseWakePhrases(parsed.wakePhrases),
+        stopPhrases: parseStopPhrases(parsed.stopPhrases),
         approvalPhrases: parseApprovalPhrases(parsed.approvalPhrases),
         gestureWake: parseGestureWakeConfig(parsed.gestureWake),
         tts: parseTtsFileConfig(parsed),
@@ -526,6 +538,7 @@ function hasVoiceConfigFields(parsed: Record<string, unknown>): boolean {
     "sampleRate" in parsed ||
     "channels" in parsed ||
     "wakePhrases" in parsed ||
+    "stopPhrases" in parsed ||
     "approvalPhrases" in parsed ||
     "gestureWake" in parsed ||
     "tts" in parsed ||
@@ -541,6 +554,10 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
 function parseWakePhrases(value: unknown): string[] {
   return parseOptionalWakePhrases(value) ?? defaultWakePhrases;
+}
+
+function parseStopPhrases(value: unknown): string[] {
+  return normalizeStopPhrases(parsePhraseArray(value));
 }
 
 function parseTtsFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<string, unknown>): VoiceTtsFileConfig | undefined {

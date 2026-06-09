@@ -361,11 +361,27 @@ test("gesture state machine maps stop and approval by runtime state", () => {
   assert.equal(machine.observe({ gesture: "thumbs_down", timestamp: 2500 })?.action, "stop");
 
   machine.setState("pending_approval");
-  machine.observe({ gesture: "thumbs_up", timestamp: 3000 });
-  assert.equal(machine.observe({ gesture: "thumbs_up", timestamp: 3500 })?.action, "approval.once");
+  machine.observe({ gesture: "thumbs_down", timestamp: 3000 });
+  assert.equal(machine.observe({ gesture: "thumbs_down", timestamp: 3500 })?.action, "stop");
 
-  machine.observe({ gesture: "fist", timestamp: 4000 });
-  assert.equal(machine.observe({ gesture: "fist", timestamp: 4500 })?.action, "approval.deny");
+  machine.observe({ gesture: "thumbs_up", timestamp: 4000 });
+  assert.equal(machine.observe({ gesture: "thumbs_up", timestamp: 4500 })?.action, "approval.once");
+
+  machine.observe({ gesture: "fist", timestamp: 5000 });
+  assert.equal(machine.observe({ gesture: "fist", timestamp: 5500 })?.action, "approval.deny");
+
+  const runningOff = new GestureActionStateMachine({
+    config: {
+      ...defaultGestureWakeConfig,
+      enabled: true,
+      holdMs: 500,
+      cooldownMs: 0,
+      runningMode: "off"
+    }
+  });
+  runningOff.setState("running");
+  runningOff.observe({ gesture: "thumbs_down", timestamp: 6000 });
+  assert.equal(runningOff.observe({ gesture: "thumbs_down", timestamp: 6500 })?.action, "stop");
 });
 
 test("gesture state machine keeps camera active while running unless emergency mode is enabled", () => {

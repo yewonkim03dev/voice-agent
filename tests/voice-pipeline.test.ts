@@ -1446,6 +1446,55 @@ test("always-on voice runner interrupts running work from emergency camera stop 
   assert.equal(camera.modes.includes("emergency"), true);
 });
 
+test("always-on voice runner interrupts running work from camera stop gesture when running mode is off", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "긴 작업 처리해줘",
+        language: "ko"
+      }
+    ],
+    {
+      cameraGestureEnabled: true,
+      cameraGestureWatcher: camera,
+      cameraPermissionManager: new FakeCameraPermissionManager("authorized"),
+      gestureWake: {
+        enabled: false,
+        fps: 5,
+        resolution: {
+          width: 640,
+          height: 480,
+          label: "640x480"
+        },
+        holdMs: 700,
+        cooldownMs: 0,
+        runningMode: "off",
+        bindings: {
+          wake: "open_palm",
+          stop: "thumbs_down"
+        }
+      }
+    }
+  );
+
+  await runner.start();
+  camera.emitGesture("open_palm", 1000);
+  camera.emitGesture("open_palm", 1700);
+  await flushAsync();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  assert.equal(backend.prompts.length, 1);
+
+  camera.emitGesture("thumbs_down", 3000);
+  camera.emitGesture("thumbs_down", 3700);
+  await flushAsync();
+  await runner.stop();
+
+  assert.deepEqual(backend.interrupts, ["Stop requested from camera gesture"]);
+  assert.equal(camera.modes.includes("running"), true);
+});
+
 test("always-on voice runner routes approval speech while native approval is pending", async () => {
   const { backend, runner, audioInput } = createAlwaysOnRunner([
     {
@@ -1978,8 +2027,66 @@ test("always-on voice runner interrupts active turn on wake plus stop intent", a
   await runner.stop();
 
   assert.equal(voiceOutput.stopCount >= 1, true);
+  assert.equal(backend.prompts.length, 1);
   assert.deepEqual(backend.interrupts, ["Stop requested from wake speech"]);
   assert.ok(logs.includes('[barge:stop] phrase="코덱스"'));
+});
+
+test("always-on voice runner does not route wake plus stop as a new prompt while thinking", async () => {
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner([
+    {
+      text: "코덱스 긴 작업 처리해줘",
+      language: "ko"
+    },
+    {
+      text: "코덱스 멈춰",
+      language: "ko"
+    }
+  ]);
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  assert.equal(backend.prompts.length, 1);
+
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.deepEqual(backend.interrupts, ["Stop requested from wake speech"]);
+  assert.ok(logs.includes('[barge:stop] phrase="코덱스"'));
+});
+
+test("always-on voice runner updates custom stop phrases from visual settings", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스 긴 작업 처리해줘",
+        language: "ko"
+      },
+      {
+        text: "코덱스 얼음",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge
+    }
+  );
+
+  await runner.start();
+  visualBridge.emitStopPhrases(["얼음"]);
+  await runner.drain();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.deepEqual(backend.interrupts, ["Stop requested from wake speech"]);
 });
 
 test("always-on voice runner stops TTS and routes wake plus new command", async () => {
@@ -2457,6 +2564,7 @@ test("voice local settings store persists overrides and reset restores factory d
     });
     await store.update({
       wakePhrases: ["자비스", "hey jarvis"],
+      stopPhrases: ["얼음", "freeze"],
       approvalPhrases: {
         onceApprove: ["진행"],
         deny: ["그만"],
@@ -2510,6 +2618,7 @@ test("voice local settings store persists overrides and reset restores factory d
       alwaysStartNewThread: true
     });
     assert.deepEqual(updated.wakePhrases, ["hey jarvis", "자비스"]);
+    assert.deepEqual(updated.stopPhrases, ["얼음", "freeze"]);
     assert.deepEqual(updated.approvalPhrases, {
       onceApprove: ["진행"],
       deny: ["그만"],
@@ -2580,6 +2689,7 @@ test("voice local settings store persists overrides and reset restores factory d
       threadId: "thread_456"
     });
     assert.equal("wakePhrases" in reset, false);
+    assert.equal("stopPhrases" in reset, false);
     assert.equal("approvalPhrases" in reset, false);
     assert.equal("gestureWake" in reset, false);
     assert.equal("tts" in reset, false);
@@ -2996,6 +3106,7 @@ function createAlwaysOnRunner(
   transcripts: Array<{ text: string; language: Language }>,
   options: {
     wakePhrases?: string[];
+    stopPhrases?: string[];
     voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] };
     visualBridge?: VisualBridgeLike;
     speechProcessor?: SpeechProcessor;
@@ -3041,6 +3152,7 @@ function createAlwaysOnRunner(
     wakeStreamDetector: options.wakeStreamDetector,
     speechProcessor,
     wakePhrases: options.wakePhrases ?? defaultWakePhrases,
+    stopPhrases: options.stopPhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
     gestureWake: options.gestureWake,
@@ -3397,6 +3509,17 @@ class FakeVisualBridge implements VisualBridgeLike {
         type: "control",
         action: "update_visual_settings",
         visual
+      })
+    );
+  }
+
+  emitStopPhrases(stopPhrases: string[]): void {
+    this.controlListeners.forEach((listener) =>
+      listener({
+        op: "voice-agent-ui",
+        type: "control",
+        action: "update_stop_phrases",
+        stopPhrases
       })
     );
   }

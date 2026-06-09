@@ -52,6 +52,7 @@ ApplicationWindow {
     property string responseLanguage: "auto"
     property bool speakWakeRejectedWarnings: true
     property var wakePhrases: []
+    property var stopPhrases: []
     property var approvalOncePhrases: []
     property var approvalDenyPhrases: []
     property var approvalSessionPhrases: []
@@ -126,6 +127,7 @@ ApplicationWindow {
             showRecentQa: "최근 Q/A 패널 표시",
             speakWakeWarning: "호출어 경고 말하기",
             wakePhrasesReplace: "호출어 목록 교체",
+            stopPhrasesReplace: "정지 명령어 목록",
             approvalAllowPhrases: "허용 문구",
             approvalDenyPhrases: "거부 문구",
             sessionAllowPhrases: "세션 허용 문구",
@@ -203,6 +205,7 @@ ApplicationWindow {
             chatHelp: "최근 질문과 답변 패널 표시 여부입니다.",
             wakeWarningHelp: "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
             wakePhrasesHelp: "줄마다 하나씩 호출어를 입력하면 기존 목록을 대체합니다.",
+            stopPhrasesHelp: "작업 중 wake phrase 뒤에 말하면 정지로 처리할 문구입니다.",
             approvalAllowHelp: "권한 요청에서 한 번 허용으로 처리할 문구입니다.",
             approvalDenyHelp: "권한 요청에서 거부로 처리할 문구입니다. 허용 문구와 겹치면 unknown으로 처리될 수 있습니다.",
             sessionAllowHelp: "현재 세션 동안 허용으로 처리할 문구입니다.",
@@ -262,6 +265,7 @@ ApplicationWindow {
             showRecentQa: "Show Recent Q/A panel",
             speakWakeWarning: "Speak wake warning",
             wakePhrasesReplace: "Wake phrases replace list",
+            stopPhrasesReplace: "Stop command phrases",
             approvalAllowPhrases: "Approval allow phrases",
             approvalDenyPhrases: "Approval deny phrases",
             sessionAllowPhrases: "Session allow phrases",
@@ -339,6 +343,7 @@ ApplicationWindow {
             chatHelp: "Shows or hides the Recent Q/A panel.",
             wakeWarningHelp: "Speaks or mutes wake mismatch warnings.",
             wakePhrasesHelp: "One wake phrase per line replaces the current list.",
+            stopPhrasesHelp: "Phrases spoken after a wake phrase that stop current speech or work.",
             approvalAllowHelp: "Phrases that approve once during permission prompts.",
             approvalDenyHelp: "Phrases that deny permission prompts. Overlaps can be treated as unknown.",
             sessionAllowHelp: "Phrases that approve for the current session.",
@@ -461,6 +466,12 @@ ApplicationWindow {
                 type: "control",
                 action: "update_wake_phrases",
                 wakePhrases: root.parseWakePhrases(wakeField.text)
+            }))
+            socket.sendTextMessage(JSON.stringify({
+                op: "voice-agent-ui",
+                type: "control",
+                action: "update_stop_phrases",
+                stopPhrases: root.parseWakePhrases(stopField.text)
             }))
             socket.sendTextMessage(JSON.stringify({
                 op: "voice-agent-ui",
@@ -641,6 +652,11 @@ ApplicationWindow {
         if (wakeField) wakeField.text = root.wakePhrases.join("\n")
     }
 
+    function applyStopPhrases(phrases) {
+        root.stopPhrases = root.normalizedPhrases(phrases || [])
+        if (stopField) stopField.text = root.stopPhrases.join("\n")
+    }
+
     function applyApprovalPhrases(phrases) {
         root.approvalOncePhrases = root.normalizedPhrases((phrases && phrases.onceApprove) || [])
         root.approvalDenyPhrases = root.normalizedPhrases((phrases && phrases.deny) || [])
@@ -677,6 +693,7 @@ ApplicationWindow {
         if (event.tts) root.applyTtsSettings(event.tts)
         if (event.visual) root.applyRuntimeVisualSettings(event.visual)
         if (event.wakePhrases) root.applyWakePhrases(event.wakePhrases)
+        if (event.stopPhrases) root.applyStopPhrases(event.stopPhrases)
         if (event.approvalPhrases) root.applyApprovalPhrases(event.approvalPhrases)
         if (event.gestureWake) root.applyGestureWakeSettings(event.gestureWake)
         if (event.codexThreadId !== undefined) root.applyCodexThreadId(event.codexThreadId)
@@ -2326,6 +2343,40 @@ ApplicationWindow {
                         id: wakeField
                         text: root.wakePhrases.join("\n")
                         placeholderText: "코덱스\n자비스\nhey jarvis"
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.uiText("stopPhrasesReplace")
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: root.uiText("stopPhrasesHelp")
+                    }
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 76
+                    clip: true
+
+                    TextArea {
+                        id: stopField
+                        text: root.stopPhrases.join("\n")
+                        placeholderText: "멈춰\n그만\nstop"
                         selectByMouse: true
                         wrapMode: TextEdit.WrapAnywhere
                     }
