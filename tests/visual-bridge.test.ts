@@ -414,6 +414,10 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /STOP/u);
   assert.match(qml, /emergency_stop/u);
   assert.match(qml, /Settings/u);
+  assert.match(qml, /id: settingsScroll/u);
+  assert.match(qml, /ScrollBar\.vertical\.policy: ScrollBar\.AsNeeded/u);
+  assert.match(qml, /id: settingsResizeHandle/u);
+  assert.match(qml, /cursorShape: Qt\.SizeFDiagCursor/u);
   assert.match(qml, /update_tts_settings/u);
   assert.match(qml, /update_wake_phrases/u);
   assert.match(qml, /update_approval_phrases/u);
@@ -571,6 +575,10 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /STOP/u);
   assert.match(swift, /emergency_stop/u);
   assert.match(swift, /Settings/u);
+  assert.match(swift, /styleMask: \[\.titled, \.closable, \.resizable\]/u);
+  assert.match(swift, /window\.contentMinSize = NSSize\(width: 360, height: 320\)/u);
+  assert.match(swift, /NSScrollView\(frame: NSRect\(x: 0, y: 0, width: contentWidth, height: 640\)\)/u);
+  assert.match(swift, /scrollView\.hasVerticalScroller = true/u);
   assert.match(swift, /update_tts_settings/u);
   assert.match(swift, /update_wake_phrases/u);
   assert.match(swift, /update_codex_thread_id/u);

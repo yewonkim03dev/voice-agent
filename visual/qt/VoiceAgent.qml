@@ -37,6 +37,8 @@ ApplicationWindow {
     property string commandText: ""
     property var contextEntries: []
     property bool settingsOpen: false
+    property real settingsPanelWidth: 460
+    property real settingsPanelHeight: 660
     property string ttsLanguage: "auto"
     property string ttsGender: "auto"
     property string ttsVoiceName: ""
@@ -1452,8 +1454,8 @@ ApplicationWindow {
             id: settingsPanel
             visible: root.settingsOpen
             anchors.centerIn: parent
-            width: Math.min(parent.width - 44, 460)
-            height: Math.min(parent.height - 24, 660)
+            width: Math.max(320, Math.min(parent.width - 44, root.settingsPanelWidth))
+            height: Math.max(360, Math.min(parent.height - 24, root.settingsPanelHeight))
             radius: 8
             color: "#0d131c"
             border.color: "#34445c"
@@ -1481,6 +1483,17 @@ ApplicationWindow {
                         onClicked: root.settingsOpen = false
                     }
                 }
+
+                ScrollView {
+                    id: settingsScroll
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    ColumnLayout {
+                        width: Math.max(0, settingsScroll.width - 14)
+                        spacing: 10
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -2011,6 +2024,9 @@ ApplicationWindow {
                     }
                 }
 
+                    }
+                }
+
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 10
@@ -2025,6 +2041,45 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         text: root.uiText("apply")
                         onClicked: root.sendSettings()
+                    }
+                }
+            }
+
+            Rectangle {
+                id: settingsResizeHandle
+                width: 18
+                height: 18
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                radius: 3
+                color: "transparent"
+                z: 2
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "↘"
+                    color: "#6d7f99"
+                    font.pixelSize: 12
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.SizeFDiagCursor
+                    property real startWidth: 0
+                    property real startHeight: 0
+                    property real startX: 0
+                    property real startY: 0
+
+                    onPressed: function(mouse) {
+                        startWidth = root.settingsPanelWidth
+                        startHeight = root.settingsPanelHeight
+                        startX = mouse.x
+                        startY = mouse.y
+                    }
+
+                    onPositionChanged: function(mouse) {
+                        root.settingsPanelWidth = Math.max(320, Math.min(root.width - 44, startWidth + mouse.x - startX))
+                        root.settingsPanelHeight = Math.max(360, Math.min(root.height - 24, startHeight + mouse.y - startY))
                     }
                 }
             }

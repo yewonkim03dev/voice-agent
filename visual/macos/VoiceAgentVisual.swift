@@ -2611,17 +2611,30 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     }
 
     private func makeSettingsWindow() -> NSWindow {
+        let contentWidth: CGFloat = 380
+        let contentHeight: CGFloat = 944
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 944),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 640),
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = localizedText("settings", language: uiLanguage)
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 360, height: 360)
+        window.contentMinSize = NSSize(width: 360, height: 320)
 
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 944))
-        window.contentView = view
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 640))
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = false
+        scrollView.drawsBackground = false
+
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight))
+        view.autoresizingMask = [.width]
+        scrollView.documentView = view
+        window.contentView = scrollView
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
