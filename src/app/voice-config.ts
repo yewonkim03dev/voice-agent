@@ -31,6 +31,7 @@ export type VoiceVisualFileConfig = Partial<{
   responseLanguage: "auto" | "ko" | "en";
   chatHistoryEnabled: boolean;
   hudEnabled: boolean;
+  hudCompact: boolean;
   speakWakeRejectedWarnings: boolean;
   maxUtteranceSeconds: string | number;
 }>;
@@ -315,6 +316,7 @@ export async function resetVoiceLocalSettings(options: {
   delete visual.responseLanguage;
   delete visual.chatHistoryEnabled;
   delete visual.hudEnabled;
+  delete visual.hudCompact;
   delete visual.speakWakeRejectedWarnings;
   delete visual.maxUtteranceSeconds;
 
@@ -536,6 +538,7 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
       : {}),
     ...(typeof record.chatHistoryEnabled === "boolean" ? { chatHistoryEnabled: record.chatHistoryEnabled } : {}),
     ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
+    ...(typeof record.hudCompact === "boolean" ? { hudCompact: record.hudCompact } : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
       : {}),

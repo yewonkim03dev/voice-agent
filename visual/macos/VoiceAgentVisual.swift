@@ -63,6 +63,8 @@ private let visualTextEn: [String: String] = [
     "clear": "Clear",
     "show": "Show",
     "hide": "Hide",
+    "compactHud": "Compact HUD",
+    "restoreHud": "Restore HUD",
     "restoreDefaults": "Restore Defaults",
     "apply": "Apply",
     "recentQa": "Recent Q/A",
@@ -169,6 +171,8 @@ private let visualTextKo: [String: String] = [
     "clear": "지우기",
     "show": "보기",
     "hide": "숨기기",
+    "compactHud": "HUD 축소",
+    "restoreHud": "HUD 복원",
     "restoreDefaults": "기본값 복원",
     "apply": "적용",
     "recentQa": "최근 Q/A",
@@ -1680,6 +1684,7 @@ final class MenuBarCompanion {
     private weak var hudTtsStopButton: NSButton?
     private weak var hudMicButton: NSButton?
     private weak var hudShowButton: NSButton?
+    private weak var hudCompactButton: NSButton?
     private let stateLabel = NSTextField(labelWithString: "idle")
     private let detailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
     private let questionLabel = NSTextField(wrappingLabelWithString: "Q: none")
@@ -1699,7 +1704,9 @@ final class MenuBarCompanion {
     private var onClearContext: (() -> Void)?
     private var onShowContext: (() -> Void)?
     private var onMicToggle: (() -> Void)?
+    private var onHudCompactChange: ((Bool) -> Void)?
     private var hudEnabled = true
+    private var hudCompact = false
     private var micEnabled = true
     private var currentState = "idle"
     private var currentDetail = "waiting for bridge"
@@ -1716,7 +1723,8 @@ final class MenuBarCompanion {
         onDirectContext: @escaping (String) -> Void,
         onClearContext: @escaping () -> Void,
         onShowContext: @escaping () -> Void,
-        onMicToggle: @escaping () -> Void
+        onMicToggle: @escaping () -> Void,
+        onHudCompactChange: @escaping (Bool) -> Void
     ) {
         self.onStop = onStop
         self.onTtsStop = onTtsStop
@@ -1726,6 +1734,7 @@ final class MenuBarCompanion {
         self.onClearContext = onClearContext
         self.onShowContext = onShowContext
         self.onMicToggle = onMicToggle
+        self.onHudCompactChange = onHudCompactChange
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VA \(compactState("idle"))"
@@ -1748,6 +1757,12 @@ final class MenuBarCompanion {
         } else {
             hudPanel?.orderOut(nil)
         }
+    }
+
+    func setHudCompact(_ compact: Bool) {
+        hudCompact = compact
+        applyHudLayout()
+        applyLocalization()
     }
 
     func updateMicEnabled(_ enabled: Bool) {
@@ -1862,11 +1877,16 @@ final class MenuBarCompanion {
         onShowContext?()
     }
 
+    @objc private func toggleHudCompact() {
+        setHudCompact(!hudCompact)
+        onHudCompactChange?(hudCompact)
+    }
+
     @objc private func showFloatingHud() {
         guard hudEnabled else { return }
 
         if hudPanel == nil {
-            let size = NSSize(width: 326, height: 264)
+            let size = hudSize()
             let panel = FloatingHudPanel(
                 contentRect: NSRect(origin: .zero, size: size),
                 styleMask: [.borderless, .nonactivatingPanel],
@@ -1882,6 +1902,7 @@ final class MenuBarCompanion {
         }
 
         configureHudPanel()
+        applyHudLayout()
         positionHud()
         if let panel = hudPanel {
             panel.orderFrontRegardless()
@@ -1901,9 +1922,61 @@ final class MenuBarCompanion {
         panel.hidesOnDeactivate = false
     }
 
+    private func hudSize() -> NSSize {
+        hudCompact ? NSSize(width: 116, height: 116) : NSSize(width: 326, height: 264)
+    }
+
+    private func resizeHudPanel(anchoredToTopRight: Bool) {
+        guard let panel = hudPanel else { return }
+
+        let size = hudSize()
+        let currentFrame = panel.frame
+        let origin = anchoredToTopRight
+            ? NSPoint(x: currentFrame.maxX - size.width, y: currentFrame.maxY - size.height)
+            : currentFrame.origin
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        panel.contentView?.frame = NSRect(origin: .zero, size: size)
+    }
+
+    private func applyHudLayout() {
+        guard let contentView = hudPanel?.contentView else { return }
+
+        let size = hudSize()
+        resizeHudPanel(anchoredToTopRight: true)
+        contentView.layer?.cornerRadius = hudCompact ? 20 : 16
+        contentView.frame = NSRect(origin: .zero, size: size)
+
+        hudCircle.compactStatusStyle = true
+        hudCircle.frame = hudCompact
+            ? NSRect(x: 12, y: 12, width: 92, height: 92)
+            : NSRect(x: 14, y: 132, width: 110, height: 110)
+
+        hudStateLabel.isHidden = hudCompact
+        hudDetailLabel.isHidden = hudCompact
+        hudQuestionLabel.isHidden = hudCompact
+        hudUsageLabel.isHidden = hudCompact
+        hudContextSummary.isHidden = hudCompact
+        hudContextField.isHidden = hudCompact
+        hudAddReferenceButton?.isHidden = hudCompact
+        hudDirectReferenceButton?.isHidden = hudCompact
+        hudShowReferenceButton?.isHidden = hudCompact
+        hudClearReferenceButton?.isHidden = hudCompact
+        hudStopButton?.isHidden = hudCompact
+        hudTtsStopButton?.isHidden = hudCompact
+        hudMicButton?.isHidden = hudCompact
+        hudShowButton?.isHidden = hudCompact
+
+        hudCompactButton?.frame = hudCompact
+            ? NSRect(x: 86, y: 86, width: 24, height: 22)
+            : NSRect(x: 294, y: 230, width: 24, height: 22)
+        hudCompactButton?.title = hudCompact ? "↗" : "−"
+        hudCompactButton?.toolTip = localizedText(hudCompact ? "restoreHud" : "compactHud", language: uiLanguage)
+    }
+
     private func positionHud() {
         guard let panel = hudPanel else { return }
 
+        resizeHudPanel(anchoredToTopRight: false)
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let margin: CGFloat = 18
         let frame = NSRect(
@@ -2060,7 +2133,16 @@ final class MenuBarCompanion {
         hudShowButton = show
         show.frame = NSRect(x: 222, y: 48, width: 58, height: 26)
         view.addSubview(show)
+
+        let compact = NSButton(title: "−", target: self, action: #selector(toggleHudCompact))
+        compact.bezelStyle = .roundRect
+        compact.isBordered = false
+        compact.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        compact.contentTintColor = NSColor(calibratedRed: 0.72, green: 0.82, blue: 0.94, alpha: 1)
+        hudCompactButton = compact
+        view.addSubview(compact)
         applyLocalization()
+        applyHudLayout()
 
         return view
     }
@@ -2089,6 +2171,7 @@ final class MenuBarCompanion {
         hudTtsStopButton?.title = localizedText("tts", language: uiLanguage)
         hudMicButton?.title = localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage)
         hudShowButton?.title = localizedText("show", language: uiLanguage)
+        hudCompactButton?.toolTip = localizedText(hudCompact ? "restoreHud" : "compactHud", language: uiLanguage)
         hudContextField.placeholderString = localizedText("referenceText", language: uiLanguage)
         update(state: currentState, text: currentDetail)
         updateQuestion(currentQuestion, references: currentQuestionReferences)
@@ -2155,6 +2238,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var responseLanguage = "auto"
     private var chatHistoryEnabled = true
     private var hudEnabled = true
+    private var hudCompact = false
     private var micEnabled = true
     private var speakWakeRejectedWarnings = true
     private var codexAlwaysStartNewThread = false
@@ -2194,10 +2278,12 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             onDirectContext: { [weak self] text in self?.submitDirectContext(text) },
             onClearContext: { [weak self] in self?.clearContext() },
             onShowContext: { [weak self] in self?.showContext() },
-            onMicToggle: { [weak self] in self?.toggleMicInput() }
+            onMicToggle: { [weak self] in self?.toggleMicInput() },
+            onHudCompactChange: { [weak self] compact in self?.updateHudCompact(compact, sendSettings: true) }
         )
         menuBarCompanion.uiLanguage = uiLanguage
         menuBarCompanion.updateMicEnabled(micEnabled)
+        menuBarCompanion.setHudCompact(hudCompact)
         connect()
     }
 
@@ -2550,6 +2636,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: chatHistoryEnabled)
         menuBarCompanion.setHudEnabled(hudEnabled)
+        menuBarCompanion.setHudCompact(hudCompact)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
         approvalOncePhrases = normalizedPhrases([settingsApprovalOncePhrasesView.string])
         approvalDenyPhrases = normalizedPhrases([settingsApprovalDenyPhrasesView.string])
@@ -2569,11 +2656,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         maxUtteranceSeconds = 15
         chatHistoryEnabled = true
         hudEnabled = true
+        hudCompact = false
         speakWakeRejectedWarnings = true
         codexAlwaysStartNewThread = false
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: true)
         menuBarCompanion.setHudEnabled(true)
+        menuBarCompanion.setHudCompact(false)
         syncSettingsControls()
         sendControl("reset_settings")
     }
@@ -2653,6 +2742,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             hudEnabled = value
             menuBarCompanion.setHudEnabled(value)
         }
+        if let value = settings["hudCompact"] as? Bool {
+            updateHudCompact(value, sendSettings: false)
+        }
         if let value = settings["speakWakeRejectedWarnings"] as? Bool {
             speakWakeRejectedWarnings = value
         }
@@ -2699,6 +2791,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         micEnabled = enabled
         rootView?.updateMicEnabled(enabled)
         menuBarCompanion.updateMicEnabled(enabled)
+    }
+
+    private func updateHudCompact(_ compact: Bool, sendSettings: Bool) {
+        hudCompact = compact
+        menuBarCompanion.setHudCompact(compact)
+        if sendSettings {
+            sendVisualSettings()
+        }
     }
 
     private func makeSettingsWindow() -> NSWindow {
@@ -2927,6 +3027,24 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "responseLanguage": responseLanguage,
                 "chatHistoryEnabled": chatHistoryEnabled,
                 "hudEnabled": hudEnabled,
+                "hudCompact": hudCompact,
+                "speakWakeRejectedWarnings": speakWakeRejectedWarnings
+            ]
+        ])
+    }
+
+    private func sendVisualSettings() {
+        sendPayload([
+            "op": "voice-agent-ui",
+            "type": "control",
+            "action": "update_visual_settings",
+            "visual": [
+                "thinkingVolume": thinkingVolume,
+                "maxUtteranceSeconds": maxUtteranceSeconds,
+                "responseLanguage": responseLanguage,
+                "chatHistoryEnabled": chatHistoryEnabled,
+                "hudEnabled": hudEnabled,
+                "hudCompact": hudCompact,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])

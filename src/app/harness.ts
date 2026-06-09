@@ -1625,6 +1625,7 @@ export class TerminalHarness {
       responseLanguage: this.visualSettings.responseLanguage ?? "auto",
       chatHistoryEnabled: this.visualSettings.chatHistoryEnabled ?? true,
       hudEnabled: this.visualSettings.hudEnabled ?? true,
+      hudCompact: this.visualSettings.hudCompact ?? false,
       speakWakeRejectedWarnings: this.visualSettings.speakWakeRejectedWarnings ?? true,
       maxUtteranceSeconds: this.visualSettings.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
     };
@@ -2136,6 +2137,7 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
     responseLanguage: "auto",
     chatHistoryEnabled: true,
     hudEnabled: true,
+    hudCompact: false,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: defaultMaxUtteranceSeconds
   };
@@ -2158,6 +2160,7 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
     responseLanguage: parseVisualResponseLanguage(settings?.responseLanguage),
     chatHistoryEnabled: typeof settings?.chatHistoryEnabled === "boolean" ? settings.chatHistoryEnabled : undefined,
     hudEnabled: typeof settings?.hudEnabled === "boolean" ? settings.hudEnabled : undefined,
+    hudCompact: typeof settings?.hudCompact === "boolean" ? settings.hudCompact : undefined,
     speakWakeRejectedWarnings: typeof settings?.speakWakeRejectedWarnings === "boolean"
       ? settings.speakWakeRejectedWarnings
       : undefined,
@@ -2178,6 +2181,7 @@ function sanitizeVisualRuntimeSettings(
     responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto",
     chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true,
     hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true,
+    hudCompact: settings.hudCompact ?? fallback.hudCompact ?? false,
     speakWakeRejectedWarnings: settings.speakWakeRejectedWarnings ?? fallback.speakWakeRejectedWarnings ?? true,
     maxUtteranceSeconds: settings.maxUtteranceSeconds === undefined
       ? fallback.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds

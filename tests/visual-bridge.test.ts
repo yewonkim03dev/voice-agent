@@ -150,7 +150,7 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
@@ -159,6 +159,7 @@ test("visual bridge parses allowed control events only", () => {
       responseLanguage: "en",
       chatHistoryEnabled: false,
       hudEnabled: false,
+      hudCompact: true,
       speakWakeRejectedWarnings: false,
       maxUtteranceSeconds: 80
     }
@@ -553,6 +554,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /Speak wake warning/u);
   assert.match(swift, /"chatHistoryEnabled": chatHistoryEnabled/u);
   assert.match(swift, /"hudEnabled": hudEnabled/u);
+  assert.match(swift, /"hudCompact": hudCompact/u);
   assert.match(swift, /"speakWakeRejectedWarnings": speakWakeRejectedWarnings/u);
   assert.match(swift, /case "question":/u);
   assert.match(swift, /case "usage":/u);
@@ -631,6 +633,16 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /NSStatusBar\.system\.statusItem/u);
   assert.match(swift, /compactState\("idle"\)/u);
   assert.match(swift, /private var hudPanel: NSPanel\?/u);
+  assert.match(swift, /private var hudCompact = false/u);
+  assert.match(swift, /func setHudCompact\(_ compact: Bool\)/u);
+  assert.match(swift, /@objc private func toggleHudCompact\(\)/u);
+  assert.match(swift, /onHudCompactChange: @escaping \(Bool\) -> Void/u);
+  assert.match(swift, /hudCompact \? NSSize\(width: 116, height: 116\) : NSSize\(width: 326, height: 264\)/u);
+  assert.match(swift, /hudCircle\.frame = hudCompact/u);
+  assert.match(swift, /hudStateLabel\.isHidden = hudCompact/u);
+  assert.match(swift, /hudCompactButton\?\.title = hudCompact \? "↗" : "−"/u);
+  assert.match(swift, /onHudCompactChange: \{ \[weak self\] compact in self\?\.updateHudCompact\(compact, sendSettings: true\) \}/u);
+  assert.match(swift, /private func sendVisualSettings\(\)/u);
   assert.match(swift, /private let hudUsageLabel = NSTextField/u);
   assert.match(swift, /menuBarCompanion\.updateUsage\(usage\)/u);
   assert.match(swift, /FloatingHudPanel\(/u);

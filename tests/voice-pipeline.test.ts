@@ -1729,6 +1729,7 @@ test("voice local settings store persists overrides and reset restores factory d
         thinkingVolume: 0.47,
         chatHistoryEnabled: false,
         hudEnabled: false,
+        hudCompact: true,
         speakWakeRejectedWarnings: false,
         maxUtteranceSeconds: 55
       },
@@ -1787,6 +1788,7 @@ test("voice local settings store persists overrides and reset restores factory d
       thinkingVolume: 0.47,
       chatHistoryEnabled: false,
       hudEnabled: false,
+      hudCompact: true,
       speakWakeRejectedWarnings: false,
       maxUtteranceSeconds: 55
     });
