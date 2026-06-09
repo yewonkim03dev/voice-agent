@@ -765,6 +765,35 @@ test("always-on voice runner attaches queued references to visual direct go", as
   );
 });
 
+test("always-on voice runner sends queued references when visual direct go text is empty", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner } = createAlwaysOnRunner([], {
+    visualBridge
+  });
+
+  await runner.start();
+  visualBridge.emitControl("add_context", "첫 번째 참고자료");
+  visualBridge.emitControl("add_context", "두 번째 참고자료");
+  visualBridge.emitControl("direct_go", "   ");
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "첫 번째 참고자료\n\n두 번째 참고자료");
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "question" }> => event.type === "question").at(-1),
+    {
+      op: "voice-agent-ui",
+      type: "question",
+      text: "첫 번째 참고자료 두 번째 참고자료"
+    }
+  );
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "context" }> => event.type === "context").at(-1)?.entries,
+    []
+  );
+});
+
 test("always-on voice runner shows visual reference context list", async () => {
   const visualBridge = new FakeVisualBridge();
   const { runner } = createAlwaysOnRunner([], {

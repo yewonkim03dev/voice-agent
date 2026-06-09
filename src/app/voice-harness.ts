@@ -177,15 +177,17 @@ export class VoiceHarnessRunner {
 
   private async routeDirectText(text: string): Promise<void> {
     const trimmed = text.trim();
-    if (!trimmed) {
+    const directText = trimmed || directTextFromContextEntries(this.textContext.takeEntries());
+
+    if (!directText) {
       this.writeLine("[voice:direct] usage: enter text to send.");
       return;
     }
 
-    const transcript = createDirectTranscript(trimmed);
-    const applied = this.textContext.applyWithEntries(transcript);
+    const transcript = createDirectTranscript(directText);
+    const applied = trimmed ? this.textContext.applyWithEntries(transcript) : { transcript, entries: [] };
     await this.terminalHarness.processTranscript(applied.transcript, {
-      visualQuestionText: trimmed,
+      visualQuestionText: directText,
       visualQuestionReferences: applied.entries
     });
   }
@@ -815,15 +817,17 @@ export class AlwaysOnVoiceHarnessRunner {
 
   private async routeDirectText(text: string): Promise<void> {
     const trimmed = text.trim();
-    if (!trimmed) {
+    const directText = trimmed || directTextFromContextEntries(this.textContext.takeEntries());
+
+    if (!directText) {
       this.writeLine("[voice:direct] usage: enter text to send.");
       return;
     }
 
-    const transcript = createDirectTranscript(trimmed, this.now, this.createId);
-    const applied = this.textContext.applyWithEntries(transcript);
+    const transcript = createDirectTranscript(directText, this.now, this.createId);
+    const applied = trimmed ? this.textContext.applyWithEntries(transcript) : { transcript, entries: [] };
     await this.terminalHarness.processTranscript(applied.transcript, {
-      visualQuestionText: trimmed,
+      visualQuestionText: directText,
       visualQuestionReferences: applied.entries
     });
   }
@@ -1381,20 +1385,27 @@ class SupplementalTextBuffer {
   }
 
   applyWithEntries(transcript: Transcript): { transcript: Transcript; entries: string[] } {
-    if (this.entries.length === 0) {
+    const entries = this.takeEntries();
+    if (entries.length === 0) {
       return {
         transcript,
         entries: []
       };
     }
 
-    const entries = this.entries.splice(0);
-    this.writeLine(`[voice:context] applied ${entries.length} item(s).`);
-    this.emitChange();
     return {
       transcript: withTranscriptText(transcript, appendSupplementalText(transcript.text, entries)),
       entries
     };
+  }
+
+  takeEntries(): string[] {
+    if (this.entries.length === 0) return [];
+
+    const entries = this.entries.splice(0);
+    this.writeLine(`[voice:context] applied ${entries.length} item(s).`);
+    this.emitChange();
+    return entries;
   }
 
   private emitChange(): void {
@@ -1483,6 +1494,10 @@ function appendSupplementalText(text: string, entries: string[]): string {
   const context = entries.map((entry) => `- ${entry}`).join("\n");
 
   return `${base}\n\n추가 정보:\n${context}`;
+}
+
+function directTextFromContextEntries(entries: string[]): string {
+  return entries.map((entry) => entry.trim()).filter(Boolean).join("\n\n");
 }
 
 function createDirectTranscript(

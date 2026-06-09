@@ -502,7 +502,7 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /text: root\.uiText\("refs"\)/u);
   assert.match(qml, /contextEntries/u);
   assert.match(qml, /placeholderText: root\.uiText\("referenceText"\)/u);
-  assert.match(qml, /Go sends the entered text directly to the agent/u);
+  assert.match(qml, /Go sends the entered text, or queued references when the field is empty, directly to the agent/u);
   assert.doesNotMatch(qml, /WebView|WebEngine|Chromium|Electron|Tauri/iu);
 });
 
@@ -730,7 +730,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /hudContextField\.isEditable = true/u);
   assert.match(swift, /hudContextField\.isSelectable = true/u);
   assert.match(swift, /hudContextField\.action = #selector\(addContext\)/u);
-  assert.match(swift, /Go sends the entered text directly to the agent/u);
+  assert.match(swift, /Go sends the entered text, or queued references when the field is empty, directly to the agent/u);
   assert.match(swift, /No references queued/u);
   assert.doesNotMatch(swift, /Electron|Tauri/iu);
 });
