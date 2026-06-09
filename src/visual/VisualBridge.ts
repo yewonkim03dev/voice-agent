@@ -34,6 +34,7 @@ export type VisualControlAction =
   | "update_approval_phrases"
   | "update_gesture_wake_settings"
   | "capture_gesture_template"
+  | "reset_gesture_wake_settings"
   | "update_codex_thread_id"
   | "update_visual_settings"
   | "update_tts_settings";
@@ -387,6 +388,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "update_approval_phrases" &&
     record.action !== "update_gesture_wake_settings" &&
     record.action !== "capture_gesture_template" &&
+    record.action !== "reset_gesture_wake_settings" &&
     record.action !== "update_codex_thread_id" &&
     record.action !== "update_tts_settings" &&
     record.action !== "update_visual_settings"

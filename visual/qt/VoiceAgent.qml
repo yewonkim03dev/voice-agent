@@ -145,6 +145,7 @@ ApplicationWindow {
             gestureThumbsUp: "엄지 위",
             gestureCustomName: "커스텀 이름",
             gestureCapture: "캡처",
+            gestureClear: "삭제",
             gestureRunOff: "끔",
             gestureRunEmergencyOnly: "긴급 정지만",
             codexThreadRestart: "Codex thread id (재시작 후 적용)",
@@ -258,6 +259,7 @@ ApplicationWindow {
             gestureThumbsUp: "Thumbs up",
             gestureCustomName: "Custom name",
             gestureCapture: "Capture",
+            gestureClear: "Delete",
             gestureRunOff: "Off",
             gestureRunEmergencyOnly: "Emergency only",
             codexThreadRestart: "Codex thread id (applies after restart)",
@@ -2092,6 +2094,15 @@ ApplicationWindow {
                             type: "control",
                             action: "capture_gesture_template",
                             text: root.customGestureName
+                        }))
+                    }
+                    Button {
+                        text: root.uiText("gestureClear")
+                        Layout.preferredWidth: 72
+                        onClicked: socket.sendTextMessage(JSON.stringify({
+                            op: "voice-agent-ui",
+                            type: "control",
+                            action: "reset_gesture_wake_settings"
                         }))
                     }
                 }

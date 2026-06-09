@@ -371,6 +371,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
     this.writeLine("  /cam-test shows camera gesture test steps and current status.");
     this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
+    this.writeLine("  /gesture-reset clears local gesture mappings and custom templates.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
@@ -431,6 +432,11 @@ export class AlwaysOnVoiceHarnessRunner {
       return "continue";
     }
 
+    if (isGestureResetCommand(text)) {
+      this.resetGestureWakeSettings();
+      return "continue";
+    }
+
     if (text === "/quit") {
       await this.stop();
       this.writeLine("Harness stopped.");
@@ -466,6 +472,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
     this.writeLine("  /cam-test shows camera gesture test steps and current status.");
     this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
+    this.writeLine("  /gesture-reset clears local gesture mappings and custom templates.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  /status shows the current agent status.");
@@ -1076,6 +1083,20 @@ export class AlwaysOnVoiceHarnessRunner {
     this.updateMaxUtteranceSeconds(defaultMaxUtteranceSeconds);
   }
 
+  resetGestureWakeSettings(options: { persist?: boolean } = {}): void {
+    this.gestureWake = gestureWakeConfigForRuntime(undefined, this.cameraGestureEnabledByCli);
+    this.gestureStateMachine = new GestureActionStateMachine({
+      config: this.gestureWake,
+      now: this.now
+    });
+    this.writeLine("[camera:settings] local gesture settings cleared");
+    this.sendVisualGestureSettings();
+    this.reconfigureCameraGestureAfterSettingsUpdate();
+    if (options.persist !== false) {
+      this.trackSettingsWrite(this.persistGestureWakeReset());
+    }
+  }
+
   updateGestureWakeSettings(settings: GestureWakeFileConfig, options: { persist?: boolean } = {}): void {
     const sanitized = sanitizeGestureWakeConfig(settings);
     this.gestureWake = gestureWakeConfigForRuntime(sanitized, this.cameraGestureEnabledByCli);
@@ -1277,6 +1298,14 @@ export class AlwaysOnVoiceHarnessRunner {
       await this.settingsPersistence?.update({
         gestureWake
       });
+    } catch (error) {
+      this.writeLine(`[settings:error] ${formatError(error)}`);
+    }
+  }
+
+  private async persistGestureWakeReset(): Promise<void> {
+    try {
+      await this.settingsPersistence?.resetGestureWake();
     } catch (error) {
       this.writeLine(`[settings:error] ${formatError(error)}`);
     }
@@ -1732,7 +1761,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 }
 
 function isVisibleHelpCommandLine(visible: string): boolean {
-  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam-test|camera-test|gesture-add|gesture-capture|add|refs)(?:\s|$)/u.test(visible);
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam-test|camera-test|gesture-add|gesture-capture|gesture-reset|gesture-clear|add|refs)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {
@@ -2040,7 +2069,7 @@ function bindVisualDirectGoControls(
 }
 
 function bindVisualWakeSettingsControls(
-  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "captureCustomGestureTemplate" | "toggleMicInput">,
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "resetGestureWakeSettings" | "captureCustomGestureTemplate" | "toggleMicInput">,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
@@ -2064,9 +2093,15 @@ function bindVisualWakeSettingsControls(
       return;
     }
 
+    if (event.action === "reset_gesture_wake_settings") {
+      runner.resetGestureWakeSettings();
+      return;
+    }
+
     if (event.action === "reset_settings") {
       runner.resetWakePhrases();
       runner.resetMaxUtteranceSeconds();
+      runner.resetGestureWakeSettings();
       return;
     }
 
@@ -2162,6 +2197,10 @@ function parseGestureCaptureCommand(text: string): { matched: boolean; argument:
     matched: true,
     argument: (match[1] ?? "").trim()
   };
+}
+
+function isGestureResetCommand(text: string): boolean {
+  return /^\/(?:gesture-reset|gesture-clear|gestures-reset|gestures-clear)$/iu.test(text.trim());
 }
 
 function isShowContextCommand(text: string): boolean {

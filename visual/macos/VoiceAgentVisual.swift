@@ -108,6 +108,7 @@ private let visualTextEn: [String: String] = [
     "gestureThumbsUp": "Thumbs up",
     "gestureCustomName": "Custom name",
     "gestureCapture": "Capture",
+    "gestureClear": "Delete",
     "gestureRunOff": "Off",
     "gestureRunEmergencyOnly": "Emergency only",
     "quitVoiceAgent": "Quit Voice Agent",
@@ -241,6 +242,7 @@ private let visualTextKo: [String: String] = [
     "gestureThumbsUp": "엄지 위",
     "gestureCustomName": "커스텀 이름",
     "gestureCapture": "캡처",
+    "gestureClear": "삭제",
     "gestureRunOff": "끔",
     "gestureRunEmergencyOnly": "긴급 정지만",
     "quitVoiceAgent": "Voice Agent 종료",
@@ -2711,6 +2713,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsGestureRunningModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let settingsCustomGestureNameField = NSTextField(string: "")
     private let settingsCustomGestureCaptureButton = NSButton(title: "Capture", target: nil, action: nil)
+    private let settingsCustomGestureClearButton = NSButton(title: "Clear", target: nil, action: nil)
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
     private var ttsVoiceName = ""
@@ -3196,6 +3199,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         sendControl("capture_gesture_template", text: text)
     }
 
+    @objc private func resetGestureWakeSettingsFromSettings() {
+        sendControl("reset_gesture_wake_settings")
+    }
+
     @objc private func exitVisual() {
         sendControl("exit")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
@@ -3389,6 +3396,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsCustomGestureCaptureButton.title = localizedText("gestureCapture", language: uiLanguage)
         settingsCustomGestureCaptureButton.target = self
         settingsCustomGestureCaptureButton.action = #selector(captureCustomGestureFromSettings)
+        settingsCustomGestureClearButton.title = localizedText("gestureClear", language: uiLanguage)
+        settingsCustomGestureClearButton.target = self
+        settingsCustomGestureClearButton.action = #selector(resetGestureWakeSettingsFromSettings)
 
         addSettingsRow(view, label: localizedText("gestureWake", language: uiLanguage), control: settingsGestureWakePopup, y: 1146)
         addSettingsHelp(view, y: 1146, text: localizedText("gestureHelp", language: uiLanguage))
@@ -3529,11 +3539,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         let labelView = NSTextField(labelWithString: localizedText("gestureCustomName", language: uiLanguage))
         labelView.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
         labelView.frame = NSRect(x: 26, y: y + 4, width: 96, height: 20)
-        settingsCustomGestureNameField.frame = NSRect(x: 132, y: y, width: 124, height: 26)
-        settingsCustomGestureCaptureButton.frame = NSRect(x: 264, y: y, width: 74, height: 26)
+        settingsCustomGestureNameField.frame = NSRect(x: 132, y: y, width: 82, height: 26)
+        settingsCustomGestureCaptureButton.frame = NSRect(x: 222, y: y, width: 58, height: 26)
+        settingsCustomGestureClearButton.frame = NSRect(x: 288, y: y, width: 58, height: 26)
         view.addSubview(labelView)
         view.addSubview(settingsCustomGestureNameField)
         view.addSubview(settingsCustomGestureCaptureButton)
+        view.addSubview(settingsCustomGestureClearButton)
         addSettingsHelp(view, y: y, text: localizedText("gestureHelp", language: uiLanguage))
     }
 

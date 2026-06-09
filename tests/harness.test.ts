@@ -1803,6 +1803,7 @@ class FakeVisualBridge implements VisualBridgeLike {
 class FakeSettingsPersistence implements VoiceSettingsPersistence {
   readonly updates: VoiceLocalSettingsOverride[] = [];
   resetCount = 0;
+  gestureResetCount = 0;
 
   async update(overrides: VoiceLocalSettingsOverride): Promise<void> {
     this.updates.push(overrides);
@@ -1810,6 +1811,10 @@ class FakeSettingsPersistence implements VoiceSettingsPersistence {
 
   async resetAll(): Promise<void> {
     this.resetCount += 1;
+  }
+
+  async resetGestureWake(): Promise<void> {
+    this.gestureResetCount += 1;
   }
 }
 

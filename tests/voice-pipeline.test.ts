@@ -1108,6 +1108,54 @@ test("always-on voice runner captures custom camera gesture templates from termi
   assert.equal(logs.some((line) => line.includes("[camera:capture] saved name=custom:wave")), true);
 });
 
+test("always-on voice runner clears local gesture settings from terminal command", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const settingsPersistence = new FakeSettingsPersistence();
+  const customTemplate: CustomGestureTemplate = {
+    name: "custom:wave",
+    label: "wave",
+    vector: Array.from({ length: 42 }, (_, index) => index / 100),
+    threshold: 0.22,
+    samples: 4,
+    createdAt: 1000
+  };
+  const { runner, logs } = createAlwaysOnRunner([], {
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized"),
+    settingsPersistence,
+    gestureWake: {
+      enabled: true,
+      fps: 8,
+      resolution: {
+        width: 800,
+        height: 600,
+        label: "800x600"
+      },
+      holdMs: 900,
+      cooldownMs: 2000,
+      runningMode: "emergency_only",
+      bindings: {
+        wake: "custom:wave",
+        stop: "fist",
+        "approval.once": "thumbs_up"
+      },
+      customGestures: [customTemplate]
+    }
+  });
+
+  await runner.start();
+  await runner.processLine("/gesture-reset");
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(settingsPersistence.gestureResetCount, 1);
+  assert.equal(logs.some((line) => line.includes("[camera:settings] local gesture settings cleared")), true);
+  assert.equal(camera.startConfigs.at(-1)?.bindings.wake, "open_palm");
+  assert.equal(camera.startConfigs.at(-1)?.bindings.stop, "thumbs_down");
+  assert.deepEqual(camera.startConfigs.at(-1)?.customGestures, []);
+});
+
 test("always-on voice runner keeps camera watcher active and shows running status while agent runs by default", async () => {
   const camera = new FakeCameraGestureWatcher();
   const visualBridge = new FakeVisualBridge();
@@ -2427,6 +2475,61 @@ test("voice local settings store persists overrides and reset restores factory d
   }
 });
 
+test("voice local settings store can clear only local gesture wake settings", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
+  const configPath = ".voice-agent.local.json";
+
+  try {
+    await writeFile(
+      join(cwd, configPath),
+      JSON.stringify({
+        recorderCommand: "file-recorder",
+        sttCommand: "file-stt {audio}",
+        sampleRate: 16_000,
+        channels: 1,
+        wakePhrases: ["코덱스"],
+        gestureWake: {
+          enabled: true,
+          bindings: {
+            wake: "custom:wave",
+            stop: "thumbs_down"
+          },
+          customGestures: [{
+            name: "custom:wave",
+            label: "wave",
+            vector: Array.from({ length: 42 }, (_, index) => index / 100),
+            threshold: 0.22,
+            samples: 4,
+            createdAt: 1000
+          }]
+        },
+        visual: {
+          provider: "qtqml"
+        }
+      }),
+      "utf8"
+    );
+
+    const store = new VoiceLocalSettingsStore({
+      cwd,
+      configPath
+    });
+    await store.resetGestureWake();
+
+    const reset = JSON.parse(await readFile(join(cwd, configPath), "utf8")) as Record<string, unknown>;
+    assert.equal("gestureWake" in reset, false);
+    assert.deepEqual(reset.wakePhrases, ["코덱스"]);
+    assert.deepEqual(reset.visual, {
+      provider: "qtqml"
+    });
+  } finally {
+    await rm(cwd, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
 test("codex thread store skips resume when always-start-new is enabled", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "voice-agent-test-"));
   const configPath = ".voice-agent.local.json";
@@ -3172,6 +3275,7 @@ class FakeVisualBridge implements VisualBridgeLike {
 class FakeSettingsPersistence implements VoiceSettingsPersistence {
   readonly updates: VoiceLocalSettingsOverride[] = [];
   resetCount = 0;
+  gestureResetCount = 0;
 
   async update(overrides: VoiceLocalSettingsOverride): Promise<void> {
     this.updates.push(overrides);
@@ -3179,6 +3283,10 @@ class FakeSettingsPersistence implements VoiceSettingsPersistence {
 
   async resetAll(): Promise<void> {
     this.resetCount += 1;
+  }
+
+  async resetGestureWake(): Promise<void> {
+    this.gestureResetCount += 1;
   }
 }
 
@@ -3194,6 +3302,8 @@ class DeferredSettingsPersistence implements VoiceSettingsPersistence {
   }
 
   async resetAll(): Promise<void> {}
+
+  async resetGestureWake(): Promise<void> {}
 
   resolveNext(): void {
     this.resolvers.shift()?.();

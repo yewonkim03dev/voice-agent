@@ -1471,6 +1471,7 @@ export class TerminalHarness {
       case "update_wake_phrases":
       case "update_gesture_wake_settings":
       case "capture_gesture_template":
+      case "reset_gesture_wake_settings":
         return;
       case "update_approval_phrases":
         await this.updateApprovalPhrases(event.approvalPhrases ?? {});

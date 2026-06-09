@@ -56,6 +56,7 @@ export interface VoiceLocalSettingsOverride {
 export interface VoiceSettingsPersistence {
   update(overrides: VoiceLocalSettingsOverride): Promise<void>;
   resetAll(): Promise<void>;
+  resetGestureWake(): Promise<void>;
 }
 
 export interface VoiceHarnessResolution {
@@ -238,6 +239,16 @@ export class VoiceLocalSettingsStore implements VoiceSettingsPersistence {
       }));
     return this.queue;
   }
+
+  resetGestureWake(): Promise<void> {
+    this.queue = this.queue
+      .catch(() => {})
+      .then(() => resetVoiceGestureWakeSettings({
+        cwd: this.cwd,
+        configPath: this.configPath
+      }));
+    return this.queue;
+  }
 }
 
 export async function updateVoiceLocalSettings(
@@ -348,6 +359,21 @@ export async function resetVoiceLocalSettings(options: {
   } else {
     delete next.codex;
   }
+
+  await writeJsonObject(fullPath, next);
+}
+
+export async function resetVoiceGestureWakeSettings(options: {
+  cwd?: string;
+  configPath?: string;
+} = {}): Promise<void> {
+  const cwd = options.cwd ?? process.cwd();
+  const configPath = options.configPath ?? defaultVoiceConfigPath;
+  const fullPath = resolve(cwd, configPath);
+  const existing = await readJsonObject(fullPath);
+  const next: Record<string, unknown> = { ...existing };
+
+  delete next.gestureWake;
 
   await writeJsonObject(fullPath, next);
 }
