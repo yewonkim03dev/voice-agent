@@ -1,4 +1,4 @@
-import type { GestureCameraMode, GestureName, GestureWakeConfig } from "./GestureWakeConfig.ts";
+import type { CustomGestureTemplate, GestureCameraMode, GestureName, GestureWakeConfig } from "./GestureWakeConfig.ts";
 
 export type CameraPermissionStatus = "authorized" | "not_determined" | "denied" | "restricted" | "unavailable";
 
@@ -24,6 +24,13 @@ export interface CameraGestureWatcher {
   setMode(mode: GestureCameraMode): void;
   onGesture(callback: (observation: GestureWatcherObservation) => void): void;
   onStatus(callback: (status: GestureWatcherStatus) => void): void;
+  captureCustomGestureTemplate?(options: {
+    name: CustomGestureTemplate["name"];
+    label: string;
+    durationMs: number;
+    minSamples: number;
+    threshold?: number;
+  }): Promise<CustomGestureTemplate>;
 }
 
 export class StaticCameraPermissionManager implements CameraPermissionManager {

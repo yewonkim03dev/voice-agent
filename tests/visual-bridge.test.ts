@@ -150,6 +150,12 @@ test("visual bridge parses allowed control events only", () => {
       }
     }
   });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"capture_gesture_template","text":"wave"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "capture_gesture_template",
+    text: "wave"
+  });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_codex_thread_id","codexThreadId":" 019e-session ","codexAlwaysStartNewThread":true}'), {
     op: "voice-agent-ui",
     type: "control",
@@ -457,6 +463,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /update_wake_phrases/u);
   assert.match(qml, /update_approval_phrases/u);
   assert.match(qml, /update_gesture_wake_settings/u);
+  assert.match(qml, /capture_gesture_template/u);
+  assert.match(qml, /customGestureTemplates/u);
   assert.match(qml, /Approval allow phrases/u);
   assert.match(qml, /Persistent allow phrases/u);
   assert.match(qml, /Network persistent allow phrases/u);
@@ -639,6 +647,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsGestureStopPopup/u);
   assert.match(swift, /settingsGestureApprovalOncePopup/u);
   assert.match(swift, /settingsGestureRunningModePopup/u);
+  assert.match(swift, /settingsCustomGestureNameField/u);
+  assert.match(swift, /capture_gesture_template/u);
   assert.match(swift, /settingsCodexThreadField/u);
   assert.match(swift, /Codex Thread/u);
   assert.match(swift, /settingsThinkingVolumeField/u);

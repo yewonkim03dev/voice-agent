@@ -64,6 +64,8 @@ ApplicationWindow {
     property string gestureApprovalSessionBinding: "none"
     property string gestureApprovalPolicyBinding: "none"
     property string gestureRunningMode: "off"
+    property var customGestureTemplates: []
+    property string customGestureName: ""
     property string codexThreadId: ""
     property bool codexAlwaysStartNewThread: false
     property bool micEnabled: true
@@ -141,6 +143,8 @@ ApplicationWindow {
             gestureFist: "주먹",
             gesturePeace: "브이",
             gestureThumbsUp: "엄지 위",
+            gestureCustomName: "커스텀 이름",
+            gestureCapture: "캡처",
             gestureRunOff: "끔",
             gestureRunEmergencyOnly: "긴급 정지만",
             codexThreadRestart: "Codex thread id (재시작 후 적용)",
@@ -181,7 +185,7 @@ ApplicationWindow {
             policyAllowHelp: "같은 명령 또는 같은 실행 정책을 계속 허용으로 처리할 문구입니다.",
             networkPolicyAllowHelp: "같은 네트워크, 호스트, 도메인을 계속 허용으로 처리할 문구입니다.",
             gestureHelp: "카메라 손모양을 호출, 정지, 권한 응답에 매핑합니다. 카메라는 --cam으로 실행한 경우에만 켜집니다.",
-            gestureRunningModeHelp: "off는 작업 실행 중 카메라를 끕니다. emergency_only는 낮은 FPS로 정지 제스처만 감시합니다.",
+            gestureRunningModeHelp: "off는 작업 실행 중 제스처를 무시합니다. emergency_only는 정지 제스처만 감시합니다.",
             threadHelp: "다음 재시작 때 이어갈 Codex thread id입니다.",
             newThreadHelp: "체크하면 다음 실행부터 저장된 thread id를 무시하고 새 Codex thread로 시작합니다. 체크 해제하면 마지막 thread를 이어갑니다."
         }
@@ -252,6 +256,8 @@ ApplicationWindow {
             gestureFist: "Fist",
             gesturePeace: "Peace",
             gestureThumbsUp: "Thumbs up",
+            gestureCustomName: "Custom name",
+            gestureCapture: "Capture",
             gestureRunOff: "Off",
             gestureRunEmergencyOnly: "Emergency only",
             codexThreadRestart: "Codex thread id (applies after restart)",
@@ -292,7 +298,7 @@ ApplicationWindow {
             policyAllowHelp: "Phrases that keep allowing the same command or execution policy.",
             networkPolicyAllowHelp: "Phrases that keep allowing the same network, host, or domain.",
             gestureHelp: "Maps camera hand shapes to wake, stop, and approval actions. Camera still starts only with --cam.",
-            gestureRunningModeHelp: "off turns camera off while the agent runs. emergency_only watches only the stop gesture at low FPS.",
+            gestureRunningModeHelp: "off ignores gestures while the agent runs. emergency_only watches only the stop gesture.",
             threadHelp: "Codex thread id to resume after restart.",
             newThreadHelp: "Starts a new Codex thread on restart when checked; resumes the last thread when unchecked."
         }
@@ -425,7 +431,8 @@ ApplicationWindow {
                         "approval.deny": root.selectedOptionValue(gestureApprovalDenyBox, "none"),
                         "approval.session": root.selectedOptionValue(gestureApprovalSessionBox, "none"),
                         "approval.policy": root.selectedOptionValue(gestureApprovalPolicyBox, "none")
-                    }
+                    },
+                    customGestures: root.customGestureTemplates
                 }
             }))
             socket.sendTextMessage(JSON.stringify({
@@ -487,7 +494,12 @@ ApplicationWindow {
     }
 
     function gestureOptions() {
-        return ["open_palm", "thumbs_down", "fist", "peace", "thumbs_up"]
+        var values = ["open_palm", "thumbs_down", "fist", "peace", "thumbs_up"]
+        for (var index = 0; index < root.customGestureTemplates.length; index += 1) {
+            var template = root.customGestureTemplates[index]
+            if (template && template.name) values.push(template.name)
+        }
+        return values
     }
 
     function optionalGestureOptions() {
@@ -501,6 +513,10 @@ ApplicationWindow {
         if (value === "fist") return root.uiText("gestureFist")
         if (value === "peace") return root.uiText("gesturePeace")
         if (value === "thumbs_up") return root.uiText("gestureThumbsUp")
+        for (var index = 0; index < root.customGestureTemplates.length; index += 1) {
+            var template = root.customGestureTemplates[index]
+            if (template && template.name === value) return template.label || value
+        }
         return value
     }
 
@@ -546,7 +562,7 @@ ApplicationWindow {
     function normalizedGestureName(value, allowNone) {
         var normalized = String(value || "").trim()
         if (allowNone && normalized === "none") return "none"
-        return root.gestureOptions().indexOf(normalized) >= 0 ? normalized : "none"
+        return root.gestureOptions().indexOf(normalized) >= 0 ? normalized : (allowNone ? "none" : "open_palm")
     }
 
     function applyTtsSettings(settings) {
@@ -584,6 +600,7 @@ ApplicationWindow {
 
     function applyGestureWakeSettings(settings) {
         var bindings = (settings && settings.bindings) || {}
+        root.customGestureTemplates = settings && settings.customGestures ? settings.customGestures : []
         root.gestureWakeBinding = root.normalizedGestureName(bindings.wake || "open_palm", false)
         root.gestureStopBinding = root.normalizedGestureName(bindings.stop || "thumbs_down", false)
         root.gestureApprovalOnceBinding = root.normalizedGestureName(bindings["approval.once"] || "none", true)
@@ -2054,6 +2071,29 @@ ApplicationWindow {
                         currentIndex: root.indexOfOptionValue(model, root.gestureApprovalPolicyBinding)
                     }
                     Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("gestureHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("gestureCustomName"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    TextField {
+                        id: customGestureNameField
+                        Layout.fillWidth: true
+                        text: root.customGestureName
+                        onTextChanged: root.customGestureName = text
+                    }
+                    Button {
+                        text: root.uiText("gestureCapture")
+                        Layout.preferredWidth: 82
+                        onClicked: socket.sendTextMessage(JSON.stringify({
+                            op: "voice-agent-ui",
+                            type: "control",
+                            action: "capture_gesture_template",
+                            text: root.customGestureName
+                        }))
+                    }
                 }
 
                 RowLayout {

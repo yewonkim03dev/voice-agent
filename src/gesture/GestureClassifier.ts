@@ -1,4 +1,4 @@
-import type { GestureName } from "./GestureWakeConfig.ts";
+import type { CustomGestureTemplate, GestureName } from "./GestureWakeConfig.ts";
 import type { HandLandmark, HandLandmarkFrame, HandLandmarkName } from "./HandLandmarkProvider.ts";
 
 export interface GestureClassifier {
@@ -6,10 +6,24 @@ export interface GestureClassifier {
     gesture: GestureName;
     confidence: number;
   };
+  updateCustomGestures?(templates: CustomGestureTemplate[]): void;
 }
 
 export class LandmarkGestureClassifier implements GestureClassifier {
+  private customGestures: CustomGestureTemplate[];
+
+  constructor(options: { customGestures?: CustomGestureTemplate[] } = {}) {
+    this.customGestures = options.customGestures ?? [];
+  }
+
+  updateCustomGestures(templates: CustomGestureTemplate[]): void {
+    this.customGestures = templates;
+  }
+
   classify(frame: HandLandmarkFrame): { gesture: GestureName; confidence: number } {
+    const custom = this.classifyCustom(frame);
+    if (custom) return custom;
+
     const hand = new LandmarkMap(frame.landmarks);
     if (isOpenPalm(hand)) return { gesture: "open_palm", confidence: hand.averageConfidence };
     if (isThumbsDown(hand)) return { gesture: "thumbs_down", confidence: hand.averageConfidence };
@@ -17,6 +31,26 @@ export class LandmarkGestureClassifier implements GestureClassifier {
     if (isPeace(hand)) return { gesture: "peace", confidence: hand.averageConfidence };
     if (isFist(hand)) return { gesture: "fist", confidence: hand.averageConfidence };
     return { gesture: "none", confidence: hand.averageConfidence };
+  }
+
+  private classifyCustom(frame: HandLandmarkFrame): { gesture: GestureName; confidence: number } | undefined {
+    if (this.customGestures.length === 0) return undefined;
+
+    const vector = normalizedHandVector(frame.landmarks);
+    if (!vector) return undefined;
+
+    let best: { template: CustomGestureTemplate; distance: number } | undefined;
+    for (const template of this.customGestures) {
+      if (template.vector.length !== vector.length) continue;
+      const distance = vectorDistance(vector, template.vector);
+      if (!best || distance < best.distance) best = { template, distance };
+    }
+
+    if (!best || best.distance > best.template.threshold) return undefined;
+    return {
+      gesture: best.template.name,
+      confidence: Math.max(0, Math.min(1, 1 - best.distance / best.template.threshold))
+    };
   }
 }
 
@@ -113,3 +147,72 @@ function distance(a: { x: number; y: number }, b: { x: number; y: number }): num
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+const orderedLandmarkNames: HandLandmarkName[] = [
+  "wrist",
+  "thumbCMC",
+  "thumbMP",
+  "thumbIP",
+  "thumbTip",
+  "indexMCP",
+  "indexPIP",
+  "indexDIP",
+  "indexTip",
+  "middleMCP",
+  "middlePIP",
+  "middleDIP",
+  "middleTip",
+  "ringMCP",
+  "ringPIP",
+  "ringDIP",
+  "ringTip",
+  "littleMCP",
+  "littlePIP",
+  "littleDIP",
+  "littleTip"
+];
+
+export function normalizedHandVector(landmarks: HandLandmark[]): number[] | null {
+  const hand = new LandmarkMap(landmarks);
+  const wrist = hand.point("wrist");
+  if (!wrist) return null;
+
+  const points = orderedLandmarkNames.map((name) => hand.point(name));
+  if (points.some((point) => !point)) return null;
+
+  let scale = 0;
+  for (const point of points) {
+    if (!point) continue;
+    scale = Math.max(scale, distance(wrist, point));
+  }
+  if (scale < 0.02) return null;
+
+  const vector: number[] = [];
+  for (const point of points) {
+    if (!point) return null;
+    vector.push((point.x - wrist.x) / scale, (point.y - wrist.y) / scale);
+  }
+  return vector;
+}
+
+export function averageHandVectors(vectors: number[][]): number[] | null {
+  if (vectors.length === 0) return null;
+  const length = vectors[0]?.length ?? 0;
+  if (length === 0 || vectors.some((vector) => vector.length !== length)) return null;
+
+  const average = Array.from({ length }, () => 0);
+  for (const vector of vectors) {
+    for (let index = 0; index < length; index += 1) {
+      average[index] += vector[index] ?? 0;
+    }
+  }
+  return average.map((value) => value / vectors.length);
+}
+
+function vectorDistance(a: number[], b: number[]): number {
+  let total = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    const delta = (a[index] ?? 0) - (b[index] ?? 0);
+    total += delta * delta;
+  }
+  return Math.sqrt(total / a.length);
+}

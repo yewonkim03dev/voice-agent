@@ -1470,6 +1470,7 @@ export class TerminalHarness {
       case "show_context":
       case "update_wake_phrases":
       case "update_gesture_wake_settings":
+      case "capture_gesture_template":
         return;
       case "update_approval_phrases":
         await this.updateApprovalPhrases(event.approvalPhrases ?? {});

@@ -13,7 +13,7 @@ import type {
   GestureWatcherObservation,
   GestureWatcherStatus
 } from "../src/gesture/CameraGestureWatcher.ts";
-import type { GestureCameraMode, GestureWakeConfig } from "../src/gesture/GestureWakeConfig.ts";
+import type { CustomGestureTemplate, GestureCameraMode, GestureWakeConfig } from "../src/gesture/GestureWakeConfig.ts";
 import {
   createCodexThreadStore,
   readCodexThreadId,
@@ -1085,6 +1085,27 @@ test("always-on voice runner reapplies camera watcher config after gesture setti
   assert.equal(camera.startConfigs.at(-1)?.resolution.label, "800x600");
   assert.equal(camera.startConfigs.at(-1)?.bindings.wake, "peace");
   assert.equal(camera.startConfigs.at(-1)?.bindings.stop, "fist");
+});
+
+test("always-on voice runner captures custom camera gesture templates from terminal command", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const { runner, logs } = createAlwaysOnRunner([], {
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized")
+  });
+
+  await runner.start();
+  await runner.processLine("/gesture-add wave");
+  await runner.drain();
+  await runner.stop();
+
+  assert.deepEqual(camera.captureRequests, [{
+    name: "custom:wave",
+    label: "wave"
+  }]);
+  assert.equal(camera.startConfigs.at(-1)?.customGestures.at(0)?.name, "custom:wave");
+  assert.equal(logs.some((line) => line.includes("[camera:capture] saved name=custom:wave")), true);
 });
 
 test("always-on voice runner keeps camera watcher active and shows running status while agent runs by default", async () => {
@@ -2351,7 +2372,8 @@ test("voice local settings store persists overrides and reset restores factory d
         wake: "peace",
         stop: "fist",
         "approval.once": "thumbs_up"
-      }
+      },
+      customGestures: []
     });
     assert.deepEqual(updated.tts, {
       enabled: true,
@@ -3195,6 +3217,7 @@ class FakeCameraPermissionManager implements CameraPermissionManager {
 class FakeCameraGestureWatcher implements CameraGestureWatcher {
   readonly modes: GestureCameraMode[] = [];
   readonly startConfigs: GestureWakeConfig[] = [];
+  readonly captureRequests: Array<{ name: CustomGestureTemplate["name"]; label: string }> = [];
   startCount = 0;
   stopCount = 0;
   private readonly gestureListeners: Array<(observation: GestureWatcherObservation) => void> = [];
@@ -3228,6 +3251,27 @@ class FakeCameraGestureWatcher implements CameraGestureWatcher {
 
   onStatus(callback: (status: GestureWatcherStatus) => void): void {
     this.statusListeners.push(callback);
+  }
+
+  async captureCustomGestureTemplate(options: {
+    name: CustomGestureTemplate["name"];
+    label: string;
+    durationMs: number;
+    minSamples: number;
+    threshold?: number;
+  }): Promise<CustomGestureTemplate> {
+    this.captureRequests.push({
+      name: options.name,
+      label: options.label
+    });
+    return {
+      name: options.name,
+      label: options.label,
+      vector: Array.from({ length: 42 }, (_, index) => index / 100),
+      threshold: options.threshold ?? 0.22,
+      samples: options.minSamples,
+      createdAt: 1000
+    };
   }
 
   emitGesture(gesture: GestureWatcherObservation["gesture"], timestamp: number): void {

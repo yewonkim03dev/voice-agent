@@ -33,6 +33,7 @@ export type VisualControlAction =
   | "update_wake_phrases"
   | "update_approval_phrases"
   | "update_gesture_wake_settings"
+  | "capture_gesture_template"
   | "update_codex_thread_id"
   | "update_visual_settings"
   | "update_tts_settings";
@@ -385,6 +386,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "update_wake_phrases" &&
     record.action !== "update_approval_phrases" &&
     record.action !== "update_gesture_wake_settings" &&
+    record.action !== "capture_gesture_template" &&
     record.action !== "update_codex_thread_id" &&
     record.action !== "update_tts_settings" &&
     record.action !== "update_visual_settings"
@@ -422,7 +424,15 @@ function cloneGestureWakeSettings(settings: VisualGestureWakeSettings): VisualGe
     ...(settings.resolution !== undefined && typeof settings.resolution === "object"
       ? { resolution: { ...settings.resolution } }
       : {}),
-    ...(settings.bindings !== undefined ? { bindings: { ...settings.bindings } } : {})
+    ...(settings.bindings !== undefined ? { bindings: { ...settings.bindings } } : {}),
+    ...(settings.customGestures !== undefined
+      ? {
+          customGestures: settings.customGestures.map((template) => ({
+            ...template,
+            vector: [...template.vector]
+          }))
+        }
+      : {})
   };
 }
 

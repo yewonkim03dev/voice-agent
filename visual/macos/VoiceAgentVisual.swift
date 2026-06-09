@@ -106,6 +106,8 @@ private let visualTextEn: [String: String] = [
     "gestureFist": "Fist",
     "gesturePeace": "Peace",
     "gestureThumbsUp": "Thumbs up",
+    "gestureCustomName": "Custom name",
+    "gestureCapture": "Capture",
     "gestureRunOff": "Off",
     "gestureRunEmergencyOnly": "Emergency only",
     "quitVoiceAgent": "Quit Voice Agent",
@@ -132,7 +134,7 @@ private let visualTextEn: [String: String] = [
     "policyAllowHelp": "Phrases that keep allowing the same command or execution policy.",
     "networkPolicyAllowHelp": "Phrases that keep allowing the same network, host, or domain.",
     "gestureHelp": "Maps camera hand shapes to wake, stop, and approval actions. Camera still starts only with --cam.",
-    "gestureRunningModeHelp": "off turns camera off while the agent runs. emergency_only watches only the stop gesture at low FPS.",
+    "gestureRunningModeHelp": "off ignores gestures while the agent runs. emergency_only watches only the stop gesture.",
     "speech": "speech",
     "command": "command",
     "status": "status"
@@ -237,6 +239,8 @@ private let visualTextKo: [String: String] = [
     "gestureFist": "주먹",
     "gesturePeace": "브이",
     "gestureThumbsUp": "엄지 위",
+    "gestureCustomName": "커스텀 이름",
+    "gestureCapture": "캡처",
     "gestureRunOff": "끔",
     "gestureRunEmergencyOnly": "긴급 정지만",
     "quitVoiceAgent": "Voice Agent 종료",
@@ -263,7 +267,7 @@ private let visualTextKo: [String: String] = [
     "policyAllowHelp": "같은 명령 또는 같은 실행 정책을 계속 허용으로 처리할 문구입니다.",
     "networkPolicyAllowHelp": "같은 네트워크, 호스트, 도메인을 계속 허용으로 처리할 문구입니다.",
     "gestureHelp": "카메라 손모양을 호출, 정지, 권한 응답에 매핑합니다. 카메라는 --cam으로 실행한 경우에만 켜집니다.",
-    "gestureRunningModeHelp": "off는 작업 실행 중 카메라를 끕니다. emergency_only는 낮은 FPS로 정지 제스처만 감시합니다.",
+    "gestureRunningModeHelp": "off는 작업 실행 중 제스처를 무시합니다. emergency_only는 정지 제스처만 감시합니다.",
     "speech": "음성",
     "command": "명령",
     "status": "상태"
@@ -2705,6 +2709,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsGestureApprovalSessionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let settingsGestureApprovalPolicyPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let settingsGestureRunningModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let settingsCustomGestureNameField = NSTextField(string: "")
+    private let settingsCustomGestureCaptureButton = NSButton(title: "Capture", target: nil, action: nil)
     private var ttsLanguage = "auto"
     private var ttsGender = "auto"
     private var ttsVoiceName = ""
@@ -2732,6 +2738,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         "stop": "thumbs_down"
     ]
     private var gestureRunningMode = "off"
+    private var customGestureTemplates: [[String: Any]] = []
     private var codexThreadId = ""
     private var uiLanguage: UiLanguage = .en
     private var uiLanguageInitialized = false
@@ -3175,12 +3182,18 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             "stop": "thumbs_down"
         ]
         gestureRunningMode = "off"
+        customGestureTemplates = []
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: true)
         menuBarCompanion.setHudEnabled(true)
         menuBarCompanion.setHudCompact(false)
         syncSettingsControls()
         sendControl("reset_settings")
+    }
+
+    @objc private func captureCustomGestureFromSettings() {
+        let text = settingsCustomGestureNameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        sendControl("capture_gesture_template", text: text)
     }
 
     @objc private func exitVisual() {
@@ -3296,6 +3309,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         if let runningMode = settings["runningMode"] as? String {
             gestureRunningMode = runningMode == "emergency_only" ? "emergency_only" : "off"
         }
+        if let templates = settings["customGestures"] as? [[String: Any]] {
+            customGestureTemplates = templates
+            reloadGestureOptionControls()
+        }
         if let bindings = settings["bindings"] as? [String: Any] {
             for key in ["wake", "stop", "approval.once", "approval.deny", "approval.session", "approval.policy"] {
                 if let value = bindings[key] as? String {
@@ -3338,7 +3355,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let contentWidth: CGFloat = 380
-        let contentHeight: CGFloat = 1184
+        let contentHeight: CGFloat = 1220
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -3364,33 +3381,30 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
-        let gestureOptions = ["open_palm", "thumbs_down", "fist", "peace", "thumbs_up"]
-        let optionalGestureOptions = ["none"] + gestureOptions
-        settingsGestureWakePopup.addValueItemsIfNeeded(gestureOptions) { gestureDisplayName($0, language: uiLanguage) }
-        settingsGestureStopPopup.addValueItemsIfNeeded(gestureOptions) { gestureDisplayName($0, language: uiLanguage) }
-        settingsGestureApprovalOncePopup.addValueItemsIfNeeded(optionalGestureOptions) { gestureDisplayName($0, language: uiLanguage) }
-        settingsGestureApprovalDenyPopup.addValueItemsIfNeeded(optionalGestureOptions) { gestureDisplayName($0, language: uiLanguage) }
-        settingsGestureApprovalSessionPopup.addValueItemsIfNeeded(optionalGestureOptions) { gestureDisplayName($0, language: uiLanguage) }
-        settingsGestureApprovalPolicyPopup.addValueItemsIfNeeded(optionalGestureOptions) { gestureDisplayName($0, language: uiLanguage) }
+        reloadGestureOptionControls()
         settingsGestureRunningModePopup.addValueItemsIfNeeded(["off", "emergency_only"]) {
             gestureRunningModeDisplayName($0, language: uiLanguage)
         }
         settingsMaxUtteranceField.delegate = self
+        settingsCustomGestureCaptureButton.title = localizedText("gestureCapture", language: uiLanguage)
+        settingsCustomGestureCaptureButton.target = self
+        settingsCustomGestureCaptureButton.action = #selector(captureCustomGestureFromSettings)
 
-        addSettingsRow(view, label: localizedText("gestureWake", language: uiLanguage), control: settingsGestureWakePopup, y: 1110)
-        addSettingsHelp(view, y: 1110, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureStop", language: uiLanguage), control: settingsGestureStopPopup, y: 1076)
-        addSettingsHelp(view, y: 1076, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureApprovalOnce", language: uiLanguage), control: settingsGestureApprovalOncePopup, y: 1042)
-        addSettingsHelp(view, y: 1042, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureApprovalDeny", language: uiLanguage), control: settingsGestureApprovalDenyPopup, y: 1008)
-        addSettingsHelp(view, y: 1008, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureApprovalSession", language: uiLanguage), control: settingsGestureApprovalSessionPopup, y: 974)
-        addSettingsHelp(view, y: 974, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureApprovalPolicy", language: uiLanguage), control: settingsGestureApprovalPolicyPopup, y: 940)
-        addSettingsHelp(view, y: 940, text: localizedText("gestureHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("gestureRunningMode", language: uiLanguage), control: settingsGestureRunningModePopup, y: 906)
-        addSettingsHelp(view, y: 906, text: localizedText("gestureRunningModeHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureWake", language: uiLanguage), control: settingsGestureWakePopup, y: 1146)
+        addSettingsHelp(view, y: 1146, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureStop", language: uiLanguage), control: settingsGestureStopPopup, y: 1112)
+        addSettingsHelp(view, y: 1112, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalOnce", language: uiLanguage), control: settingsGestureApprovalOncePopup, y: 1078)
+        addSettingsHelp(view, y: 1078, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalDeny", language: uiLanguage), control: settingsGestureApprovalDenyPopup, y: 1044)
+        addSettingsHelp(view, y: 1044, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalSession", language: uiLanguage), control: settingsGestureApprovalSessionPopup, y: 1010)
+        addSettingsHelp(view, y: 1010, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureApprovalPolicy", language: uiLanguage), control: settingsGestureApprovalPolicyPopup, y: 976)
+        addSettingsHelp(view, y: 976, text: localizedText("gestureHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("gestureRunningMode", language: uiLanguage), control: settingsGestureRunningModePopup, y: 942)
+        addSettingsHelp(view, y: 942, text: localizedText("gestureRunningModeHelp", language: uiLanguage))
+        addCustomGestureCaptureRow(view, y: 906)
 
         addSettingsPhraseArea(
             view,
@@ -3511,6 +3525,18 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         view.addSubview(help)
     }
 
+    private func addCustomGestureCaptureRow(_ view: NSView, y: CGFloat) {
+        let labelView = NSTextField(labelWithString: localizedText("gestureCustomName", language: uiLanguage))
+        labelView.textColor = NSColor(calibratedRed: 0.57, green: 0.64, blue: 0.73, alpha: 1)
+        labelView.frame = NSRect(x: 26, y: y + 4, width: 96, height: 20)
+        settingsCustomGestureNameField.frame = NSRect(x: 132, y: y, width: 124, height: 26)
+        settingsCustomGestureCaptureButton.frame = NSRect(x: 264, y: y, width: 74, height: 26)
+        view.addSubview(labelView)
+        view.addSubview(settingsCustomGestureNameField)
+        view.addSubview(settingsCustomGestureCaptureButton)
+        addSettingsHelp(view, y: y, text: localizedText("gestureHelp", language: uiLanguage))
+    }
+
     private func addSettingsPhraseArea(
         _ view: NSView,
         label: String,
@@ -3538,6 +3564,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     }
 
     private func syncSettingsControls() {
+        reloadGestureOptionControls()
         settingsLanguagePopup.selectItem(withTitle: ttsLanguage)
         settingsGenderPopup.selectItem(withTitle: ttsGender)
         settingsVoiceField.stringValue = ttsVoiceName
@@ -3565,6 +3592,32 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsGestureApprovalSessionPopup.selectRepresentedValue(gestureWakeBindings["approval.session"] ?? "none")
         settingsGestureApprovalPolicyPopup.selectRepresentedValue(gestureWakeBindings["approval.policy"] ?? "none")
         settingsGestureRunningModePopup.selectRepresentedValue(gestureRunningMode)
+    }
+
+    private func reloadGestureOptionControls() {
+        let options = gestureOptionValues()
+        let optionalOptions = ["none"] + options
+        settingsGestureWakePopup.replaceValueItems(options) { self.gestureOptionTitle($0) }
+        settingsGestureStopPopup.replaceValueItems(options) { self.gestureOptionTitle($0) }
+        settingsGestureApprovalOncePopup.replaceValueItems(optionalOptions) { self.gestureOptionTitle($0) }
+        settingsGestureApprovalDenyPopup.replaceValueItems(optionalOptions) { self.gestureOptionTitle($0) }
+        settingsGestureApprovalSessionPopup.replaceValueItems(optionalOptions) { self.gestureOptionTitle($0) }
+        settingsGestureApprovalPolicyPopup.replaceValueItems(optionalOptions) { self.gestureOptionTitle($0) }
+    }
+
+    private func gestureOptionValues() -> [String] {
+        let builtIns = ["open_palm", "thumbs_down", "fist", "peace", "thumbs_up"]
+        let custom = customGestureTemplates.compactMap { $0["name"] as? String }
+        return builtIns + custom
+    }
+
+    private func gestureOptionTitle(_ value: String) -> String {
+        if let template = customGestureTemplates.first(where: { $0["name"] as? String == value }),
+           let label = template["label"] as? String,
+           !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return label
+        }
+        return gestureDisplayName(value, language: uiLanguage)
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -3629,11 +3682,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     }
 
     private func normalizedGestureName(_ value: String, allowNone: Bool) -> String {
-        let options = ["open_palm", "thumbs_down", "fist", "peace", "thumbs_up"]
+        let options = gestureOptionValues()
         if allowNone && value == "none" {
             return "none"
         }
-        return options.contains(value) ? value : "none"
+        return options.contains(value) ? value : (allowNone ? "none" : "open_palm")
     }
 
     private func sendWakePhrases() {
@@ -3667,7 +3720,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             "action": "update_gesture_wake_settings",
             "gestureWake": [
                 "runningMode": gestureRunningMode,
-                "bindings": gestureWakeBindings
+                "bindings": gestureWakeBindings,
+                "customGestures": customGestureTemplates
             ]
         ])
     }
@@ -3718,6 +3772,19 @@ private extension NSPopUpButton {
             let item = NSMenuItem(title: title(value), action: nil, keyEquivalent: "")
             item.representedObject = value
             menu?.addItem(item)
+        }
+    }
+
+    func replaceValueItems(_ values: [String], title: (String) -> String) {
+        let selected = selectedItem?.representedObject as? String
+        removeAllItems()
+        for value in values {
+            let item = NSMenuItem(title: title(value), action: nil, keyEquivalent: "")
+            item.representedObject = value
+            menu?.addItem(item)
+        }
+        if let selected {
+            selectRepresentedValue(selected)
         }
     }
 

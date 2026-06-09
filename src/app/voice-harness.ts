@@ -18,8 +18,10 @@ import { CommandCameraPermissionManager } from "../gesture/CommandCameraPermissi
 import { CommandHandLandmarkProvider } from "../gesture/CommandHandLandmarkProvider.ts";
 import { GestureActionStateMachine, type GestureTrigger } from "../gesture/GestureActionStateMachine.ts";
 import {
+  customGestureNameFromLabel,
   gestureWakeConfigForRuntime,
   sanitizeGestureWakeConfig,
+  type CustomGestureTemplate,
   type GestureCameraMode,
   type GestureWakeFileConfig,
   type GestureRuntimeState,
@@ -368,6 +370,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /mic toggles microphone listening on/off.");
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
     this.writeLine("  /cam-test shows camera gesture test steps and current status.");
+    this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
@@ -422,6 +425,12 @@ export class AlwaysOnVoiceHarnessRunner {
       return "continue";
     }
 
+    const gestureCapture = parseGestureCaptureCommand(text);
+    if (gestureCapture.matched) {
+      await this.captureCustomGestureTemplate(gestureCapture.argument);
+      return "continue";
+    }
+
     if (text === "/quit") {
       await this.stop();
       this.writeLine("Harness stopped.");
@@ -456,6 +465,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  /mic toggles microphone listening on/off.");
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
     this.writeLine("  /cam-test shows camera gesture test steps and current status.");
+    this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  /status shows the current agent status.");
@@ -1083,6 +1093,81 @@ export class AlwaysOnVoiceHarnessRunner {
     }
   }
 
+  async captureCustomGestureTemplate(label: string): Promise<void> {
+    const trimmed = label.trim();
+    if (!trimmed) {
+      this.writeLine("[camera:capture] usage: /gesture-add <name>");
+      this.sendVisualCameraStatus(this.gestureStateMachine.getCameraMode(), "custom gesture name required");
+      return;
+    }
+
+    if (!this.cameraGestureEnabledByCli || !this.gestureWake.enabled) {
+      this.writeLine("[camera:capture] restart Voice Agent with --cam to capture custom gestures.");
+      this.sendVisualCameraStatus("off", "camera gesture capture requires --cam");
+      return;
+    }
+
+    if (!this.cameraGestureActive) {
+      await this.startCameraGestureIfEnabled();
+    }
+
+    if (!this.cameraGestureActive) {
+      this.writeLine("[camera:capture] camera gesture watcher is not active.");
+      this.sendVisualCameraStatus("off", "camera gesture watcher is not active");
+      return;
+    }
+
+    if (!this.cameraGestureWatcher.captureCustomGestureTemplate) {
+      this.writeLine("[camera:capture] current camera watcher does not expose hand landmark templates.");
+      this.sendVisualCameraStatus(this.gestureStateMachine.getCameraMode(), "custom gesture capture is unavailable");
+      return;
+    }
+
+    this.refreshGestureRuntimeState();
+    const name = customGestureNameFromLabel(trimmed);
+    this.writeLine(`[camera:capture] ready name=${name} label="${trimmed}" hold gesture for 1500ms \u0007`);
+    this.sendVisualCameraStatus(this.gestureStateMachine.getCameraMode(), `capturing custom gesture: ${trimmed}`);
+
+    try {
+      const template = await this.cameraGestureWatcher.captureCustomGestureTemplate({
+        name,
+        label: trimmed,
+        durationMs: 1500,
+        minSamples: 3,
+        threshold: 0.22
+      });
+      await this.saveCustomGestureTemplate(template);
+      this.writeLine(`[camera:capture] saved name=${template.name} label="${template.label}" samples=${template.samples}`);
+      this.sendVisualCameraStatus(this.gestureStateMachine.getCameraMode(), `saved custom gesture: ${template.label}`);
+    } catch (error) {
+      this.writeLine(`[camera:capture] failed: ${formatError(error)}`);
+      this.sendVisualCameraStatus(this.gestureStateMachine.getCameraMode(), `custom gesture capture failed: ${formatError(error)}`);
+    }
+  }
+
+  private async saveCustomGestureTemplate(template: CustomGestureTemplate): Promise<void> {
+    const customGestures = [
+      ...this.gestureWake.customGestures.filter((existing) => existing.name !== template.name),
+      template
+    ];
+    const sanitized = sanitizeGestureWakeConfig({
+      ...this.gestureWake,
+      customGestures
+    });
+    this.gestureWake = gestureWakeConfigForRuntime(sanitized, this.cameraGestureEnabledByCli);
+    this.gestureStateMachine = new GestureActionStateMachine({
+      config: this.gestureWake,
+      now: this.now
+    });
+    await this.cameraGestureWatcher.start(this.gestureWake);
+    this.refreshGestureRuntimeState();
+    this.sendVisualGestureSettings();
+    this.trackSettingsWrite(this.persistGestureWakeSettings({
+      ...sanitized,
+      enabled: false
+    }));
+  }
+
   private reconfigureCameraGestureAfterSettingsUpdate(): void {
     this.cameraSettingsGeneration += 1;
     const generation = this.cameraSettingsGeneration;
@@ -1134,7 +1219,11 @@ export class AlwaysOnVoiceHarnessRunner {
         holdMs: this.gestureWake.holdMs,
         cooldownMs: this.gestureWake.cooldownMs,
         runningMode: this.gestureWake.runningMode,
-        bindings: { ...this.gestureWake.bindings }
+        bindings: { ...this.gestureWake.bindings },
+        customGestures: this.gestureWake.customGestures.map((template) => ({
+          ...template,
+          vector: [...template.vector]
+        }))
       }
     });
   }
@@ -1643,7 +1732,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 }
 
 function isVisibleHelpCommandLine(visible: string): boolean {
-  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam-test|camera-test|add|refs)(?:\s|$)/u.test(visible);
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam-test|camera-test|gesture-add|gesture-capture|add|refs)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {
@@ -1951,7 +2040,7 @@ function bindVisualDirectGoControls(
 }
 
 function bindVisualWakeSettingsControls(
-  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "toggleMicInput">,
+  runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "captureCustomGestureTemplate" | "toggleMicInput">,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
@@ -1967,6 +2056,11 @@ function bindVisualWakeSettingsControls(
 
     if (event.action === "update_gesture_wake_settings") {
       runner.updateGestureWakeSettings(event.gestureWake ?? {});
+      return;
+    }
+
+    if (event.action === "capture_gesture_template") {
+      void runner.captureCustomGestureTemplate(event.text ?? "");
       return;
     }
 
@@ -2040,6 +2134,22 @@ function formatWakeRejectedVisualText(wakePhrases: string[]): string {
 
 function parseAddContextCommand(text: string): { matched: boolean; argument: string } {
   const match = text.match(/^\/add(?:\s+([\s\S]*))?$/u);
+
+  if (!match) {
+    return {
+      matched: false,
+      argument: ""
+    };
+  }
+
+  return {
+    matched: true,
+    argument: (match[1] ?? "").trim()
+  };
+}
+
+function parseGestureCaptureCommand(text: string): { matched: boolean; argument: string } {
+  const match = text.match(/^\/(?:gesture-add|gesture-capture)(?:\s+([\s\S]*))?$/iu);
 
   if (!match) {
     return {

@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 
 import { CommandHandLandmarkProvider, parseHandLandmarkProviderLine } from "../src/gesture/CommandHandLandmarkProvider.ts";
-import { LandmarkGestureClassifier } from "../src/gesture/GestureClassifier.ts";
+import { LandmarkGestureClassifier, normalizedHandVector } from "../src/gesture/GestureClassifier.ts";
 import type { HandLandmark, HandLandmarkFrame, HandLandmarkProvider } from "../src/gesture/HandLandmarkProvider.ts";
 import { parseCameraGestureWatcherLine } from "../src/gesture/CommandCameraGestureWatcher.ts";
 import { parseCameraPermissionStatus } from "../src/gesture/CommandCameraPermissionManager.ts";
@@ -43,6 +43,33 @@ test("gesture wake config uses safe defaults and parses bindings", () => {
     "approval.once": "thumbs_up",
     "approval.deny": "thumbs_down"
   });
+});
+
+test("gesture wake config parses custom gesture templates and bindings", () => {
+  const vector = Array.from({ length: 42 }, (_, index) => index / 100);
+  const config = sanitizeGestureWakeConfig({
+    bindings: {
+      wake: "custom:wave"
+    },
+    customGestures: [{
+      name: "custom:wave",
+      label: "Wave",
+      vector,
+      threshold: 0.3,
+      samples: 8,
+      createdAt: 1000
+    }]
+  });
+
+  assert.equal(config.bindings.wake, "custom:wave");
+  assert.deepEqual(config.customGestures, [{
+    name: "custom:wave",
+    label: "Wave",
+    vector,
+    threshold: 0.3,
+    samples: 8,
+    createdAt: 1000
+  }]);
 });
 
 test("camera permission command output is parsed defensively", () => {
@@ -165,6 +192,28 @@ test("landmark gesture classifier returns gesture names only", () => {
   }).gesture, "thumbs_down");
 });
 
+test("landmark gesture classifier matches active custom templates", () => {
+  const landmarks = makeOpenPalmLandmarks();
+  const vector = normalizedHandVector(landmarks);
+  assert.ok(vector);
+
+  const classifier = new LandmarkGestureClassifier({
+    customGestures: [{
+      name: "custom:my_palm",
+      label: "My palm",
+      vector,
+      threshold: 0.22,
+      samples: 5,
+      createdAt: 1000
+    }]
+  });
+
+  assert.equal(classifier.classify({
+    timestamp: 1,
+    landmarks
+  }).gesture, "custom:my_palm");
+});
+
 test("landmark camera watcher maps provider frames through the classifier", async () => {
   const provider = new FakeHandLandmarkProvider();
   const watcher = new LandmarkCameraGestureWatcher({
@@ -225,6 +274,38 @@ test("landmark camera watcher keeps provider running across active camera modes"
   assert.deepEqual(gestures, ["open_palm"]);
   assert.equal(provider.starts.length, 1);
   assert.equal(statuses.includes("running"), true);
+});
+
+test("landmark camera watcher captures custom gesture templates from frames", async () => {
+  const provider = new FakeHandLandmarkProvider();
+  const watcher = new LandmarkCameraGestureWatcher({
+    createProvider: () => provider
+  });
+
+  await watcher.start({
+    ...defaultGestureWakeConfig,
+    enabled: true
+  });
+  watcher.setMode("idle");
+  await Promise.resolve();
+
+  const capture = watcher.captureCustomGestureTemplate({
+    name: "custom:test",
+    label: "Test",
+    durationMs: 10,
+    minSamples: 1
+  });
+  provider.emitFrame({
+    timestamp: 1000,
+    landmarks: makeOpenPalmLandmarks()
+  });
+  const template = await capture;
+  await watcher.stop();
+
+  assert.equal(template.name, "custom:test");
+  assert.equal(template.label, "Test");
+  assert.equal(template.samples, 1);
+  assert.equal(template.vector.length, 42);
 });
 
 test("gesture runtime enablement requires --cam", () => {
@@ -312,14 +393,25 @@ test("gesture state machine keeps camera active while running unless emergency m
 function makeOpenPalmLandmarks(): HandLandmark[] {
   return [
     landmark("wrist", 0.5, 0.1),
+    landmark("thumbCMC", 0.4, 0.2),
+    landmark("thumbMP", 0.34, 0.32),
+    landmark("thumbIP", 0.28, 0.44),
+    landmark("thumbTip", 0.2, 0.55),
+    landmark("indexMCP", 0.36, 0.34),
     landmark("middleMCP", 0.5, 0.35),
     landmark("indexPIP", 0.32, 0.54),
+    landmark("indexDIP", 0.29, 0.68),
     landmark("indexTip", 0.26, 0.82),
     landmark("middlePIP", 0.45, 0.58),
+    landmark("middleDIP", 0.445, 0.73),
     landmark("middleTip", 0.44, 0.88),
+    landmark("ringMCP", 0.58, 0.34),
     landmark("ringPIP", 0.58, 0.56),
+    landmark("ringDIP", 0.6, 0.69),
     landmark("ringTip", 0.62, 0.82),
+    landmark("littleMCP", 0.66, 0.32),
     landmark("littlePIP", 0.68, 0.5),
+    landmark("littleDIP", 0.71, 0.61),
     landmark("littleTip", 0.75, 0.72)
   ];
 }

@@ -1,5 +1,4 @@
-export const gestureNames = [
-  "none",
+export const builtInGestureNames = [
   "open_palm",
   "thumbs_down",
   "fist",
@@ -7,7 +6,14 @@ export const gestureNames = [
   "thumbs_up"
 ] as const;
 
-export type GestureName = typeof gestureNames[number];
+export const gestureNames = [
+  "none",
+  ...builtInGestureNames
+] as const;
+
+export type BuiltInGestureName = typeof builtInGestureNames[number];
+export type CustomGestureName = `custom:${string}`;
+export type GestureName = typeof gestureNames[number] | CustomGestureName;
 
 export const gestureActions = [
   "wake",
@@ -39,6 +45,15 @@ export interface GestureResolution {
   label: string;
 }
 
+export interface CustomGestureTemplate {
+  name: CustomGestureName;
+  label: string;
+  vector: number[];
+  threshold: number;
+  samples: number;
+  createdAt: number;
+}
+
 export interface GestureWakeConfig {
   enabled: boolean;
   fps: number;
@@ -47,6 +62,7 @@ export interface GestureWakeConfig {
   cooldownMs: number;
   runningMode: GestureRunningMode;
   bindings: GestureBindings;
+  customGestures: CustomGestureTemplate[];
 }
 
 export interface GestureWakeFileConfig {
@@ -60,6 +76,7 @@ export interface GestureWakeFileConfig {
   cooldownMs?: number | string;
   runningMode?: GestureRunningMode;
   bindings?: Partial<Record<GestureAction, GestureName>>;
+  customGestures?: CustomGestureTemplate[];
 }
 
 export const defaultGestureWakeConfig: GestureWakeConfig = {
@@ -76,12 +93,14 @@ export const defaultGestureWakeConfig: GestureWakeConfig = {
   bindings: {
     wake: "open_palm",
     stop: "thumbs_down"
-  }
+  },
+  customGestures: []
 };
 
 export function sanitizeGestureWakeConfig(value: unknown): GestureWakeConfig {
   const record = isRecord(value) ? value : {};
   const defaults = defaultGestureWakeConfig;
+  const customGestures = sanitizeCustomGestureTemplates(record.customGestures);
   const bindings = sanitizeGestureBindings(isRecord(record.bindings) ? record.bindings : undefined);
   const resolution = sanitizeGestureResolution(record.resolution);
 
@@ -92,7 +111,8 @@ export function sanitizeGestureWakeConfig(value: unknown): GestureWakeConfig {
     holdMs: sanitizeNumber(record.holdMs, defaults.holdMs, 100, 10_000),
     cooldownMs: sanitizeNumber(record.cooldownMs, defaults.cooldownMs, 0, 60_000),
     runningMode: record.runningMode === "emergency_only" ? "emergency_only" : "off",
-    bindings
+    bindings,
+    customGestures
   };
 }
 
@@ -105,7 +125,22 @@ export function gestureWakeConfigForRuntime(config: GestureWakeConfig | undefine
 }
 
 export function isGestureName(value: unknown): value is GestureName {
-  return typeof value === "string" && gestureNames.includes(value as GestureName);
+  return typeof value === "string" && (gestureNames.includes(value as GestureName) || isCustomGestureName(value));
+}
+
+export function isCustomGestureName(value: unknown): value is CustomGestureName {
+  return typeof value === "string" && /^custom:[a-z0-9][a-z0-9_-]{0,39}$/iu.test(value);
+}
+
+export function customGestureNameFromLabel(label: string): CustomGestureName {
+  const trimmed = label.trim();
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/giu, "_")
+    .replace(/^_+|_+$/gu, "")
+    .slice(0, 28);
+  return `custom:${slug || `gesture_${shortHash(trimmed)}`}`;
 }
 
 export function isGestureAction(value: unknown): value is GestureAction {
@@ -128,6 +163,32 @@ function sanitizeGestureBindings(value: Record<string, unknown> | undefined): Ge
   }
 
   return bindings;
+}
+
+function sanitizeCustomGestureTemplates(value: unknown): CustomGestureTemplate[] {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  const templates: CustomGestureTemplate[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || !isCustomGestureName(item.name) || seen.has(item.name)) continue;
+    if (!Array.isArray(item.vector) || item.vector.length === 0 || item.vector.length > 64) continue;
+    const vector = item.vector
+      .map((entry) => (typeof entry === "number" ? entry : Number(entry)))
+      .filter((entry) => Number.isFinite(entry));
+    if (vector.length !== item.vector.length) continue;
+
+    seen.add(item.name);
+    templates.push({
+      name: item.name,
+      label: typeof item.label === "string" && item.label.trim() ? item.label.trim().slice(0, 40) : item.name.slice("custom:".length),
+      vector,
+      threshold: sanitizeFloat(item.threshold, 0.22, 0.01, 1),
+      samples: sanitizeNumber(item.samples, 1, 1, 120),
+      createdAt: sanitizeNumber(item.createdAt, Date.now(), 0, Number.MAX_SAFE_INTEGER)
+    });
+  }
+  return templates;
 }
 
 function sanitizeGestureResolution(value: unknown): GestureResolution {
@@ -162,6 +223,20 @@ function sanitizeNumber(value: unknown, fallback: number, min: number, max: numb
   return Math.max(min, Math.min(max, Math.round(numeric)));
 }
 
+function sanitizeFloat(value: unknown, fallback: number, min: number, max: number): number {
+  const numeric = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.min(max, numeric));
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function shortHash(value: string): string {
+  let hash = 0;
+  for (const char of value) {
+    hash = (hash * 31 + char.codePointAt(0)!) >>> 0;
+  }
+  return hash.toString(36).slice(0, 8) || "0";
 }

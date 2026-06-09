@@ -1,6 +1,11 @@
 import type { CameraGestureWatcher, GestureWatcherObservation, GestureWatcherStatus } from "./CameraGestureWatcher.ts";
-import { LandmarkGestureClassifier, type GestureClassifier } from "./GestureClassifier.ts";
-import type { GestureCameraMode, GestureWakeConfig } from "./GestureWakeConfig.ts";
+import {
+  averageHandVectors,
+  LandmarkGestureClassifier,
+  normalizedHandVector,
+  type GestureClassifier
+} from "./GestureClassifier.ts";
+import type { CustomGestureTemplate, GestureCameraMode, GestureWakeConfig } from "./GestureWakeConfig.ts";
 import type { HandLandmarkFrame, HandLandmarkProvider } from "./HandLandmarkProvider.ts";
 
 export interface LandmarkCameraGestureWatcherOptions {
@@ -17,6 +22,7 @@ export class LandmarkCameraGestureWatcher implements CameraGestureWatcher {
   private mode: GestureCameraMode = "off";
   private provider: HandLandmarkProvider | undefined;
   private generation = 0;
+  private readonly frameListeners: Array<(frame: HandLandmarkFrame) => void> = [];
 
   constructor(options: LandmarkCameraGestureWatcherOptions) {
     this.createProvider = options.createProvider;
@@ -25,6 +31,7 @@ export class LandmarkCameraGestureWatcher implements CameraGestureWatcher {
 
   async start(config: GestureWakeConfig): Promise<void> {
     this.config = config;
+    this.classifier.updateCustomGestures?.(customGesturesUsedByBindings(config));
     this.emitStatus({
       enabled: false,
       mode: "off",
@@ -72,6 +79,50 @@ export class LandmarkCameraGestureWatcher implements CameraGestureWatcher {
 
   onStatus(callback: (status: GestureWatcherStatus) => void): void {
     this.statusListeners.push(callback);
+  }
+
+  async captureCustomGestureTemplate(options: {
+    name: CustomGestureTemplate["name"];
+    label: string;
+    durationMs: number;
+    minSamples: number;
+    threshold?: number;
+  }): Promise<CustomGestureTemplate> {
+    if (!this.config || this.mode === "off") {
+      throw new Error("camera gesture watcher is not active");
+    }
+
+    const vectors: number[][] = [];
+    const listener = (frame: HandLandmarkFrame): void => {
+      const vector = normalizedHandVector(frame.landmarks);
+      if (vector) vectors.push(vector);
+    };
+    this.frameListeners.push(listener);
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, Math.max(50, options.durationMs));
+    });
+
+    const index = this.frameListeners.indexOf(listener);
+    if (index >= 0) this.frameListeners.splice(index, 1);
+
+    if (vectors.length < options.minSamples) {
+      throw new Error(`not enough hand samples captured (${vectors.length}/${options.minSamples})`);
+    }
+
+    const vector = averageHandVectors(vectors);
+    if (!vector) {
+      throw new Error("captured hand samples could not be normalized");
+    }
+
+    return {
+      name: options.name,
+      label: options.label,
+      vector,
+      threshold: options.threshold ?? 0.22,
+      samples: vectors.length,
+      createdAt: Date.now()
+    };
   }
 
   private async startProvider(mode: GestureCameraMode): Promise<void> {
@@ -149,6 +200,7 @@ export class LandmarkCameraGestureWatcher implements CameraGestureWatcher {
   }
 
   private handleFrame(frame: HandLandmarkFrame): void {
+    this.frameListeners.forEach((listener) => listener(frame));
     const result = this.classifier.classify(frame);
     this.emitGesture({
       gesture: result.gesture,
@@ -164,6 +216,11 @@ export class LandmarkCameraGestureWatcher implements CameraGestureWatcher {
   private emitStatus(status: GestureWatcherStatus): void {
     this.statusListeners.forEach((listener) => listener(status));
   }
+}
+
+function customGesturesUsedByBindings(config: GestureWakeConfig): CustomGestureTemplate[] {
+  const active = new Set(Object.values(config.bindings).filter((value): value is CustomGestureTemplate["name"] => typeof value === "string" && value.startsWith("custom:")));
+  return config.customGestures.filter((template) => active.has(template.name));
 }
 
 function fpsForMode(mode: GestureCameraMode, config: GestureWakeConfig): number {
