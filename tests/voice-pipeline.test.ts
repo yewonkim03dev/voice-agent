@@ -703,7 +703,60 @@ test("always-on voice runner applies visual reference context to the next wake c
     {
       op: "voice-agent-ui",
       type: "question",
-      text: "테스트 돌려줘"
+      text: "테스트 돌려줘",
+      references: ["관련 파일은 README.md야"]
+    }
+  );
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "context" }> => event.type === "context").at(-1)?.entries,
+    []
+  );
+});
+
+test("always-on voice runner routes visual direct go immediately", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner } = createAlwaysOnRunner([], {
+    visualBridge
+  });
+
+  await runner.start();
+  visualBridge.emitControl("direct_go", "README 보고 요약해줘");
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "README 보고 요약해줘");
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "question" }> => event.type === "question").at(-1),
+    {
+      op: "voice-agent-ui",
+      type: "question",
+      text: "README 보고 요약해줘"
+    }
+  );
+});
+
+test("always-on voice runner attaches queued references to visual direct go", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner } = createAlwaysOnRunner([], {
+    visualBridge
+  });
+
+  await runner.start();
+  visualBridge.emitControl("add_context", "관련 파일은 README.md야");
+  visualBridge.emitControl("direct_go", "이 기준으로 정리해줘");
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 1);
+  assert.equal(backend.prompts[0].text, "이 기준으로 정리해줘\n\n추가 정보:\n- 관련 파일은 README.md야");
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "question" }> => event.type === "question").at(-1),
+    {
+      op: "voice-agent-ui",
+      type: "question",
+      text: "이 기준으로 정리해줘",
+      references: ["관련 파일은 README.md야"]
     }
   );
   assert.deepEqual(

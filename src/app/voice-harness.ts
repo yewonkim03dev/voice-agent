@@ -13,7 +13,7 @@ import { UtteranceRecorder } from "../recorder/UtteranceRecorder.ts";
 import type { UtteranceAudio } from "../recorder/UtteranceAudio.ts";
 import { CommandSpeechProcessor } from "../speech/CommandSpeechProcessor.ts";
 import type { SpeechProcessor } from "../speech/SpeechProcessor.ts";
-import { withTranscriptText, type Transcript } from "../speech/Transcript.ts";
+import { detectTranscriptLanguage, normalizeTranscriptText, withTranscriptText, type Transcript } from "../speech/Transcript.ts";
 import { BargeInPolicy } from "../voice/BargeInPolicy.ts";
 import { EchoGuard, type EchoGuardResult } from "../voice/EchoGuard.ts";
 import type { VisualProvider } from "../visual/VisualConfig.ts";
@@ -89,6 +89,7 @@ export class VoiceHarnessRunner {
       sendVisualContextEvent(options.visualBridge, entries)
     );
     bindVisualContextControls(this.textContext, options.visualBridge);
+    bindVisualDirectGoControls((text) => this.routeDirectText(text), options.visualBridge);
     this.recordingController.onUtterance((audio) => {
       const task = this.transcribeAndRoute(audio).finally(() => {
         this.pendingTranscripts.delete(task);
@@ -174,13 +175,30 @@ export class VoiceHarnessRunner {
     this.writeLine("  /quit exits Voice Agent.");
   }
 
+  private async routeDirectText(text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      this.writeLine("[voice:direct] usage: enter text to send.");
+      return;
+    }
+
+    const transcript = createDirectTranscript(trimmed);
+    const applied = this.textContext.applyWithEntries(transcript);
+    await this.terminalHarness.processTranscript(applied.transcript, {
+      visualQuestionText: trimmed,
+      visualQuestionReferences: applied.entries
+    });
+  }
+
   private async transcribeAndRoute(audio: UtteranceAudio): Promise<void> {
     try {
       this.printAudioDiagnostics(audio);
       const transcript = await this.speechProcessor.transcribe(audio);
       this.printTranscript(transcript);
-      await this.terminalHarness.processTranscript(this.textContext.apply(transcript), {
-        visualQuestionText: transcript.text
+      const applied = this.textContext.applyWithEntries(transcript);
+      await this.terminalHarness.processTranscript(applied.transcript, {
+        visualQuestionText: transcript.text,
+        visualQuestionReferences: applied.entries
       });
     } catch (error) {
       this.writeLine(`[voice:error] ${formatError(error)}`);
@@ -256,6 +274,7 @@ export class AlwaysOnVoiceHarnessRunner {
       sendVisualContextEvent(options.visualBridge, entries)
     );
     bindVisualContextControls(this.textContext, options.visualBridge);
+    bindVisualDirectGoControls((text) => this.routeDirectText(text), options.visualBridge);
     bindVisualWakeSettingsControls(this, options.visualBridge);
     this.manualRecorder = new UtteranceRecorder({
       now: this.now,
@@ -432,8 +451,10 @@ export class AlwaysOnVoiceHarnessRunner {
 
       if (source === "manual") {
         this.printTranscript(transcript);
-        await this.terminalHarness.processTranscript(this.textContext.apply(transcript), {
-          visualQuestionText: transcript.text
+        const applied = this.textContext.applyWithEntries(transcript);
+        await this.terminalHarness.processTranscript(applied.transcript, {
+          visualQuestionText: transcript.text,
+          visualQuestionReferences: applied.entries
         });
         return;
       }
@@ -532,8 +553,12 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     const routedTranscript = withTranscriptText(transcript, wake.commandText);
-    await this.terminalHarness.processTranscript(wake.commandText ? this.textContext.apply(routedTranscript) : routedTranscript, {
-      visualQuestionText: wake.commandText || transcript.text
+    const applied = wake.commandText
+      ? this.textContext.applyWithEntries(routedTranscript)
+      : { transcript: routedTranscript, entries: [] };
+    await this.terminalHarness.processTranscript(applied.transcript, {
+      visualQuestionText: wake.commandText || transcript.text,
+      visualQuestionReferences: applied.entries
     });
   }
 
@@ -556,8 +581,10 @@ export class AlwaysOnVoiceHarnessRunner {
       await this.terminalHarness.stopVoiceOutput();
     }
     this.writeLine(`[wake:followup] phrase="${followUp.phrase}" command="${transcript.text.trim()}"`);
-    await this.terminalHarness.processTranscript(this.textContext.apply(transcript), {
-      visualQuestionText: transcript.text
+    const applied = this.textContext.applyWithEntries(transcript);
+    await this.terminalHarness.processTranscript(applied.transcript, {
+      visualQuestionText: transcript.text,
+      visualQuestionReferences: applied.entries
     });
     return true;
   }
@@ -773,8 +800,10 @@ export class AlwaysOnVoiceHarnessRunner {
       case "command":
         await this.terminalHarness.prepareForNewAgentTurn("New wake command requested");
         this.writeLine(`[barge:command] phrase="${decision.wake.phrase}" command="${decision.commandText}"`);
-        await this.terminalHarness.processTranscript(this.textContext.apply(withTranscriptText(transcript, decision.commandText)), {
-          visualQuestionText: decision.commandText
+        const applied = this.textContext.applyWithEntries(withTranscriptText(transcript, decision.commandText));
+        await this.terminalHarness.processTranscript(applied.transcript, {
+          visualQuestionText: decision.commandText,
+          visualQuestionReferences: applied.entries
         });
         return;
     }
@@ -782,6 +811,21 @@ export class AlwaysOnVoiceHarnessRunner {
 
   private sendBargeIgnoredVisualState(): void {
     this.terminalHarness.restoreCurrentVisualState();
+  }
+
+  private async routeDirectText(text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      this.writeLine("[voice:direct] usage: enter text to send.");
+      return;
+    }
+
+    const transcript = createDirectTranscript(trimmed, this.now, this.createId);
+    const applied = this.textContext.applyWithEntries(transcript);
+    await this.terminalHarness.processTranscript(applied.transcript, {
+      visualQuestionText: trimmed,
+      visualQuestionReferences: applied.entries
+    });
   }
 
   private releaseAudio(audio: UtteranceAudio, source: "candidate" | "manual"): void {
@@ -1333,12 +1377,24 @@ class SupplementalTextBuffer {
   }
 
   apply(transcript: Transcript): Transcript {
-    if (this.entries.length === 0) return transcript;
+    return this.applyWithEntries(transcript).transcript;
+  }
+
+  applyWithEntries(transcript: Transcript): { transcript: Transcript; entries: string[] } {
+    if (this.entries.length === 0) {
+      return {
+        transcript,
+        entries: []
+      };
+    }
 
     const entries = this.entries.splice(0);
     this.writeLine(`[voice:context] applied ${entries.length} item(s).`);
     this.emitChange();
-    return withTranscriptText(transcript, appendSupplementalText(transcript.text, entries));
+    return {
+      transcript: withTranscriptText(transcript, appendSupplementalText(transcript.text, entries)),
+      entries
+    };
   }
 
   private emitChange(): void {
@@ -1364,6 +1420,16 @@ function bindVisualContextControls(textContext: SupplementalTextBuffer, visualBr
       textContext.show();
       sendVisualContextList(visualBridge, textContext.snapshot());
     }
+  });
+}
+
+function bindVisualDirectGoControls(
+  onDirectGo: (text: string) => void | Promise<void>,
+  visualBridge: VisualBridgeLike | undefined
+): void {
+  visualBridge?.onControl((event) => {
+    if (event.action !== "direct_go") return;
+    void onDirectGo(event.text ?? "");
   });
 }
 
@@ -1417,6 +1483,26 @@ function appendSupplementalText(text: string, entries: string[]): string {
   const context = entries.map((entry) => `- ${entry}`).join("\n");
 
   return `${base}\n\n추가 정보:\n${context}`;
+}
+
+function createDirectTranscript(
+  text: string,
+  now: () => number = Date.now,
+  createId: (prefix: string) => string = (prefix) => `${prefix}_${now()}`
+): Transcript {
+  const timestamp = now();
+  const normalizedText = normalizeTranscriptText(text);
+
+  return {
+    id: createId("direct_tr"),
+    sessionId: createId("direct_sess"),
+    text,
+    normalizedText,
+    language: detectTranscriptLanguage(normalizedText),
+    confidence: 1,
+    startedAt: timestamp,
+    endedAt: timestamp
+  };
 }
 
 function formatWakeRejectedVisualText(wakePhrases: string[]): string {

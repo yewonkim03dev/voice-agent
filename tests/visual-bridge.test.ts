@@ -32,7 +32,8 @@ test("visual bridge serializes UI events as JSON", () => {
     {
       op: "voice-agent-ui",
       type: "question",
-      text: "테스트 돌려줘"
+      text: "테스트 돌려줘",
+      references: ["README 참고"]
     },
     {
       op: "voice-agent-ui",
@@ -89,6 +90,12 @@ test("visual bridge parses allowed control events only", () => {
     type: "control",
     action: "add_context",
     text: "README 참고"
+  });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"direct_go","text":"README 보고 요약해줘"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "direct_go",
+    text: "README 보고 요약해줘"
   });
   assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"show_context"}'), {
     op: "voice-agent-ui",
@@ -475,14 +482,18 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /Commands/u);
   assert.match(qml, /References/u);
   assert.match(qml, /add_context/u);
+  assert.match(qml, /direct_go/u);
   assert.match(qml, /clear_context/u);
   assert.match(qml, /show_context/u);
   assert.match(qml, /context_list/u);
   assert.match(qml, /referenceListPopup/u);
+  assert.match(qml, /currentQuestionReferences/u);
+  assert.match(qml, /function directGoFromInput/u);
+  assert.match(qml, /text: root\.uiText\("directGo"\)/u);
   assert.match(qml, /text: root\.uiText\("refs"\)/u);
   assert.match(qml, /contextEntries/u);
   assert.match(qml, /placeholderText: root\.uiText\("referenceText"\)/u);
-  assert.match(qml, /Visual에서는 \/add를 붙이지 않아도/u);
+  assert.match(qml, /Go sends the entered text directly to the agent/u);
   assert.doesNotMatch(qml, /WebView|WebEngine|Chromium|Electron|Tauri/iu);
 });
 
@@ -527,7 +538,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /"networkPolicyApprove": approvalNetworkPolicyPhrases/u);
   assert.match(swift, /final class QuestionLabelView: NSView/u);
   assert.match(swift, /private let questionView = QuestionLabelView\(frame: \.zero\)/u);
-  assert.match(swift, /func updateQuestion\(_ question: String\)/u);
+  assert.match(swift, /func updateQuestion\(_ question: String, references: \[String\] = \[\]\)/u);
   assert.match(swift, /final class ChatHistoryView: NSView/u);
   assert.match(swift, /final class ChatBubbleView: NSView/u);
   assert.match(swift, /private let textView = NSTextView\(frame: \.zero\)/u);
@@ -637,12 +648,13 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /private let hudContextField = NSTextField\(string: ""\)/u);
   assert.match(swift, /private let hudContextSummary = NSTextField\(labelWithString: "No references queued"\)/u);
   assert.match(swift, /onAddContext: @escaping \(String\) -> Void/u);
+  assert.match(swift, /onDirectContext: @escaping \(String\) -> Void/u);
   assert.match(swift, /onClearContext: @escaping \(\) -> Void/u);
   assert.match(swift, /func updateVolume\(rms: CGFloat, peak: CGFloat\)/u);
   assert.match(swift, /func update\(state: String, text: String\)/u);
   assert.match(swift, /hudCircle\.statusText = stateText\(state, language: uiLanguage\)/u);
   assert.doesNotMatch(swift, /hudCircle\.statusText = text\.isEmpty \? state : text/u);
-  assert.match(swift, /func updateQuestion\(_ question: String\)/u);
+  assert.match(swift, /func updateQuestion\(_ question: String, references: \[String\] = \[\]\)/u);
   assert.match(swift, /func updateContext\(_ entries: \[String\]\)/u);
   assert.match(swift, /func updateMicEnabled\(_ enabled: Bool\)/u);
   const hudUpdateMessage = swift.match(/func updateMessage\(_ text: String\) \{[\s\S]*?\n    \}/u);
@@ -652,6 +664,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /private let menuBarCompanion = MenuBarCompanion\(\)/u);
   assert.match(swift, /menuBarCompanion\.install/u);
   assert.match(swift, /onAddContext: \{ \[weak self\] text in self\?\.submitContext\(text\) \}/u);
+  assert.match(swift, /onDirectContext: \{ \[weak self\] text in self\?\.submitDirectContext\(text\) \}/u);
   assert.match(swift, /onClearContext: \{ \[weak self\] in self\?\.clearContext\(\) \}/u);
   assert.match(swift, /menuBarCompanion\.update\(state: circleView\.state, text: circleView\.statusText\)/u);
   assert.match(swift, /NSPopover/u);
@@ -669,6 +682,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /Clear Cmds/u);
   assert.match(swift, /References/u);
   assert.match(swift, /add_context/u);
+  assert.match(swift, /direct_go/u);
   assert.match(swift, /clear_context/u);
   assert.match(swift, /show_context/u);
   assert.match(swift, /context_list/u);
@@ -680,7 +694,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /hudContextField\.isEditable = true/u);
   assert.match(swift, /hudContextField\.isSelectable = true/u);
   assert.match(swift, /hudContextField\.action = #selector\(addContext\)/u);
-  assert.match(swift, /Visual에서는 \/add를 붙이지 않아도/u);
+  assert.match(swift, /Go sends the entered text directly to the agent/u);
   assert.match(swift, /No references queued/u);
   assert.doesNotMatch(swift, /WKWebView|WebView|Electron|Tauri/iu);
 });

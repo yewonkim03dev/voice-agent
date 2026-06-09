@@ -80,6 +80,7 @@ interface SpeakVisualOptions {
 
 interface ProcessTranscriptOptions {
   visualQuestionText?: string;
+  visualQuestionReferences?: string[];
 }
 
 export { ConsoleVoiceOutput } from "../voice/ConsoleVoiceOutput.ts";
@@ -590,7 +591,8 @@ export class TerminalHarness {
     }
 
     await this.sendPassthroughTranscript(wake ? withTranscriptText(transcript, promptText) : transcript, {
-      visualQuestionText: options.visualQuestionText ?? promptText
+      visualQuestionText: options.visualQuestionText ?? promptText,
+      visualQuestionReferences: options.visualQuestionReferences
     });
   }
 
@@ -618,7 +620,7 @@ export class TerminalHarness {
     };
 
     this.passthroughState = "EXECUTING";
-    this.sendVisualQuestion(options.visualQuestionText ?? transcript.text);
+    this.sendVisualQuestion(options.visualQuestionText ?? transcript.text, options.visualQuestionReferences);
     this.sendVisualState("submitting", "sending to agent");
     await this.backend.sendPrompt(prompt);
     this.codexStatus = {
@@ -1693,11 +1695,12 @@ export class TerminalHarness {
     });
   }
 
-  private sendVisualQuestion(text: string): void {
+  private sendVisualQuestion(text: string, references?: string[]): void {
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "question",
-      text: compactVisualQuestion(text)
+      text: compactVisualQuestion(text),
+      ...(references && references.length > 0 ? { references: references.map((entry) => entry.trim()).filter(Boolean) } : {})
     });
   }
 

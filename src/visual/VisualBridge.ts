@@ -25,6 +25,7 @@ export type VisualControlAction =
   | "add_context"
   | "clear_context"
   | "show_context"
+  | "direct_go"
   | "emergency_stop"
   | "reset_settings"
   | "update_wake_phrases"
@@ -82,6 +83,7 @@ export type VisualEvent =
       op: "voice-agent-ui";
       type: "question";
       text: string;
+      references?: string[];
     }
   | {
       op: "voice-agent-ui";
@@ -171,6 +173,8 @@ export class VisualBridge implements VisualBridgeLike {
   private readonly controlListeners: Array<(event: VisualControlEvent) => void> = [];
   private latestSettings: Extract<VisualEvent, { type: "settings" }> | undefined;
   private latestUsage: Extract<VisualEvent, { type: "usage" }> | undefined;
+  private latestQuestion: Extract<VisualEvent, { type: "question" }> | undefined;
+  private latestContext: Extract<VisualEvent, { type: "context" }> | undefined;
   private server: Server | undefined;
   private bridgeUrl: string | undefined;
 
@@ -202,6 +206,12 @@ export class VisualBridge implements VisualBridgeLike {
           }
           if (this.latestUsage) {
             readyClient.send(this.latestUsage);
+          }
+          if (this.latestContext) {
+            readyClient.send(this.latestContext);
+          }
+          if (this.latestQuestion) {
+            readyClient.send(this.latestQuestion);
           }
         },
         onControl: (event) => this.handleControl(event),
@@ -246,6 +256,8 @@ export class VisualBridge implements VisualBridgeLike {
   send(event: VisualEvent): void {
     this.rememberSettings(event);
     this.rememberUsage(event);
+    this.rememberQuestion(event);
+    this.rememberContext(event);
     const payload = serializeVisualEvent(event);
     for (const client of this.clients) {
       client.sendRaw(payload);
@@ -294,6 +306,27 @@ export class VisualBridge implements VisualBridgeLike {
       ...(event.updatedAt !== undefined ? { updatedAt: event.updatedAt } : {})
     };
   }
+
+  private rememberQuestion(event: VisualEvent): void {
+    if (event.type !== "question") return;
+
+    this.latestQuestion = {
+      op: "voice-agent-ui",
+      type: "question",
+      text: event.text,
+      ...(event.references !== undefined ? { references: [...event.references] } : {})
+    };
+  }
+
+  private rememberContext(event: VisualEvent): void {
+    if (event.type !== "context") return;
+
+    this.latestContext = {
+      op: "voice-agent-ui",
+      type: "context",
+      entries: [...event.entries]
+    };
+  }
 }
 
 export function serializeVisualEvent(event: VisualEvent): string {
@@ -318,6 +351,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "add_context" &&
     record.action !== "clear_context" &&
     record.action !== "show_context" &&
+    record.action !== "direct_go" &&
     record.action !== "emergency_stop" &&
     record.action !== "reset_settings" &&
     record.action !== "update_wake_phrases" &&

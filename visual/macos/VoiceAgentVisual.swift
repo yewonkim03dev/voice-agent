@@ -35,6 +35,7 @@ private let visualTextEn: [String: String] = [
     "referenceText": "reference text",
     "noReferencesQueued": "No references queued",
     "referenceCountSuffix": " reference item(s) queued",
+    "currentReferenceCountSuffix": " current reference item(s)",
     "queuedReferences": "Queued References",
     "qNone": "Q: none",
     "referencesQueuedNext": "References queued for the next routed request.",
@@ -56,6 +57,7 @@ private let visualTextEn: [String: String] = [
     "clearCmds": "Clear Cmds",
     "exit": "Exit",
     "add": "Add",
+    "directGo": "Go",
     "refs": "Refs",
     "clearRef": "Clear Ref",
     "clear": "Clear",
@@ -85,7 +87,7 @@ private let visualTextEn: [String: String] = [
     "networkPolicyAllow": "Network Allow",
     "quitVoiceAgent": "Quit Voice Agent",
     "voiceGuide": "1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn.",
-    "referenceHelp": "Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request.",
+    "referenceHelp": "Add queues references for the next request. Go sends the entered text directly to the agent.",
     "languageHelp": "Choose auto, Korean, or English for TTS and response language. Visual UI language applies after restart.",
     "genderHelp": "Sets preferred male or female voice when available.",
     "voiceHelp": "Overrides the voice with an installed macOS voice name.",
@@ -139,6 +141,7 @@ private let visualTextKo: [String: String] = [
     "referenceText": "참고자료 텍스트",
     "noReferencesQueued": "대기 중인 참고자료 없음",
     "referenceCountSuffix": "개 참고자료 대기 중",
+    "currentReferenceCountSuffix": "개 현재 질문 참고자료",
     "queuedReferences": "대기 중인 참고자료",
     "qNone": "Q: 없음",
     "referencesQueuedNext": "다음 요청에 붙을 참고자료가 대기 중입니다.",
@@ -160,6 +163,7 @@ private let visualTextKo: [String: String] = [
     "clearCmds": "명령 지우기",
     "exit": "종료",
     "add": "추가",
+    "directGo": "전송",
     "refs": "목록",
     "clearRef": "참고 지우기",
     "clear": "지우기",
@@ -189,7 +193,7 @@ private let visualTextKo: [String: String] = [
     "networkPolicyAllow": "네트워크 계속 허용",
     "quitVoiceAgent": "Voice Agent 종료",
     "voiceGuide": "1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. 참고자료는 다음 요청 한 번에만 붙습니다.\n5. 정지는 현재 에이전트 작업을 즉시 중단합니다.",
-    "referenceHelp": "파일명, URL, 조건 같은 참고자료만 적고 추가를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.",
+    "referenceHelp": "추가는 다음 요청에 붙일 참고자료를 큐에 넣습니다. 전송은 입력한 텍스트를 바로 에이전트에게 보냅니다.",
     "languageHelp": "TTS와 응답 언어를 자동, 한국어, 영어 중 선택합니다. Visual UI 언어는 다음 재시작 때 적용됩니다.",
     "genderHelp": "가능한 경우 남성/여성 음성 선호도를 적용합니다.",
     "voiceHelp": "macOS에 설치된 특정 음성 이름을 직접 지정합니다.",
@@ -266,14 +270,19 @@ private func displayText(_ rawText: String, state: String, language: UiLanguage)
     }
 }
 
-private func referenceSummary(_ count: Int, language: UiLanguage) -> String {
-    if count <= 0 {
+private func referenceSummary(queuedCount: Int, currentCount: Int = 0, language: UiLanguage) -> String {
+    if currentCount > 0 && queuedCount > 0 {
+        return "\(currentCount)" + localizedText("currentReferenceCountSuffix", language: language)
+            + " · "
+            + "\(queuedCount)" + localizedText("referenceCountSuffix", language: language)
+    }
+    if currentCount > 0 {
+        return "\(currentCount)" + localizedText("currentReferenceCountSuffix", language: language)
+    }
+    if queuedCount <= 0 {
         return localizedText("noReferencesQueued", language: language)
     }
-    if language == .ko {
-        return "\(count)" + localizedText("referenceCountSuffix", language: language)
-    }
-    return "\(count)" + localizedText("referenceCountSuffix", language: language)
+    return "\(queuedCount)" + localizedText("referenceCountSuffix", language: language)
 }
 
 private func sessionText(_ sessionId: String, language: UiLanguage) -> String {
@@ -768,6 +777,7 @@ final class VisualRootView: NSView {
     private let contextField: NSTextField
     private let contextSummary: NSTextField
     private let addContextButton: NSButton
+    private let directContextButton: NSButton
     private let clearContextButton: NSButton
     private let showContextButton: NSButton
     private let commandPanel = NSView(frame: .zero)
@@ -788,6 +798,7 @@ final class VisualRootView: NSView {
     private var currentSessionId = ""
     private var currentUsage = ""
     private var currentContextCount = 0
+    private var currentQuestionReferenceCount = 0
 
     init(
         circleView: AgentCircleView,
@@ -795,6 +806,7 @@ final class VisualRootView: NSView {
         contextField: NSTextField,
         contextSummary: NSTextField,
         addContextButton: NSButton,
+        directContextButton: NSButton,
         clearContextButton: NSButton,
         showContextButton: NSButton,
         controls: NSStackView
@@ -804,6 +816,7 @@ final class VisualRootView: NSView {
         self.contextField = contextField
         self.contextSummary = contextSummary
         self.addContextButton = addContextButton
+        self.directContextButton = directContextButton
         self.clearContextButton = clearContextButton
         self.showContextButton = showContextButton
         self.controls = controls
@@ -867,6 +880,7 @@ final class VisualRootView: NSView {
         commandPanel.addSubview(contextSummary)
 
         commandPanel.addSubview(addContextButton)
+        commandPanel.addSubview(directContextButton)
         commandPanel.addSubview(showContextButton)
         commandPanel.addSubview(clearContextButton)
 
@@ -1012,8 +1026,14 @@ final class VisualRootView: NSView {
             width: refButtonWidth,
             height: fieldHeight
         )
-        addContextButton.frame = NSRect(
+        directContextButton.frame = NSRect(
             x: showContextButton.frame.minX - refButtonWidth - 8,
+            y: clearContextButton.frame.minY,
+            width: refButtonWidth,
+            height: fieldHeight
+        )
+        addContextButton.frame = NSRect(
+            x: directContextButton.frame.minX - refButtonWidth - 8,
             y: clearContextButton.frame.minY,
             width: refButtonWidth,
             height: fieldHeight
@@ -1111,12 +1131,21 @@ final class VisualRootView: NSView {
 
     func updateContextSummary(_ count: Int) {
         currentContextCount = count
-        contextSummary.stringValue = referenceSummary(count, language: uiLanguage)
+        contextSummary.stringValue = referenceSummary(
+            queuedCount: count,
+            currentCount: currentQuestionReferenceCount,
+            language: uiLanguage
+        )
     }
 
-    func updateQuestion(_ question: String) {
+    func updateQuestion(_ question: String, references: [String] = []) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         questionView.question = trimmed
+        currentQuestionReferenceCount = references
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .count
+        updateContextSummary(currentContextCount)
     }
 
     func pushChat(role: String, kind: String, text: String) {
@@ -1162,6 +1191,10 @@ final class VisualRootView: NSView {
         guideButton.toolTip = localizedText("guideTooltip", language: uiLanguage)
         referenceHelpButton.helpText = localizedText("referenceHelp", language: uiLanguage)
         contextField.placeholderString = localizedText("referenceText", language: uiLanguage)
+        addContextButton.title = localizedText("add", language: uiLanguage)
+        directContextButton.title = localizedText("directGo", language: uiLanguage)
+        showContextButton.title = localizedText("refs", language: uiLanguage)
+        clearContextButton.title = localizedText("clearRef", language: uiLanguage)
         updateSessionId(currentSessionId)
         updateUsage(currentUsage)
         updateContextSummary(currentContextCount)
@@ -1640,6 +1673,7 @@ final class MenuBarCompanion {
     private weak var popoverMicButton: NSButton?
     private weak var popoverShowButton: NSButton?
     private weak var hudAddReferenceButton: NSButton?
+    private weak var hudDirectReferenceButton: NSButton?
     private weak var hudShowReferenceButton: NSButton?
     private weak var hudClearReferenceButton: NSButton?
     private weak var hudStopButton: NSButton?
@@ -1661,6 +1695,7 @@ final class MenuBarCompanion {
     private var onTtsStop: (() -> Void)?
     private var onShowWindow: (() -> Void)?
     private var onAddContext: ((String) -> Void)?
+    private var onDirectContext: ((String) -> Void)?
     private var onClearContext: (() -> Void)?
     private var onShowContext: (() -> Void)?
     private var onMicToggle: (() -> Void)?
@@ -1669,6 +1704,7 @@ final class MenuBarCompanion {
     private var currentState = "idle"
     private var currentDetail = "waiting for bridge"
     private var currentQuestion = ""
+    private var currentQuestionReferences: [String] = []
     private var currentUsage = ""
     private var currentContextCount = 0
 
@@ -1677,6 +1713,7 @@ final class MenuBarCompanion {
         onTtsStop: @escaping () -> Void,
         onShowWindow: @escaping () -> Void,
         onAddContext: @escaping (String) -> Void,
+        onDirectContext: @escaping (String) -> Void,
         onClearContext: @escaping () -> Void,
         onShowContext: @escaping () -> Void,
         onMicToggle: @escaping () -> Void
@@ -1685,6 +1722,7 @@ final class MenuBarCompanion {
         self.onTtsStop = onTtsStop
         self.onShowWindow = onShowWindow
         self.onAddContext = onAddContext
+        self.onDirectContext = onDirectContext
         self.onClearContext = onClearContext
         self.onShowContext = onShowContext
         self.onMicToggle = onMicToggle
@@ -1729,11 +1767,15 @@ final class MenuBarCompanion {
         hudDetailLabel.stringValue = displayText(text, state: state, language: uiLanguage)
     }
 
-    func updateQuestion(_ question: String) {
+    func updateQuestion(_ question: String, references: [String] = []) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         currentQuestion = trimmed
+        currentQuestionReferences = references
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         questionLabel.stringValue = trimmed.isEmpty ? localizedText("qNone", language: uiLanguage) : "Q: \(trimmed)"
         hudQuestionLabel.stringValue = trimmed.isEmpty ? "" : "Q: \(trimmed)"
+        updateContext(Array(repeating: "", count: currentContextCount))
     }
 
     func updateUsage(_ usage: String) {
@@ -1746,13 +1788,14 @@ final class MenuBarCompanion {
 
     func updateContext(_ entries: [String]) {
         currentContextCount = entries.count
-        if entries.isEmpty {
-            hudContextSummary.stringValue = referenceSummary(0, language: uiLanguage)
+        let currentCount = currentQuestionReferences.count
+        if entries.isEmpty && currentCount == 0 {
+            hudContextSummary.stringValue = referenceSummary(queuedCount: 0, language: uiLanguage)
             hudContextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
             return
         }
 
-        hudContextSummary.stringValue = referenceSummary(entries.count, language: uiLanguage)
+        hudContextSummary.stringValue = referenceSummary(queuedCount: entries.count, currentCount: currentCount, language: uiLanguage)
         hudContextSummary.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.40, alpha: 1)
     }
 
@@ -1798,6 +1841,14 @@ final class MenuBarCompanion {
     @objc private func addContext() {
         let text = hudContextField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         onAddContext?(text)
+        if !text.isEmpty {
+            hudContextField.stringValue = ""
+        }
+    }
+
+    @objc private func directContext() {
+        let text = hudContextField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        onDirectContext?(text)
         if !text.isEmpty {
             hudContextField.stringValue = ""
         }
@@ -1967,22 +2018,27 @@ final class MenuBarCompanion {
         hudContextField.isSelectable = true
         hudContextField.target = self
         hudContextField.action = #selector(addContext)
-        hudContextField.frame = NSRect(x: 14, y: 80, width: 134, height: 22)
+        hudContextField.frame = NSRect(x: 14, y: 80, width: 100, height: 22)
         view.addSubview(hudContextField)
 
         let addReference = NSButton(title: localizedText("add", language: uiLanguage), target: self, action: #selector(addContext))
         hudAddReferenceButton = addReference
-        addReference.frame = NSRect(x: 156, y: 78, width: 48, height: 26)
+        addReference.frame = NSRect(x: 120, y: 78, width: 42, height: 26)
         view.addSubview(addReference)
+
+        let directReference = NSButton(title: localizedText("directGo", language: uiLanguage), target: self, action: #selector(directContext))
+        hudDirectReferenceButton = directReference
+        directReference.frame = NSRect(x: 166, y: 78, width: 42, height: 26)
+        view.addSubview(directReference)
 
         let showReference = NSButton(title: localizedText("refs", language: uiLanguage), target: self, action: #selector(showContext))
         hudShowReferenceButton = showReference
-        showReference.frame = NSRect(x: 210, y: 78, width: 48, height: 26)
+        showReference.frame = NSRect(x: 212, y: 78, width: 42, height: 26)
         view.addSubview(showReference)
 
         let clearReference = NSButton(title: localizedText("clear", language: uiLanguage), target: self, action: #selector(clearContext))
         hudClearReferenceButton = clearReference
-        clearReference.frame = NSRect(x: 264, y: 78, width: 48, height: 26)
+        clearReference.frame = NSRect(x: 258, y: 78, width: 54, height: 26)
         view.addSubview(clearReference)
 
         let stop = NSButton(title: localizedText("stop", language: uiLanguage), target: self, action: #selector(stopAgent))
@@ -2026,6 +2082,7 @@ final class MenuBarCompanion {
         popoverMicButton?.title = localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage)
         popoverShowButton?.title = localizedText("show", language: uiLanguage)
         hudAddReferenceButton?.title = localizedText("add", language: uiLanguage)
+        hudDirectReferenceButton?.title = localizedText("directGo", language: uiLanguage)
         hudShowReferenceButton?.title = localizedText("refs", language: uiLanguage)
         hudClearReferenceButton?.title = localizedText("clear", language: uiLanguage)
         hudStopButton?.title = localizedText("stop", language: uiLanguage)
@@ -2034,7 +2091,7 @@ final class MenuBarCompanion {
         hudShowButton?.title = localizedText("show", language: uiLanguage)
         hudContextField.placeholderString = localizedText("referenceText", language: uiLanguage)
         update(state: currentState, text: currentDetail)
-        updateQuestion(currentQuestion)
+        updateQuestion(currentQuestion, references: currentQuestionReferences)
         updateUsage(currentUsage)
         updateContext(Array(repeating: "", count: currentContextCount))
     }
@@ -2066,6 +2123,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var webSocket: URLSessionWebSocketTask?
     private var commands: [String] = []
     private var contextEntries: [String] = []
+    private var currentQuestionReferences: [String] = []
     private var settingsWindow: NSWindow?
     private let settingsLanguagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let settingsGenderPopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -2133,6 +2191,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             onTtsStop: { [weak self] in self?.sendControl("tts_stop") },
             onShowWindow: { [weak self] in self?.showMainWindow() },
             onAddContext: { [weak self] text in self?.submitContext(text) },
+            onDirectContext: { [weak self] text in self?.submitDirectContext(text) },
             onClearContext: { [weak self] in self?.clearContext() },
             onShowContext: { [weak self] in self?.showContext() },
             onMicToggle: { [weak self] in self?.toggleMicInput() }
@@ -2182,6 +2241,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             contextField: contextField,
             contextSummary: contextSummary,
             addContextButton: button(localizedText("add", language: uiLanguage), action: #selector(addContext)),
+            directContextButton: button(localizedText("directGo", language: uiLanguage), action: #selector(directContext)),
             clearContextButton: button(localizedText("clearRef", language: uiLanguage), action: #selector(clearContext)),
             showContextButton: button(localizedText("refs", language: uiLanguage), action: #selector(showContext)),
             controls: controls
@@ -2290,9 +2350,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             NSSound.beep()
         case "question":
             let question = event["text"] as? String ?? ""
-            rootView?.updateQuestion(question)
+            let references = event["references"] as? [String] ?? []
+            currentQuestionReferences = references
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            rootView?.updateQuestion(question, references: currentQuestionReferences)
             rootView?.pushChat(role: "user", kind: "question", text: question)
-            menuBarCompanion.updateQuestion(question)
+            menuBarCompanion.updateQuestion(question, references: currentQuestionReferences)
         case "command":
             let command = event["text"] as? String ?? ""
             pushCommand(command)
@@ -2436,12 +2500,27 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         }
     }
 
+    @objc private func directContext() {
+        submitDirectContext(contextField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func submitDirectContext(_ text: String) {
+        sendControl("direct_go", text: text)
+        if !text.isEmpty {
+            contextField.stringValue = ""
+        }
+    }
+
     @objc private func clearContext() {
         updateContext([])
         sendControl("clear_context")
     }
 
     @objc private func showContext() {
+        if !currentQuestionReferences.isEmpty {
+            showContextList(currentQuestionReferences)
+            return
+        }
         sendControl("show_context")
     }
 
@@ -2509,14 +2588,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private func updateContext(_ entries: [String]) {
         contextEntries = Array(entries.prefix(8))
         if contextEntries.isEmpty {
-            contextSummary.stringValue = referenceSummary(0, language: uiLanguage)
+            contextSummary.stringValue = referenceSummary(queuedCount: 0, language: uiLanguage)
             contextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
             rootView?.updateContextSummary(0)
             menuBarCompanion.updateContext(contextEntries)
             return
         }
 
-        contextSummary.stringValue = referenceSummary(contextEntries.count, language: uiLanguage)
+        contextSummary.stringValue = referenceSummary(queuedCount: contextEntries.count, language: uiLanguage)
         contextSummary.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.40, alpha: 1)
         rootView?.updateContextSummary(contextEntries.count)
         menuBarCompanion.updateContext(contextEntries)

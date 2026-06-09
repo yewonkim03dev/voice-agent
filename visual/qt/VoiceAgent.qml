@@ -17,6 +17,7 @@ ApplicationWindow {
     property string statusText: bridgeUrl.length > 0 ? "connecting" : "waiting for bridge"
     property string usageText: ""
     property string currentQuestion: ""
+    property var currentQuestionReferences: []
     property var chatItems: []
     property real rms: 0.0
     property real peak: 0.0
@@ -93,10 +94,12 @@ ApplicationWindow {
             references: "참고자료",
             referenceText: "참고자료 텍스트",
             add: "추가",
+            directGo: "전송",
             refs: "목록",
             clearRef: "참고 지우기",
             noReferencesQueued: "대기 중인 참고자료 없음",
             referenceCountSuffix: "개 참고자료 대기 중",
+            currentReferenceCountSuffix: "개 현재 질문 참고자료",
             commands: "명령",
             recentQa: "최근 Q/A",
             hide: "숨기기",
@@ -137,7 +140,7 @@ ApplicationWindow {
             command: "명령",
             status: "상태",
             voiceGuide: "1. 코덱스, 자비스 같은 호출어를 먼저 말하세요.\n2. 이어서 자연어로 할 일을 말하면 에이전트에게 그대로 전달됩니다.\n3. 권한 요청 중에는 허용/거부/이번 세션 동안 허용만 말하면 됩니다.\n4. 참고자료는 다음 요청 한 번에만 붙습니다.\n5. 정지는 현재 에이전트 작업을 즉시 중단합니다.",
-            referenceHelp: "파일명, URL, 조건 같은 참고자료만 적고 추가를 누르세요. Visual에서는 /add를 붙이지 않아도 CLI /add와 같은 참고자료 큐로 들어갑니다.",
+            referenceHelp: "추가는 다음 요청에 붙일 참고자료를 큐에 넣습니다. 전송은 입력한 텍스트를 바로 에이전트에게 보냅니다.",
             languageHelp: "TTS와 응답 언어를 선택합니다. Visual UI 언어는 다음 재시작 때 적용됩니다.",
             genderHelp: "가능한 경우 남성/여성 음성 선호도를 적용합니다.",
             voiceHelp: "설치된 macOS 음성 이름을 직접 지정합니다.",
@@ -185,10 +188,12 @@ ApplicationWindow {
             references: "References",
             referenceText: "reference text",
             add: "Add",
+            directGo: "Go",
             refs: "Refs",
             clearRef: "Clear Ref",
             noReferencesQueued: "No references queued",
             referenceCountSuffix: " reference item(s) queued",
+            currentReferenceCountSuffix: " current reference item(s)",
             commands: "Commands",
             recentQa: "Recent Q/A",
             hide: "Hide",
@@ -229,7 +234,7 @@ ApplicationWindow {
             command: "command",
             status: "status",
             voiceGuide: "1. Say a wake phrase first, such as codex or jarvis.\n2. Then speak naturally; the command is passed through to the agent.\n3. During approvals, say approve, deny, or approve for this session.\n4. References are attached to the next request only.\n5. STOP interrupts the current agent turn.",
-            referenceHelp: "Enter filenames, URLs, or constraints only. Visual wraps them like CLI /add and attaches them to the next wake request.",
+            referenceHelp: "Add queues references for the next request. Go sends the entered text directly to the agent.",
             languageHelp: "Choose TTS and response language. Visual UI language applies after restart.",
             genderHelp: "Sets preferred voice gender when available.",
             voiceHelp: "Overrides the installed macOS voice name.",
@@ -503,6 +508,12 @@ ApplicationWindow {
         if (text.length > 0) contextInput.text = ""
     }
 
+    function directGoFromInput() {
+        var text = contextInput.text.trim()
+        root.sendControl("direct_go", text)
+        if (text.length > 0) contextInput.text = ""
+    }
+
     function pushCommand(text) {
         var next = commands.slice()
         next.unshift(text)
@@ -515,6 +526,31 @@ ApplicationWindow {
         return entries.map(function(entry, index) {
             return (index + 1) + ". " + entry
         }).join("\n")
+    }
+
+    function referenceSummaryText() {
+        var currentCount = root.currentQuestionReferences ? root.currentQuestionReferences.length : 0
+        var queuedCount = root.contextEntries ? root.contextEntries.length : 0
+        if (currentCount > 0 && queuedCount > 0) {
+            return currentCount + root.uiText("currentReferenceCountSuffix") + " · " + queuedCount + root.uiText("referenceCountSuffix")
+        }
+        if (currentCount > 0) return currentCount + root.uiText("currentReferenceCountSuffix")
+        if (queuedCount > 0) return queuedCount + root.uiText("referenceCountSuffix")
+        return root.uiText("noReferencesQueued")
+    }
+
+    function visibleReferenceEntries() {
+        if (root.currentQuestionReferences && root.currentQuestionReferences.length > 0) return root.currentQuestionReferences
+        return root.contextEntries || []
+    }
+
+    function showReferences() {
+        var entries = root.visibleReferenceEntries()
+        root.referenceListText = root.formatReferenceList(entries)
+        referenceListPopup.open()
+        if (!root.currentQuestionReferences || root.currentQuestionReferences.length === 0) {
+            root.sendControl("show_context")
+        }
     }
 
     function pushChat(role, kind, text) {
@@ -642,6 +678,8 @@ ApplicationWindow {
                 glowReset.restart()
             } else if (event.type === "question") {
                 root.currentQuestion = event.text || ""
+                root.currentQuestionReferences = event.references || []
+                root.referenceListText = root.formatReferenceList(root.visibleReferenceEntries())
                 root.pushChat("user", "question", event.text)
             } else if (event.type === "command") {
                 root.pushCommand(event.text)
@@ -1295,8 +1333,13 @@ ApplicationWindow {
                     }
 
                     Button {
+                        text: root.uiText("directGo")
+                        onClicked: root.directGoFromInput()
+                    }
+
+                    Button {
                         text: root.uiText("refs")
-                        onClicked: root.sendControl("show_context")
+                        onClicked: root.showReferences()
                     }
 
                     Button {
@@ -1307,8 +1350,8 @@ ApplicationWindow {
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.contextEntries.length > 0 ? root.contextEntries.length + root.uiText("referenceCountSuffix") : root.uiText("noReferencesQueued")
-                    color: root.contextEntries.length > 0 ? "#ffd166" : "#68778b"
+                    text: root.referenceSummaryText()
+                    color: root.currentQuestionReferences.length > 0 || root.contextEntries.length > 0 ? "#ffd166" : "#68778b"
                     font.pixelSize: 12
                     elide: Text.ElideRight
                 }
