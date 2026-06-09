@@ -422,6 +422,21 @@ test("always-on voice runner toggles microphone from visual control", async () =
   assert.equal(backend.prompts[0].text, "다시 돌려줘");
 });
 
+test("always-on voice runner prints complete voice help", async () => {
+  const { runner, logs } = createAlwaysOnRunner([]);
+
+  await runner.start();
+  await runner.processLine("/help");
+  await runner.stop();
+
+  assert.ok(logs.includes("Commands:"));
+  assert.ok(logs.includes("  /record starts or stops manual recording."));
+  assert.ok(logs.includes("  /mic toggles microphone listening on/off."));
+  assert.ok(logs.includes("  /mic-reconnect rebuilds or restarts microphone input."));
+  assert.ok(logs.includes("  /add <text> queues additional info for the next voice transcript."));
+  assert.ok(logs.includes("  /refs lists queued additional info."));
+});
+
 test("always-on voice runner maps audio input recovery status to visual state", async () => {
   const visualBridge = new FakeVisualBridge();
   const { runner, audioInput, logs } = createAlwaysOnRunner([], {
@@ -1908,7 +1923,10 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:permission] 명령 실행 권한 필요해."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:cue] approval ready \u0007"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  Wake: 코덱스 <명령>"), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("  /help shows available terminal commands."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("  /mic toggles microphone listening on/off."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /refs lists queued additional info."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("Type /help to show available commands."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[codex-app] turn/start sess_1: 날씨 확인해줘"), false);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[wake:candidate] start preRollFrames=8 preRollBytes=32768"), false);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[audio] bytes=1024 durationMs=100 rms=0.01 peak=0.1"), false);

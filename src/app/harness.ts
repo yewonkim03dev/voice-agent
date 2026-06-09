@@ -362,12 +362,12 @@ export class TerminalHarness {
     this.sendVisualTtsSettings();
     this.printStartupBanner();
     if (this.runtime) {
-      this.writeLine("  Type text to send a transcript, or /status, /permission <command>, /complete, /error <message>, /tts-stop, /quit.");
+      this.writeLine("  Type text to send a transcript, or /help for terminal commands.");
     } else {
       this.writeLine("  Wake: 코덱스 <명령> / 클로드 <명령>");
       this.writeLine("  Plain text also passes through in development mode.");
       this.writeLine("  Approval: 허용 / 거부 / 이번 세션 동안 허용");
-      this.writeLine("  Commands: /status /tts-stop /quit");
+      this.writeLine("  Commands: /help /status /tts-stop /quit");
     }
   }
 
@@ -1211,6 +1211,9 @@ export class TerminalHarness {
     const { command, argument } = parseSlashCommand(line);
 
     switch (command) {
+      case "/help":
+        this.printHelp();
+        return "continue";
       case "/status":
         this.printStatus();
         return "continue";
@@ -1233,9 +1236,22 @@ export class TerminalHarness {
         return "quit";
       default:
         this.writeLine(`[harness] unknown command: ${command}`);
-        this.writeLine("Commands: /status, /permission <command>, /complete, /error <message>, /tts-stop, /quit");
+        this.writeLine("Type /help to show available commands.");
         return "continue";
     }
+  }
+
+  private printHelp(): void {
+    this.writeLine("Commands:");
+    this.writeLine("  /help shows this command list.");
+    this.writeLine("  /status shows the current agent status.");
+    if (this.runtime) {
+      this.writeLine("  /permission <command> asks for a mock command approval.");
+      this.writeLine("  /complete emits a mock task completion.");
+      this.writeLine("  /error <message> emits a mock harness error.");
+    }
+    this.writeLine("  /tts-stop stops current TTS playback.");
+    this.writeLine("  /quit exits Voice Agent.");
   }
 
   private async requestPermission(command: string): Promise<void> {

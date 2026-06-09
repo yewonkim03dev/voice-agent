@@ -104,6 +104,7 @@ export class VoiceHarnessRunner {
     await this.recordingController.start();
     this.started = true;
     this.writeLine("  Voice input: /record to start, /record again to stop.");
+    this.writeLine("  /help shows available terminal commands.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
     this.writeLine("  /refs lists queued additional info.");
     this.writeLine("  STT output is printed as [stt:<language>] before routing.");
@@ -121,6 +122,11 @@ export class VoiceHarnessRunner {
   async processLine(line: string): Promise<"continue" | "quit"> {
     const text = line.trim();
     if (!text) return "continue";
+
+    if (isHelpCommand(text)) {
+      this.printHelp();
+      return "continue";
+    }
 
     if (text === "/record") {
       this.gate.toggle();
@@ -155,6 +161,17 @@ export class VoiceHarnessRunner {
 
   async drain(): Promise<void> {
     await Promise.all([...this.pendingTranscripts]);
+  }
+
+  private printHelp(): void {
+    this.writeLine("Commands:");
+    this.writeLine("  /help shows this command list.");
+    this.writeLine("  /record starts or stops manual recording.");
+    this.writeLine("  /add <text> queues additional info for the next voice transcript.");
+    this.writeLine("  /refs lists queued additional info.");
+    this.writeLine("  /status shows the current agent status.");
+    this.writeLine("  /tts-stop stops current TTS playback.");
+    this.writeLine("  /quit exits Voice Agent.");
   }
 
   private async transcribeAndRoute(audio: UtteranceAudio): Promise<void> {
@@ -263,6 +280,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine("  Voice input: always-on wake listening enabled.");
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ")}`);
     this.writeLine("  Manual fallback: /record to start, /record again to stop.");
+    this.writeLine("  /help shows available terminal commands.");
     this.writeLine("  /mic toggles microphone listening on/off.");
     this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
     this.writeLine("  /add <text> queues additional info for the next voice transcript.");
@@ -289,6 +307,11 @@ export class AlwaysOnVoiceHarnessRunner {
   async processLine(line: string): Promise<"continue" | "quit"> {
     const text = line.trim();
     if (!text) return "continue";
+
+    if (isHelpCommand(text)) {
+      this.printHelp();
+      return "continue";
+    }
 
     if (text === "/record") {
       this.toggleManualRecording();
@@ -328,6 +351,19 @@ export class AlwaysOnVoiceHarnessRunner {
 
   async drain(): Promise<void> {
     await Promise.all([...this.pendingTranscripts]);
+  }
+
+  private printHelp(): void {
+    this.writeLine("Commands:");
+    this.writeLine("  /help shows this command list.");
+    this.writeLine("  /record starts or stops manual recording.");
+    this.writeLine("  /mic toggles microphone listening on/off.");
+    this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
+    this.writeLine("  /add <text> queues additional info for the next voice transcript.");
+    this.writeLine("  /refs lists queued additional info.");
+    this.writeLine("  /status shows the current agent status.");
+    this.writeLine("  /tts-stop stops current TTS playback.");
+    this.writeLine("  /quit exits Voice Agent.");
   }
 
   private consumeFrame(frame: AudioFrame): void {
@@ -1086,6 +1122,8 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (visible.startsWith("[voice:context]")) return true;
   if (visible.startsWith("[voice]")) return true;
   if (visible === "Harness stopped.") return true;
+  if (visible.startsWith("Type /help ")) return true;
+  if (isVisibleHelpCommandLine(visible)) return true;
 
   if (
     visible.includes("VOICE AGENT HARNESS READY") ||
@@ -1102,6 +1140,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
     visible.startsWith("Voice input:") ||
     visible.startsWith("Wake phrases:") ||
     visible.startsWith("Manual fallback:") ||
+    visible.startsWith("/help ") ||
     visible.startsWith("/add ") ||
     visible.startsWith("/refs ") ||
     visible.startsWith("STT output ")
@@ -1110,6 +1149,10 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   }
 
   return false;
+}
+
+function isVisibleHelpCommandLine(visible: string): boolean {
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|add|refs)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {
@@ -1405,6 +1448,10 @@ function isShowContextCommand(text: string): boolean {
 
 function isMicToggleCommand(text: string): boolean {
   return /^\/(?:mic|mic-toggle|microphone)$/iu.test(text.trim());
+}
+
+function isHelpCommand(text: string): boolean {
+  return /^\/(?:help|commands|\?)$/iu.test(text.trim());
 }
 
 function isMicReconnectCommand(text: string): boolean {

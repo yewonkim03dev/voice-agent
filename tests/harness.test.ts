@@ -73,6 +73,39 @@ test("tts-stop slash command stops current voice output", async () => {
   assert.ok(lines.includes("[tts] stopped."));
 });
 
+test("help slash command prints terminal commands", async () => {
+  const lines: string[] = [];
+  const harness = new TerminalHarness({
+    now: () => 1000,
+    createId: createTestId(),
+    writeLine: (line) => lines.push(line)
+  });
+
+  await harness.start();
+  await harness.processLine("/help");
+
+  assert.ok(lines.includes("Commands:"));
+  assert.ok(lines.includes("  /help shows this command list."));
+  assert.ok(lines.includes("  /status shows the current agent status."));
+  assert.ok(lines.includes("  /tts-stop stops current TTS playback."));
+  assert.ok(lines.includes("  /quit exits Voice Agent."));
+});
+
+test("unknown slash command suggests help", async () => {
+  const lines: string[] = [];
+  const harness = new TerminalHarness({
+    now: () => 1000,
+    createId: createTestId(),
+    writeLine: (line) => lines.push(line)
+  });
+
+  await harness.start();
+  await harness.processLine("/nope");
+
+  assert.ok(lines.includes("[harness] unknown command: /nope"));
+  assert.ok(lines.includes("Type /help to show available commands."));
+});
+
 test("visual control tts_stop stops current voice output", async () => {
   const voiceOutput = new StoppableVoiceOutput();
   const visualBridge = new FakeVisualBridge();
