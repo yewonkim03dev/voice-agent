@@ -62,6 +62,7 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   bargeInPolicy?: BargeInPolicy;
   now?: () => number;
   createId?: (prefix: string) => string;
+  wakeFollowUpWindowMs?: number;
 }
 
 export class VoiceHarnessRunner {
@@ -238,6 +239,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly bargeInPolicy: BargeInPolicy;
   private readonly now: () => number;
   private readonly createId: (prefix: string) => string;
+  private readonly wakeFollowUpWindowMs: number;
   private readonly manualRecorder: UtteranceRecorder;
   private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
@@ -255,8 +257,10 @@ export class AlwaysOnVoiceHarnessRunner {
         phrase: string;
         armedAt: number;
         expiresAt: number;
+        inputStarted: boolean;
       }
     | undefined;
+  private wakeFollowUpTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: AlwaysOnVoiceHarnessRunnerOptions) {
     this.terminalHarness = options.terminalHarness;
@@ -272,6 +276,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy();
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? ((prefix) => `${prefix}_${this.now()}`);
+    this.wakeFollowUpWindowMs = options.wakeFollowUpWindowMs ?? wakeFollowUpWindowMs;
     this.textContext = new SupplementalTextBuffer(this.writeLine, (entries) =>
       sendVisualContextEvent(options.visualBridge, entries)
     );
@@ -321,6 +326,7 @@ export class AlwaysOnVoiceHarnessRunner {
     await this.audioInput.stop();
     await this.wakeStreamDetector.stop?.();
     await this.drain();
+    this.clearWakeFollowUp();
     await this.terminalHarness.stop();
     this.started = false;
   }
@@ -593,28 +599,63 @@ export class AlwaysOnVoiceHarnessRunner {
 
   private armWakeFollowUp(phrase: string): void {
     const armedAt = this.now();
+    this.clearWakeFollowUp();
     this.wakeFollowUp = {
       phrase,
       armedAt,
-      expiresAt: armedAt + wakeFollowUpWindowMs
+      expiresAt: armedAt + this.wakeFollowUpWindowMs,
+      inputStarted: false
     };
-    this.writeLine(`[wake:armed] phrase="${phrase}" timeoutMs=${wakeFollowUpWindowMs}`);
+    this.wakeFollowUpTimer = setTimeout(() => {
+      this.expireWakeFollowUp(phrase);
+    }, this.wakeFollowUpWindowMs);
+    this.writeLine(`[wake:armed] phrase="${phrase}" timeoutMs=${this.wakeFollowUpWindowMs}`);
   }
 
-  private activeWakeFollowUp(): { phrase: string; armedAt: number; expiresAt: number } | undefined {
+  private activeWakeFollowUp(): { phrase: string; armedAt: number; expiresAt: number; inputStarted: boolean } | undefined {
     if (!this.wakeFollowUp) return undefined;
 
-    if (this.wakeFollowUp.expiresAt < this.now()) {
-      this.writeLine(`[wake:followup] expired phrase="${this.wakeFollowUp.phrase}"`);
-      this.clearWakeFollowUp();
+    if (!this.wakeFollowUp.inputStarted && this.wakeFollowUp.expiresAt < this.now()) {
+      this.expireWakeFollowUp(this.wakeFollowUp.phrase);
       return undefined;
     }
 
     return this.wakeFollowUp;
   }
 
+  private captureWakeFollowUpCandidate(): boolean {
+    const followUp = this.activeWakeFollowUp();
+    if (!followUp) return false;
+
+    followUp.inputStarted = true;
+    this.clearWakeFollowUpTimer();
+    return true;
+  }
+
+  private expireWakeFollowUp(phrase: string): void {
+    const followUp = this.wakeFollowUp;
+    if (!followUp || followUp.phrase !== phrase || followUp.inputStarted) return;
+
+    this.writeLine(`[wake:followup] expired phrase="${followUp.phrase}"`);
+    this.clearWakeFollowUp();
+    if (!this.terminalHarness.hasPendingApproval() && !this.terminalHarness.isAgentRequestActive()) {
+      this.terminalHarness.sendVisualEvent({
+        op: "voice-agent-ui",
+        type: "state",
+        state: "idle"
+      });
+    }
+  }
+
   private clearWakeFollowUp(): void {
+    this.clearWakeFollowUpTimer();
     this.wakeFollowUp = undefined;
+  }
+
+  private clearWakeFollowUpTimer(): void {
+    if (!this.wakeFollowUpTimer) return;
+    clearTimeout(this.wakeFollowUpTimer);
+    this.wakeFollowUpTimer = undefined;
   }
 
   toggleMicInput(enabled = !this.micEnabled): void {
@@ -847,7 +888,7 @@ export class AlwaysOnVoiceHarnessRunner {
       case "candidate_start":
         this.provisionalWake = undefined;
         this.wakeStreamDetector.reset();
-        this.candidateVisualState = this.shouldShowCandidateVisualState();
+        this.candidateVisualState = this.captureWakeFollowUpCandidate() || this.shouldShowCandidateVisualState();
         if (this.candidateVisualState) this.sendListeningVisualState("listening");
         if (this.debug) {
           this.writeLine(

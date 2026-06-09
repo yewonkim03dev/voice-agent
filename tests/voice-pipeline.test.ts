@@ -1226,6 +1226,41 @@ test("always-on voice runner routes one follow-up command after wake-only speech
   assert.equal(logs.filter((line) => line.startsWith("[wake:followup]")).length, 1);
 });
 
+test("always-on voice runner expires wake follow-up before the next speech starts", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
+    [
+      {
+        text: "코덱스",
+        language: "ko"
+      },
+      {
+        text: "테스트 돌려줘",
+        language: "ko"
+      }
+    ],
+    {
+      visualBridge,
+      wakeFollowUpWindowMs: 5
+    }
+  );
+
+  await runner.start();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  await flushAsync();
+  emitCandidate(audioInput, 2000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(backend.prompts.length, 0);
+  assert.ok(logs.includes('[wake:armed] phrase="코덱스" timeoutMs=5'));
+  assert.ok(logs.includes('[wake:followup] expired phrase="코덱스"'));
+  assert.ok(logs.includes("[wake:discard] no configured wake phrase matched."));
+  assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "idle"), true);
+});
+
 test("always-on voice runner does not create ready TTS echo after wake-only speech", async () => {
   const voiceOutput = new InspectableTestVoiceOutput();
   const { backend, runner, audioInput, logs } = createAlwaysOnRunner(
@@ -2180,6 +2215,7 @@ function createAlwaysOnRunner(
     speechProcessor?: SpeechProcessor;
     wakeStreamDetector?: WakeStreamDetector;
     debug?: boolean;
+    wakeFollowUpWindowMs?: number;
   } = {}
 ): {
   backend: InMemoryAgentBackend;
@@ -2218,6 +2254,7 @@ function createAlwaysOnRunner(
     writeLine: (line) => logs.push(line),
     now: () => 1000,
     createId,
+    wakeFollowUpWindowMs: options.wakeFollowUpWindowMs,
     debug: options.debug ?? true
   });
 
