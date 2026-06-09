@@ -43,6 +43,7 @@ export interface VoiceHarnessRunnerOptions {
   recordingController: RecordingController;
   speechProcessor: SpeechProcessor;
   visualBridge?: VisualBridgeLike;
+  settingsPersistence?: VoiceSettingsPersistence;
   writeLine?: WriteLine;
   debug?: boolean;
 }
@@ -235,6 +236,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private wakePhrases: string[];
   private readonly writeLine: WriteLine;
   private readonly debug: boolean;
+  private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
   private readonly echoGuard: EchoGuard;
   private readonly bargeInPolicy: BargeInPolicy;
   private readonly now: () => number;
@@ -243,6 +245,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly manualRecorder: UtteranceRecorder;
   private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
+  private readonly pendingSettingsWrites = new Set<Promise<void>>();
   private manualRecording = false;
   private micEnabled = true;
   private candidateVisualState = false;
@@ -272,6 +275,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.wakePhrases = [...this.defaultWakePhrases];
     this.writeLine = options.writeLine ?? noop;
     this.debug = options.debug ?? false;
+    this.settingsPersistence = options.settingsPersistence;
     this.echoGuard = options.echoGuard ?? new EchoGuard();
     this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy();
     this.now = options.now ?? Date.now;
@@ -326,6 +330,7 @@ export class AlwaysOnVoiceHarnessRunner {
     await this.audioInput.stop();
     await this.wakeStreamDetector.stop?.();
     await this.drain();
+    await this.drainSettingsWrites();
     this.clearWakeFollowUp();
     await this.terminalHarness.stop();
     this.started = false;
@@ -378,6 +383,7 @@ export class AlwaysOnVoiceHarnessRunner {
 
   async drain(): Promise<void> {
     await Promise.all([...this.pendingTranscripts]);
+    await this.drainSettingsWrites();
   }
 
   private printHelp(): void {
@@ -791,7 +797,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ") || "(none)"}`);
     this.sendVisualWakeSettings();
     if (options.persist !== false) {
-      void this.persistWakePhrases();
+      this.trackSettingsWrite(this.persistWakePhrases([...this.wakePhrases]));
     }
   }
 
@@ -829,10 +835,23 @@ export class AlwaysOnVoiceHarnessRunner {
     });
   }
 
-  private async persistWakePhrases(): Promise<void> {
+  private trackSettingsWrite(write: Promise<void>): void {
+    const task = write.finally(() => {
+      this.pendingSettingsWrites.delete(task);
+    });
+    this.pendingSettingsWrites.add(task);
+  }
+
+  private async drainSettingsWrites(): Promise<void> {
+    while (this.pendingSettingsWrites.size > 0) {
+      await Promise.all([...this.pendingSettingsWrites]);
+    }
+  }
+
+  private async persistWakePhrases(wakePhrases: string[]): Promise<void> {
     try {
       await this.settingsPersistence?.update({
-        wakePhrases: [...this.wakePhrases]
+        wakePhrases
       });
     } catch (error) {
       this.writeLine(`[settings:error] ${formatError(error)}`);
@@ -1221,6 +1240,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (/^\[voice:(ack|permission|completion|speech|status|error|warning|cue)\]/u.test(visible)) return true;
   if (visible.startsWith("[voice:context]")) return true;
   if (visible.startsWith("[voice:capability]")) return true;
+  if (visible.startsWith("[settings:error]")) return true;
   if (visible.startsWith("[codex-app] config ")) return true;
   if (visible.startsWith("[harness")) return true;
   if (visible.startsWith("[status]")) return true;

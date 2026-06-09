@@ -16,7 +16,9 @@ import {
   VoiceLocalSettingsStore,
   detectVoiceSetup,
   resolveVoiceHarnessConfig,
-  writeVoiceConfigFile
+  writeVoiceConfigFile,
+  type VoiceLocalSettingsOverride,
+  type VoiceSettingsPersistence
 } from "../src/app/voice-config.ts";
 import {
   AlwaysOnVoiceHarnessRunner,
@@ -537,6 +539,54 @@ test("always-on voice runner updates wake phrases from visual settings", async (
     visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "settings" }> => event.type === "settings").at(-1)?.wakePhrases,
     ["컴퓨터"]
   );
+});
+
+test("always-on voice runner persists wake phrases from visual settings", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const settingsPersistence = new FakeSettingsPersistence();
+  const { runner } = createAlwaysOnRunner([], {
+    wakePhrases: ["코덱스"],
+    visualBridge,
+    settingsPersistence
+  });
+
+  await runner.start();
+  visualBridge.emitControl("update_wake_phrases", undefined, ["휴지야", "컴퓨터"]);
+  await runner.drain();
+  await runner.stop();
+
+  assert.deepEqual(settingsPersistence.updates.at(-1), {
+    wakePhrases: ["휴지야", "컴퓨터"]
+  });
+});
+
+test("always-on voice runner waits for wake phrase persistence before stopping", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const settingsPersistence = new DeferredSettingsPersistence();
+  const { runner } = createAlwaysOnRunner([], {
+    wakePhrases: ["코덱스"],
+    visualBridge,
+    settingsPersistence
+  });
+
+  await runner.start();
+  visualBridge.emitControl("update_wake_phrases", undefined, ["휴지야"]);
+
+  let stopped = false;
+  const stop = runner.stop().then(() => {
+    stopped = true;
+  });
+
+  await flushAsync();
+  assert.equal(stopped, false);
+
+  settingsPersistence.resolveNext();
+  await stop;
+
+  assert.equal(stopped, true);
+  assert.deepEqual(settingsPersistence.updates.at(-1), {
+    wakePhrases: ["휴지야"]
+  });
 });
 
 test("always-on voice runner restores default wake phrases from visual settings", async () => {
@@ -2071,6 +2121,7 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[stt:ko] 코덱스 날씨 확인해줘"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:permission] 명령 실행 권한 필요해."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[voice:cue] approval ready \u0007"), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[settings:error] settings write failed"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  Wake: 코덱스 <명령>"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /help shows available terminal commands."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /mic toggles microphone listening on/off."), true);
@@ -2242,6 +2293,7 @@ function createAlwaysOnRunner(
     visualBridge?: VisualBridgeLike;
     speechProcessor?: SpeechProcessor;
     wakeStreamDetector?: WakeStreamDetector;
+    settingsPersistence?: VoiceSettingsPersistence;
     debug?: boolean;
     wakeFollowUpWindowMs?: number;
   } = {}
@@ -2279,6 +2331,7 @@ function createAlwaysOnRunner(
     speechProcessor,
     wakePhrases: options.wakePhrases ?? defaultWakePhrases,
     visualBridge: options.visualBridge,
+    settingsPersistence: options.settingsPersistence,
     writeLine: (line) => logs.push(line),
     now: () => 1000,
     createId,
@@ -2631,6 +2684,37 @@ class FakeVisualBridge implements VisualBridgeLike {
         visual
       })
     );
+  }
+}
+
+class FakeSettingsPersistence implements VoiceSettingsPersistence {
+  readonly updates: VoiceLocalSettingsOverride[] = [];
+  resetCount = 0;
+
+  async update(overrides: VoiceLocalSettingsOverride): Promise<void> {
+    this.updates.push(overrides);
+  }
+
+  async resetAll(): Promise<void> {
+    this.resetCount += 1;
+  }
+}
+
+class DeferredSettingsPersistence implements VoiceSettingsPersistence {
+  readonly updates: VoiceLocalSettingsOverride[] = [];
+  private resolvers: Array<() => void> = [];
+
+  async update(overrides: VoiceLocalSettingsOverride): Promise<void> {
+    this.updates.push(overrides);
+    await new Promise<void>((resolve) => {
+      this.resolvers.push(resolve);
+    });
+  }
+
+  async resetAll(): Promise<void> {}
+
+  resolveNext(): void {
+    this.resolvers.shift()?.();
   }
 }
 
