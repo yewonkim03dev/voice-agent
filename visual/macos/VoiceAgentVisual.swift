@@ -1672,6 +1672,10 @@ final class VisualRootView: NSView {
         chatView.push(role: role, kind: kind, text: text)
     }
 
+    func replaceChatHistory(_ entries: [ChatHistoryItem]) {
+        chatView.replaceItems(entries)
+    }
+
     func resizeCommandTextView(scrollToTop: Bool = false) {
         guard let textContainer = commandView.textContainer, let layoutManager = commandView.layoutManager else { return }
 
@@ -1804,6 +1808,7 @@ struct ChatHistoryItem {
     let role: String
     let kind: String
     let text: String
+    let createdAt: Double
 }
 
 final class ChatHistoryView: NSView {
@@ -1835,10 +1840,24 @@ final class ChatHistoryView: NSView {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        items.append(ChatHistoryItem(role: role, kind: kind, text: trimmed))
+        if let previous = items.last,
+           previous.role == role,
+           previous.kind == kind,
+           previous.text == trimmed {
+            return
+        }
+
+        items.append(ChatHistoryItem(role: role, kind: kind, text: trimmed, createdAt: Date().timeIntervalSince1970 * 1000))
         if items.count > 10 {
             items.removeFirst(items.count - 10)
         }
+        rebuildBubbles()
+        layoutBubbles(scrollToBottom: true)
+        needsDisplay = true
+    }
+
+    func replaceItems(_ nextItems: [ChatHistoryItem]) {
+        items = Array(nextItems.suffix(10))
         rebuildBubbles()
         layoutBubbles(scrollToBottom: true)
         needsDisplay = true
@@ -4462,6 +4481,24 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         }
     }
 
+    private func updateChatHistory(_ entries: [[String: Any]]) {
+        let items = entries.compactMap { record -> ChatHistoryItem? in
+            guard let text = record["text"] as? String else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+
+            let role = record["role"] as? String == "user" ? "user" : "assistant"
+            let kind = (record["kind"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return ChatHistoryItem(
+                role: role,
+                kind: kind?.isEmpty == false ? kind! : "status",
+                text: trimmed,
+                createdAt: numericDouble(record["createdAt"]) ?? 0
+            )
+        }
+        rootView?.replaceChatHistory(items)
+    }
+
     private func button(_ title: String, action: Selector) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
         button.bezelStyle = .rounded
@@ -4613,6 +4650,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             menuBarCompanion.updateMessage(localizedText("popup", language: uiLanguage))
         case "popup_history":
             updatePopupHistory(event["entries"] as? [[String: Any]] ?? [])
+        case "chat_history":
+            updateChatHistory(event["entries"] as? [[String: Any]] ?? [])
         case "approval":
             circleView.state = "approval_pending"
             let approval = event["text"] as? String ?? stateText("approval_pending", language: uiLanguage)

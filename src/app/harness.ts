@@ -86,6 +86,9 @@ import {
   type VoiceSettingsPersistence,
   type VoiceVisualFileConfig
 } from "./voice-config.ts";
+import {
+  type VoiceSessionHistoryPersistence
+} from "./session-history.ts";
 
 type WriteLine = (line: string) => void;
 
@@ -257,6 +260,7 @@ export interface TerminalHarnessOptions {
   visualBridge?: VisualBridgeLike;
   visualConfig?: VoiceVisualFileConfig;
   settingsPersistence?: VoiceSettingsPersistence;
+  sessionHistoryPersistence?: VoiceSessionHistoryPersistence;
   approvalPhrases?: ApprovalPhraseConfig;
   stopPhrases?: string[];
   codexThreadId?: string;
@@ -269,6 +273,13 @@ interface RecentPopupEntry {
   title: string;
   text: string;
   format: "markdown" | "plain";
+  createdAt: number;
+}
+
+interface ChatHistoryEntry {
+  role: "user" | "assistant";
+  kind: string;
+  text: string;
   createdAt: number;
 }
 
@@ -286,6 +297,7 @@ export class TerminalHarness {
   private readonly agentTarget: AgentTarget;
   private readonly visualBridge: VisualBridgeLike | undefined;
   private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
+  private readonly sessionHistoryPersistence: VoiceSessionHistoryPersistence | undefined;
   private readonly onExitRequest: (() => void | Promise<void>) | undefined;
   private visualSettings: VisualRuntimeSettings;
   private approvalPhrases: ApprovalPhraseSet;
@@ -310,7 +322,9 @@ export class TerminalHarness {
   private readonly passthroughStructuredSpeechSessions = new Set<string>();
   private readonly passthroughPopupGenerations = new Set<string>();
   private readonly recentPopups: RecentPopupEntry[] = [];
+  private readonly chatHistory: ChatHistoryEntry[] = [];
   private readonly interruptedPassthroughSessions = new Set<string>();
+  private activeHistoryThreadId: string | undefined;
   private readonly scheduledVoiceTasks = new Set<Promise<void>>();
   private voiceQueue: Promise<void> = Promise.resolve();
   private voiceGeneration = 0;
@@ -325,6 +339,7 @@ export class TerminalHarness {
     this.backendLabel = options.backendLabel ?? "mock";
     this.visualBridge = options.visualBridge;
     this.settingsPersistence = options.settingsPersistence;
+    this.sessionHistoryPersistence = options.sessionHistoryPersistence;
     this.onExitRequest = options.onExitRequest;
     this.visualSettings = visualRuntimeSettingsFromFile(options.visualConfig);
     this.approvalPhrases = approvalPhraseSet(options.approvalPhrases);
@@ -390,6 +405,7 @@ export class TerminalHarness {
     } else {
       this.passthroughState = "BOOTING";
       await this.backend.start();
+      await this.restoreSessionHistory();
       this.passthroughState = "IDLE";
     }
 
@@ -587,6 +603,9 @@ export class TerminalHarness {
       if (status.threadId && status.threadId !== this.codexThreadId) {
         this.codexThreadId = status.threadId;
         this.sendVisualTtsSettings();
+        if (this.started) {
+          void this.restoreSessionHistory(status.threadId);
+        }
       }
       if (
         wasWaitingForCodex &&
@@ -1099,6 +1118,7 @@ export class TerminalHarness {
     this.recentPopups.unshift(popup);
     this.recentPopups.splice(10);
     this.sendRecentPopupHistory();
+    this.persistSessionHistory();
     return popup;
   }
 
@@ -1679,7 +1699,107 @@ export class TerminalHarness {
   }
 
   sendVisualEvent(event: VisualEvent): void {
+    this.rememberVisualHistory(event);
     this.visualBridge?.send(event);
+  }
+
+  private rememberVisualHistory(event: VisualEvent): void {
+    switch (event.type) {
+      case "question":
+        this.rememberChatHistory({
+          role: "user",
+          kind: "question",
+          text: event.text,
+          createdAt: this.now()
+        });
+        return;
+      case "command":
+      case "speech":
+      case "status":
+      case "error":
+      case "approval":
+        this.rememberChatHistory({
+          role: "assistant",
+          kind: event.type === "approval" ? "status" : event.type,
+          text: event.text,
+          createdAt: this.now()
+        });
+        return;
+      default:
+        return;
+    }
+  }
+
+  private rememberChatHistory(entry: ChatHistoryEntry): void {
+    const text = entry.text.trim();
+    if (!text) return;
+
+    const previous = this.chatHistory.at(-1);
+    if (
+      previous &&
+      previous.role === entry.role &&
+      previous.kind === entry.kind &&
+      previous.text === text
+    ) {
+      return;
+    }
+
+    this.chatHistory.push({
+      role: entry.role,
+      kind: entry.kind,
+      text,
+      createdAt: entry.createdAt
+    });
+    this.chatHistory.splice(0, Math.max(0, this.chatHistory.length - 20));
+    this.sendChatHistory();
+    this.persistSessionHistory();
+  }
+
+  private sendChatHistory(): void {
+    this.visualBridge?.send({
+      op: "voice-agent-ui",
+      type: "chat_history",
+      entries: this.chatHistory.map((entry) => ({ ...entry }))
+    });
+  }
+
+  private async restoreSessionHistory(threadId = this.codexThreadId): Promise<void> {
+    const normalizedThreadId = parseOptionalThreadId(threadId);
+    if (!normalizedThreadId || !this.sessionHistoryPersistence) {
+      return;
+    }
+
+    if (this.activeHistoryThreadId === normalizedThreadId) {
+      this.sendChatHistory();
+      this.sendRecentPopupHistory();
+      return;
+    }
+
+    try {
+      const snapshot = await this.sessionHistoryPersistence.load(normalizedThreadId);
+      this.activeHistoryThreadId = normalizedThreadId;
+      this.chatHistory.splice(0, this.chatHistory.length, ...snapshot.chatHistory);
+      this.recentPopups.splice(0, this.recentPopups.length, ...snapshot.popups);
+      this.sendChatHistory();
+      this.sendRecentPopupHistory();
+    } catch (error) {
+      this.writeLine(`[history:error] could not restore visual history: ${formatError(error)}`);
+    }
+  }
+
+  private persistSessionHistory(): void {
+    if (!this.sessionHistoryPersistence) return;
+
+    const threadId = this.activeHistoryThreadId ?? parseOptionalThreadId(this.codexThreadId);
+    if (!threadId) return;
+
+    this.activeHistoryThreadId = threadId;
+    void this.sessionHistoryPersistence.save(threadId, {
+      chatHistory: this.chatHistory.map((entry) => ({ ...entry })),
+      popups: this.recentPopups.map((entry) => ({ ...entry }))
+    }).catch((error) => {
+      this.writeLine(`[history:error] could not save visual history: ${formatError(error)}`);
+    });
   }
 
   private emitNativeMcpUrlReference(request: PermissionRequest, phase: "requested" | "approved"): void {

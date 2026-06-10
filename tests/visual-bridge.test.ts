@@ -75,6 +75,16 @@ test("visual bridge serializes UI events as JSON", () => {
     },
     {
       op: "voice-agent-ui",
+      type: "chat_history",
+      entries: [{
+        role: "user",
+        kind: "question",
+        text: "이전 질문",
+        createdAt: 1000
+      }]
+    },
+    {
+      op: "voice-agent-ui",
       type: "usage",
       text: "5h 63% left · 1w 88% left",
       primaryText: "5h 63% left",
@@ -247,11 +257,14 @@ test("visual bridge replays latest settings to late visual clients", async () =>
   assert.match(source, /private latestSettings/u);
   assert.match(source, /private latestUsage/u);
   assert.match(source, /private latestPopupHistory/u);
+  assert.match(source, /private latestChatHistory/u);
   assert.match(source, /this\.rememberSettings\(event\)/u);
   assert.match(source, /this\.rememberUsage\(event\)/u);
   assert.match(source, /this\.rememberPopupHistory\(event\)/u);
+  assert.match(source, /this\.rememberChatHistory\(event\)/u);
   assert.match(source, /readyClient\.send\(this\.latestSettings\)/u);
   assert.match(source, /readyClient\.send\(this\.latestUsage\)/u);
+  assert.match(source, /readyClient\.send\(this\.latestChatHistory\)/u);
   assert.match(source, /readyClient\.send\(this\.latestPopupHistory\)/u);
   assert.match(source, /event\.wakePhrases !== undefined/u);
   assert.match(source, /event\.stopPhrases !== undefined/u);

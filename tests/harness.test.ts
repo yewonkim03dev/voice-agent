@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createTerminalHarnessFromArgs, InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness, type TerminalHarnessOptions } from "../src/app/harness.ts";
+import type {
+  VoiceSessionHistoryPersistence,
+  VoiceSessionHistorySnapshot
+} from "../src/app/session-history.ts";
 import type { VoiceLocalSettingsOverride, VoiceSettingsPersistence } from "../src/app/voice-config.ts";
 import {
   defaultAppShotHotkey,
@@ -1478,6 +1482,58 @@ test("recent popup slash commands list and reopen popup answers", async () => {
   assert.equal(visualBridge.events.filter((event) => event.type === "popup").length, 2);
 });
 
+test("pass-through visual history restores and persists by Codex thread id", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const historyPersistence = new FakeSessionHistoryPersistence();
+  historyPersistence.snapshots.set("thread_1", {
+    chatHistory: [{
+      role: "user",
+      kind: "question",
+      text: "이전 질문",
+      createdAt: 900
+    }],
+    popups: [{
+      id: "popup_old",
+      title: "이전 팝업",
+      text: "이전 본문",
+      format: "markdown",
+      createdAt: 900
+    }]
+  });
+  const harness = createPassthroughHarness(backend, [], visualBridge, undefined, undefined, {
+    codexThreadId: "thread_1",
+    sessionHistoryPersistence: historyPersistence,
+    visualConfig: {
+      popupPreferred: true
+    }
+  });
+
+  await harness.start();
+  await flushAsync();
+
+  const restoredChat = visualBridge.events.find((event) => event.type === "chat_history");
+  assert.equal(restoredChat?.type, "chat_history");
+  assert.equal(restoredChat?.entries[0]?.text, "이전 질문");
+  const restoredPopups = visualBridge.events.find((event) => event.type === "popup_history");
+  assert.equal(restoredPopups?.type, "popup_history");
+  assert.equal(restoredPopups?.entries[0]?.title, "이전 팝업");
+
+  await harness.processLine("코덱스 새 질문");
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"popup","title":"새 팝업","text":"새 본문"}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  const saved = historyPersistence.saves.at(-1);
+  assert.equal(saved?.threadId, "thread_1");
+  assert.equal(saved?.snapshot.popups[0]?.title, "새 팝업");
+  assert.equal(saved?.snapshot.chatHistory.some((entry) => entry.text === "새 질문"), true);
+});
+
 test("pass-through popup guard resets on next turn", async () => {
   const backend = new InMemoryAgentBackend();
   const visualBridge = new FakeVisualBridge();
@@ -1973,6 +2029,30 @@ class FakeSettingsPersistence implements VoiceSettingsPersistence {
 
   async resetGestureWake(): Promise<void> {
     this.gestureResetCount += 1;
+  }
+}
+
+class FakeSessionHistoryPersistence implements VoiceSessionHistoryPersistence {
+  readonly snapshots = new Map<string, VoiceSessionHistorySnapshot>();
+  readonly saves: Array<{ threadId: string; snapshot: VoiceSessionHistorySnapshot }> = [];
+
+  async load(threadId: string): Promise<VoiceSessionHistorySnapshot> {
+    return this.snapshots.get(threadId) ?? {
+      chatHistory: [],
+      popups: []
+    };
+  }
+
+  async save(threadId: string, snapshot: VoiceSessionHistorySnapshot): Promise<void> {
+    const saved = {
+      chatHistory: snapshot.chatHistory.map((entry) => ({ ...entry })),
+      popups: snapshot.popups.map((entry) => ({ ...entry }))
+    };
+    this.snapshots.set(threadId, saved);
+    this.saves.push({
+      threadId,
+      snapshot: saved
+    });
   }
 }
 

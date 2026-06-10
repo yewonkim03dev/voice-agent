@@ -53,6 +53,7 @@ import { NoopWakeStreamDetector, type WakeStreamDetector, type WakeStreamEvent }
 import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakePhraseRouter.ts";
 import { readCodexThreadSettings } from "./codex-thread-config.ts";
 import { createTerminalHarnessFromArgs, parseHarnessCliArgs, TerminalHarness } from "./harness.ts";
+import { VoiceSessionHistoryStore } from "./session-history.ts";
 import {
   formatTerminalCommand,
   formatTerminalLabel,
@@ -70,6 +71,7 @@ import {
   type VoiceHarnessConfig,
   type VoiceSettingsPersistence
 } from "./voice-config.ts";
+import type { VoiceSessionHistoryPersistence } from "./session-history.ts";
 
 type WriteLine = (line: string) => void;
 const wakeFollowUpWindowMs = 10_000;
@@ -1869,6 +1871,7 @@ export function createVoiceHarnessRunnerFromConfig(
     visualBridge?: VisualBridgeLike;
     onVisualRequest?: () => Promise<void>;
     settingsPersistence?: VoiceSettingsPersistence;
+    sessionHistoryPersistence?: VoiceSessionHistoryPersistence;
     screenCaptureProvider?: ScreenCaptureProvider;
     screenCapturePreflight?: boolean;
     codexThreadId?: string;
@@ -1894,6 +1897,7 @@ export function createVoiceHarnessRunnerFromConfig(
     stopPhrases: config.stopPhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
+    sessionHistoryPersistence: options.sessionHistoryPersistence,
     codexThreadId: options.codexThreadId,
     codexAlwaysStartNewThread: options.codexAlwaysStartNewThread,
     onExitRequest: options.onExitRequest
@@ -1956,6 +1960,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     visualBridge?: VisualBridgeLike;
     onVisualRequest?: () => Promise<void>;
     settingsPersistence?: VoiceSettingsPersistence;
+    sessionHistoryPersistence?: VoiceSessionHistoryPersistence;
     screenCaptureProvider?: ScreenCaptureProvider;
     screenCapturePreflight?: boolean;
     codexThreadId?: string;
@@ -1980,6 +1985,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     stopPhrases: config.stopPhrases,
     visualBridge: options.visualBridge,
     settingsPersistence: options.settingsPersistence,
+    sessionHistoryPersistence: options.sessionHistoryPersistence,
     codexThreadId: options.codexThreadId,
     codexAlwaysStartNewThread: options.codexAlwaysStartNewThread,
     onExitRequest: options.onExitRequest
@@ -2180,9 +2186,11 @@ export async function runVoiceHarness(): Promise<void> {
   }
 
   const args = defaultCodexArgs(cli.harnessArgs);
+  const harnessCwd = parseHarnessCliArgs(args).cwd;
   const visualBridge = new VisualBridge({ writeLine });
   const settingsPersistence = new VoiceLocalSettingsStore();
-  const codexThreadSettings = await loadCodexThreadSettingsForVisual(writeLine, parseHarnessCliArgs(args).cwd);
+  const sessionHistoryPersistence = new VoiceSessionHistoryStore({ cwd: harnessCwd });
+  const codexThreadSettings = await loadCodexThreadSettingsForVisual(writeLine, harnessCwd);
   let shutdownRequested = false;
   let readline: ReturnType<typeof createInterface> | undefined;
   let visualCompanionStarted = false;
@@ -2230,6 +2238,7 @@ export async function runVoiceHarness(): Promise<void> {
         visualBridge,
         onVisualRequest: requestVisual,
         settingsPersistence,
+        sessionHistoryPersistence,
         codexThreadId: codexThreadSettings.threadId,
         codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
         cameraGestureEnabled: cli.cameraGesture,
@@ -2242,6 +2251,7 @@ export async function runVoiceHarness(): Promise<void> {
         visualBridge,
         onVisualRequest: requestVisual,
         settingsPersistence,
+        sessionHistoryPersistence,
         codexThreadId: codexThreadSettings.threadId,
         codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
         screenCapturePreflight: cli.visual,

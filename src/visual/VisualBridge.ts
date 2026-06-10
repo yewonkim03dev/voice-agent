@@ -147,6 +147,16 @@ export type VisualEvent =
     }
   | {
       op: "voice-agent-ui";
+      type: "chat_history";
+      entries: Array<{
+        role: "user" | "assistant";
+        kind: string;
+        text: string;
+        createdAt: number;
+      }>;
+    }
+  | {
+      op: "voice-agent-ui";
       type: "approval";
       text: string;
     }
@@ -232,6 +242,7 @@ export class VisualBridge implements VisualBridgeLike {
   private latestQuestion: Extract<VisualEvent, { type: "question" }> | undefined;
   private latestContext: Extract<VisualEvent, { type: "context" }> | undefined;
   private latestPopupHistory: Extract<VisualEvent, { type: "popup_history" }> | undefined;
+  private latestChatHistory: Extract<VisualEvent, { type: "chat_history" }> | undefined;
   private server: Server | undefined;
   private bridgeUrl: string | undefined;
 
@@ -269,6 +280,9 @@ export class VisualBridge implements VisualBridgeLike {
           }
           if (this.latestQuestion) {
             readyClient.send(this.latestQuestion);
+          }
+          if (this.latestChatHistory) {
+            readyClient.send(this.latestChatHistory);
           }
           if (this.latestPopupHistory) {
             readyClient.send(this.latestPopupHistory);
@@ -319,6 +333,7 @@ export class VisualBridge implements VisualBridgeLike {
     this.rememberQuestion(event);
     this.rememberContext(event);
     this.rememberPopupHistory(event);
+    this.rememberChatHistory(event);
     const payload = serializeVisualEvent(event);
     for (const client of this.clients) {
       client.sendRaw(payload);
@@ -399,6 +414,16 @@ export class VisualBridge implements VisualBridgeLike {
     this.latestPopupHistory = {
       op: "voice-agent-ui",
       type: "popup_history",
+      entries: event.entries.map((entry) => ({ ...entry }))
+    };
+  }
+
+  private rememberChatHistory(event: VisualEvent): void {
+    if (event.type !== "chat_history") return;
+
+    this.latestChatHistory = {
+      op: "voice-agent-ui",
+      type: "chat_history",
       entries: event.entries.map((entry) => ({ ...entry }))
     };
   }
