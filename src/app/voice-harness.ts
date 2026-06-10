@@ -38,6 +38,11 @@ import type { UtteranceAudio } from "../recorder/UtteranceAudio.ts";
 import { CommandSpeechProcessor } from "../speech/CommandSpeechProcessor.ts";
 import type { SpeechProcessor } from "../speech/SpeechProcessor.ts";
 import { detectTranscriptLanguage, normalizeTranscriptText, withTranscriptText, type Transcript } from "../speech/Transcript.ts";
+import {
+  createDefaultScreenCaptureProvider,
+  defaultScreenDescribePrompt,
+  type ScreenCaptureProvider
+} from "../screen/ScreenCapture.ts";
 import { BargeInPolicy } from "../voice/BargeInPolicy.ts";
 import { EchoGuard, type EchoGuardResult } from "../voice/EchoGuard.ts";
 import type { VisualProvider } from "../visual/VisualConfig.ts";
@@ -77,6 +82,8 @@ export interface VoiceHarnessRunnerOptions {
   visualBridge?: VisualBridgeLike;
   onVisualRequest?: () => Promise<void>;
   settingsPersistence?: VoiceSettingsPersistence;
+  screenCaptureProvider?: ScreenCaptureProvider;
+  screenCapturePreflight?: boolean;
   writeLine?: WriteLine;
   debug?: boolean;
 }
@@ -91,6 +98,8 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   visualBridge?: VisualBridgeLike;
   onVisualRequest?: () => Promise<void>;
   settingsPersistence?: VoiceSettingsPersistence;
+  screenCaptureProvider?: ScreenCaptureProvider;
+  screenCapturePreflight?: boolean;
   writeLine?: WriteLine;
   debug?: boolean;
   echoGuard?: EchoGuard;
@@ -115,6 +124,8 @@ export class VoiceHarnessRunner {
   private readonly debug: boolean;
   private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
   private readonly onVisualRequest: (() => Promise<void>) | undefined;
+  private readonly screenCaptureProvider: ScreenCaptureProvider;
+  private readonly screenCapturePreflight: boolean;
   private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private started = false;
@@ -128,11 +139,14 @@ export class VoiceHarnessRunner {
     this.debug = options.debug ?? false;
     this.settingsPersistence = options.settingsPersistence;
     this.onVisualRequest = options.onVisualRequest;
+    this.screenCaptureProvider = options.screenCaptureProvider ?? createDefaultScreenCaptureProvider();
+    this.screenCapturePreflight = options.screenCapturePreflight === true;
     this.textContext = new SupplementalTextBuffer(this.writeLine, (entries) =>
       sendVisualContextEvent(options.visualBridge, entries)
     );
     bindVisualContextControls(this.textContext, options.visualBridge);
     bindVisualDirectGoControls((text) => this.routeDirectText(text), options.visualBridge);
+    bindVisualScreenDescribeControls(() => this.describeScreen(), options.visualBridge);
     this.recordingController.onUtterance((audio) => {
       const task = this.transcribeAndRoute(audio).finally(() => {
         this.pendingTranscripts.delete(task);
@@ -145,11 +159,13 @@ export class VoiceHarnessRunner {
     if (this.started) return;
 
     await this.terminalHarness.start();
+    await this.preflightScreenCaptureIfEnabled();
     await this.recordingController.start();
     this.started = true;
     this.writeLine(formatTerminalLabel("Voice input", "/record to start, /record again to stop."));
     this.writeLine(formatTerminalCommand("/help", "shows available terminal commands."));
     this.writeLine(formatTerminalCommand("/visual", "opens the Visual/HUD companion."));
+    this.writeLine(formatTerminalCommand("/app-shot", "captures the current screen and asks the agent to explain it."));
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
@@ -190,6 +206,11 @@ export class VoiceHarnessRunner {
       return "continue";
     }
 
+    if (isScreenDescribeCommand(text)) {
+      await this.describeScreen();
+      return "continue";
+    }
+
     if (text === "/quit") {
       await this.stop();
       this.writeLine("Harness stopped.");
@@ -220,6 +241,7 @@ export class VoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/help", "shows this command list."));
     this.writeLine(formatTerminalCommand("/record", "starts or stops manual recording."));
     this.writeLine(formatTerminalCommand("/visual", "opens the Visual/HUD companion."));
+    this.writeLine(formatTerminalCommand("/app-shot", "captures the current screen and asks the agent to explain it."));
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
@@ -248,6 +270,20 @@ export class VoiceHarnessRunner {
     await this.onVisualRequest();
   }
 
+  private async preflightScreenCaptureIfEnabled(): Promise<void> {
+    if (!this.screenCapturePreflight || !this.screenCaptureProvider.preflight) return;
+
+    try {
+      const settings = this.terminalHarness.getVisualRuntimeSettings();
+      await this.screenCaptureProvider.preflight({
+        directory: settings.screenCaptureDirectory
+      });
+      this.writeLine("[screen:capture] permission ready.");
+    } catch (error) {
+      this.writeLine(`[screen:capture] permission or preflight failed: ${formatError(error)}`);
+    }
+  }
+
   private async routeDirectText(text: string): Promise<void> {
     const trimmed = text.trim();
     const directText = trimmed || directTextFromContextEntries(this.textContext.takeEntries());
@@ -263,6 +299,23 @@ export class VoiceHarnessRunner {
       visualQuestionText: directText,
       visualQuestionReferences: applied.entries
     });
+  }
+
+  private async describeScreen(): Promise<void> {
+    try {
+      const settings = this.terminalHarness.getVisualRuntimeSettings();
+      const capture = await this.screenCaptureProvider.capture({
+        directory: settings.screenCaptureDirectory
+      });
+      const prompt = buildScreenDescribePrompt(settings.screenDescribePrompt, settings.responseLanguage, capture.path);
+      this.writeLine(`[screen:capture] saved ${capture.path}`);
+      await this.terminalHarness.processTranscript(createDirectTranscript(prompt), {
+        visualQuestionText: localizedScreenQuestion(settings.responseLanguage),
+        visualQuestionReferences: [capture.path]
+      });
+    } catch (error) {
+      this.writeLine(`[screen:capture] failed: ${formatError(error)}`);
+    }
   }
 
   private async transcribeAndRoute(audio: UtteranceAudio): Promise<void> {
@@ -309,6 +362,8 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly debug: boolean;
   private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
   private readonly onVisualRequest: (() => Promise<void>) | undefined;
+  private readonly screenCaptureProvider: ScreenCaptureProvider;
+  private readonly screenCapturePreflight: boolean;
   private readonly echoGuard: EchoGuard;
   private readonly bargeInPolicy: BargeInPolicy;
   private readonly now: () => number;
@@ -362,6 +417,8 @@ export class AlwaysOnVoiceHarnessRunner {
     this.debug = options.debug ?? false;
     this.settingsPersistence = options.settingsPersistence;
     this.onVisualRequest = options.onVisualRequest;
+    this.screenCaptureProvider = options.screenCaptureProvider ?? createDefaultScreenCaptureProvider();
+    this.screenCapturePreflight = options.screenCapturePreflight === true;
     this.echoGuard = options.echoGuard ?? new EchoGuard();
     this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy({
       stopPhrases: options.stopPhrases
@@ -382,6 +439,7 @@ export class AlwaysOnVoiceHarnessRunner {
     );
     bindVisualContextControls(this.textContext, options.visualBridge);
     bindVisualDirectGoControls((text) => this.routeDirectText(text), options.visualBridge);
+    bindVisualScreenDescribeControls(() => this.describeScreen(), options.visualBridge);
     bindVisualWakeSettingsControls(this, options.visualBridge);
     this.manualRecorder = new UtteranceRecorder({
       now: this.now,
@@ -409,6 +467,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.sendVisualWakeSettings();
     this.sendVisualMicSettings();
     this.sendVisualGestureSettings();
+    await this.preflightScreenCaptureIfEnabled();
     await this.audioInput.start();
     await this.startCameraGestureIfEnabled();
     this.started = true;
@@ -417,6 +476,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(formatTerminalLabel("Manual fallback", "/record to start, /record again to stop."));
     this.writeLine(formatTerminalCommand("/help", "shows available terminal commands."));
     this.writeLine(formatTerminalCommand("/visual", "opens the Visual/HUD companion."));
+    this.writeLine(formatTerminalCommand("/app-shot", "captures the current screen and asks the agent to explain it."));
     this.writeLine(formatTerminalCommand("/mic", "toggles microphone listening on/off."));
     this.writeLine(formatTerminalCommand("/mic-reconnect", "rebuilds or restarts microphone input."));
     this.writeLine(formatTerminalCommand("/cam", "toggles camera gesture wake on/off."));
@@ -466,6 +526,11 @@ export class AlwaysOnVoiceHarnessRunner {
 
     if (isVisualCommand(text)) {
       await this.requestVisualCompanion();
+      return "continue";
+    }
+
+    if (isScreenDescribeCommand(text)) {
+      await this.describeScreen();
       return "continue";
     }
 
@@ -543,6 +608,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/help", "shows this command list."));
     this.writeLine(formatTerminalCommand("/record", "starts or stops manual recording."));
     this.writeLine(formatTerminalCommand("/visual", "opens the Visual/HUD companion."));
+    this.writeLine(formatTerminalCommand("/app-shot", "captures the current screen and asks the agent to explain it."));
     this.writeLine(formatTerminalCommand("/mic", "toggles microphone listening on/off."));
     this.writeLine(formatTerminalCommand("/mic-reconnect", "rebuilds or restarts microphone input."));
     this.writeLine(formatTerminalCommand("/cam", "toggles camera gesture wake on/off."));
@@ -577,6 +643,22 @@ export class AlwaysOnVoiceHarnessRunner {
     }
 
     await this.onVisualRequest();
+  }
+
+  private async preflightScreenCaptureIfEnabled(): Promise<void> {
+    if (!this.screenCapturePreflight || !this.screenCaptureProvider.preflight) return;
+
+    try {
+      const settings = this.terminalHarness.getVisualRuntimeSettings();
+      await this.screenCaptureProvider.preflight({
+        directory: settings.screenCaptureDirectory,
+        now: this.now,
+        createId: this.createId
+      });
+      this.writeLine("[screen:capture] permission ready.");
+    } catch (error) {
+      this.writeLine(`[screen:capture] permission or preflight failed: ${formatError(error)}`);
+    }
   }
 
   private async printCameraGestureTest(): Promise<void> {
@@ -1587,6 +1669,25 @@ export class AlwaysOnVoiceHarnessRunner {
     });
   }
 
+  private async describeScreen(): Promise<void> {
+    try {
+      const settings = this.terminalHarness.getVisualRuntimeSettings();
+      const capture = await this.screenCaptureProvider.capture({
+        directory: settings.screenCaptureDirectory,
+        now: this.now,
+        createId: this.createId
+      });
+      const prompt = buildScreenDescribePrompt(settings.screenDescribePrompt, settings.responseLanguage, capture.path);
+      this.writeLine(`[screen:capture] saved ${capture.path}`);
+      await this.processTranscriptAndRefreshGestureState(createDirectTranscript(prompt, this.now, this.createId), {
+        visualQuestionText: localizedScreenQuestion(settings.responseLanguage),
+        visualQuestionReferences: [capture.path]
+      });
+    } catch (error) {
+      this.writeLine(`[screen:capture] failed: ${formatError(error)}`);
+    }
+  }
+
   private async processTranscriptAndRefreshGestureState(
     transcript: Transcript,
     options: {
@@ -1724,6 +1825,8 @@ export function createVoiceHarnessRunnerFromConfig(
     visualBridge?: VisualBridgeLike;
     onVisualRequest?: () => Promise<void>;
     settingsPersistence?: VoiceSettingsPersistence;
+    screenCaptureProvider?: ScreenCaptureProvider;
+    screenCapturePreflight?: boolean;
     codexThreadId?: string;
     codexAlwaysStartNewThread?: boolean;
     cameraGestureEnabled?: boolean;
@@ -1789,6 +1892,8 @@ export function createVoiceHarnessRunnerFromConfig(
     visualBridge: options.visualBridge,
     onVisualRequest: options.onVisualRequest,
     writeLine,
+    screenCaptureProvider: options.screenCaptureProvider,
+    screenCapturePreflight: options.screenCapturePreflight,
     debug: options.debug
   });
 }
@@ -1807,6 +1912,8 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     visualBridge?: VisualBridgeLike;
     onVisualRequest?: () => Promise<void>;
     settingsPersistence?: VoiceSettingsPersistence;
+    screenCaptureProvider?: ScreenCaptureProvider;
+    screenCapturePreflight?: boolean;
     codexThreadId?: string;
     codexAlwaysStartNewThread?: boolean;
     cameraGestureEnabled?: boolean;
@@ -1872,6 +1979,8 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     visualBridge: options.visualBridge,
     onVisualRequest: options.onVisualRequest,
     settingsPersistence: options.settingsPersistence,
+    screenCaptureProvider: options.screenCaptureProvider,
+    screenCapturePreflight: options.screenCapturePreflight,
     gestureWake: config.gestureWake,
     cameraGestureEnabled: options.cameraGestureEnabled,
     cameraGestureWatcher: options.cameraGestureWatcher,
@@ -1955,6 +2064,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (visible.startsWith("[voice:capability]")) return true;
   if (visible.startsWith("[settings:error]")) return true;
   if (visible.startsWith("[popup")) return true;
+  if (visible.startsWith("[screen:capture]")) return true;
   if (visible.startsWith("[camera:")) return true;
   if (visible.startsWith("[codex-app] config ")) return true;
   if (visible.startsWith("[harness")) return true;
@@ -1989,6 +2099,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
     visible.startsWith("Manual fallback:") ||
     visible.startsWith("/help ") ||
     visible.startsWith("/visual ") ||
+    visible.startsWith("/app-shot ") ||
     visible.startsWith("/cam-test ") ||
     visible.startsWith("/add ") ||
     visible.startsWith("/refs ") ||
@@ -2003,7 +2114,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 }
 
 function isVisibleHelpCommandLine(visible: string): boolean {
-  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|visual|hud|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-delete|gesture-remove|gesture-rm|gesture-clear-custom|gestures-clear-custom|gesture-delete-all|gestures-delete-all|gesture-reset|gesture-clear|add|refs|popups|popup)(?:\s|$)/u.test(visible);
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|visual|hud|app-shot|appshot|screen|screenshot|screen-shot|describe-screen|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-delete|gesture-remove|gesture-rm|gesture-clear-custom|gestures-clear-custom|gesture-delete-all|gestures-delete-all|gesture-reset|gesture-clear|add|refs|popups|popup)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {
@@ -2078,6 +2189,7 @@ export async function runVoiceHarness(): Promise<void> {
         codexThreadId: codexThreadSettings.threadId,
         codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
         cameraGestureEnabled: cli.cameraGesture,
+        screenCapturePreflight: cli.visual,
         onExitRequest: requestShutdown
       })
     : createVoiceHarnessRunnerFromConfig(resolution.config, args, {
@@ -2088,6 +2200,7 @@ export async function runVoiceHarness(): Promise<void> {
         settingsPersistence,
         codexThreadId: codexThreadSettings.threadId,
         codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
+        screenCapturePreflight: cli.visual,
         onExitRequest: requestShutdown
       });
 
@@ -2333,6 +2446,16 @@ function bindVisualDirectGoControls(
   });
 }
 
+function bindVisualScreenDescribeControls(
+  onDescribeScreen: () => void | Promise<void>,
+  visualBridge: VisualBridgeLike | undefined
+): void {
+  visualBridge?.onControl((event) => {
+    if (event.action !== "describe_screen") return;
+    void onDescribeScreen();
+  });
+}
+
 function bindVisualWakeSettingsControls(
   runner: Pick<AlwaysOnVoiceHarnessRunner, "updateWakePhrases" | "updateStopPhrases" | "resetWakePhrases" | "updateMaxUtteranceSeconds" | "resetMaxUtteranceSeconds" | "updateGestureWakeSettings" | "resetGestureWakeSettings" | "captureCustomGestureTemplate" | "deleteCustomGestureTemplate" | "clearCustomGestureTemplates" | "toggleMicInput" | "toggleCameraGestureInput">,
   visualBridge: VisualBridgeLike | undefined
@@ -2423,6 +2546,20 @@ function appendSupplementalText(text: string, entries: string[]): string {
 
 function directTextFromContextEntries(entries: string[]): string {
   return entries.map((entry) => entry.trim()).filter(Boolean).join("\n\n");
+}
+
+function buildScreenDescribePrompt(prompt: string | undefined, language: "auto" | "ko" | "en" | undefined, path: string): string {
+  const base = prompt?.trim() || defaultScreenDescribePrompt(language ?? "auto");
+  const label = language === "en" ? "Screen capture image path" : "화면 캡쳐 이미지 경로";
+  const instruction = language === "en"
+    ? "Open and inspect this local image if your environment supports image/file inspection, then answer based on the visible screen."
+    : "환경에서 이미지나 파일 확인이 가능하면 이 로컬 이미지를 열어 확인한 뒤, 보이는 화면을 기준으로 답변해 주세요.";
+
+  return `${base}\n\n${label}: ${path}\n\n${instruction}`;
+}
+
+function localizedScreenQuestion(language: "auto" | "ko" | "en" | undefined): string {
+  return language === "en" ? "App shot: explain the current screen" : "앱샷: 현재 화면 설명";
 }
 
 function createDirectTranscript(
@@ -2556,6 +2693,10 @@ function isGestureResetCommand(text: string): boolean {
 
 function isShowContextCommand(text: string): boolean {
   return /^\/(?:refs?|references|context)$/iu.test(text.trim());
+}
+
+function isScreenDescribeCommand(text: string): boolean {
+  return /^\/(?:app-shot|appshot|screen|screenshot|screen-shot|describe-screen)$/iu.test(text.trim());
 }
 
 function isMicToggleCommand(text: string): boolean {

@@ -50,6 +50,9 @@ ApplicationWindow {
     property real thinkingVolume: 0.32
     property real maxUtteranceSeconds: 15
     property real popupFontSize: 14
+    property string screenCaptureDirectory: ""
+    property string screenDescribePrompt: ""
+    property string appShotHotkey: "left_cmd+right_cmd"
     property string responseLanguage: "auto"
     property bool speakWakeRejectedWarnings: true
     property var wakePhrases: []
@@ -126,6 +129,11 @@ ApplicationWindow {
             thinkingSound: "작업 효과음 ",
             maxSpeech: "최대 발화 ",
             popupFontSize: "팝업 글자 크기 ",
+            screenDescribePrompt: "앱샷 프롬프트",
+            screenCaptureDirectory: "캡처 저장 위치",
+            appShotHotkey: "앱샷 단축키",
+            appShot: "앱샷",
+            appShotHelp: "현재 화면을 캡처하고 에이전트에게 설명을 요청합니다.",
             showRecentQa: "최근 Q/A 패널 표시",
             speakWakeWarning: "호출어 경고 말하기",
             wakePhrasesReplace: "호출어 목록 교체",
@@ -205,6 +213,9 @@ ApplicationWindow {
             thinkingHelp: "작업 중 반복 효과음 볼륨입니다.",
             maxSpeechHelp: "한 번에 받을 발화 최대 길이입니다. 5초에서 55초 사이입니다.",
             popupFontHelp: "네이티브 팝업 답변의 기본 글자 크기입니다. 12에서 24 사이입니다.",
+            screenDescribePromptHelp: "앱샷 화면 캡처 요청에 자동으로 붙일 프롬프트입니다.",
+            screenCaptureDirectoryHelp: "앱샷 PNG를 저장한 뒤 해당 경로를 에이전트에게 전달할 디렉토리입니다.",
+            appShotHotkeyHelp: "지원 값: left_cmd+right_cmd 또는 off.",
             chatHelp: "최근 질문과 답변 패널 표시 여부입니다.",
             wakeWarningHelp: "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
             wakePhrasesHelp: "줄마다 하나씩 호출어를 입력하면 기존 목록을 대체합니다.",
@@ -266,6 +277,11 @@ ApplicationWindow {
             thinkingSound: "Thinking sound ",
             maxSpeech: "Max speech ",
             popupFontSize: "Popup font ",
+            screenDescribePrompt: "App Shot Prompt",
+            screenCaptureDirectory: "Shot Directory",
+            appShotHotkey: "App Shot Hotkey",
+            appShot: "App Shot",
+            appShotHelp: "Capture the current screen and ask the agent to explain it.",
             showRecentQa: "Show Recent Q/A panel",
             speakWakeWarning: "Speak wake warning",
             wakePhrasesReplace: "Wake phrases replace list",
@@ -345,6 +361,9 @@ ApplicationWindow {
             thinkingHelp: "Thinking-loop sound volume.",
             maxSpeechHelp: "Maximum utterance length, from 5 to 55 seconds.",
             popupFontHelp: "Base font size for native popup answers, from 12 to 24 points.",
+            screenDescribePromptHelp: "Prompt automatically attached to App Shot screen captures.",
+            screenCaptureDirectoryHelp: "Directory where App Shot screenshots are saved before sending their path to the agent.",
+            appShotHotkeyHelp: "Supported values: left_cmd+right_cmd or off.",
             chatHelp: "Shows or hides the Recent Q/A panel.",
             wakeWarningHelp: "Speaks or mutes wake mismatch warnings.",
             wakePhrasesHelp: "One wake phrase per line replaces the current list.",
@@ -522,6 +541,9 @@ ApplicationWindow {
                     thinkingVolume: root.thinkingVolume,
                     maxUtteranceSeconds: root.maxUtteranceSeconds,
                     popupFontSize: root.popupFontSize,
+                    screenCaptureDirectory: screenDirectoryField.text.trim(),
+                    screenDescribePrompt: screenPromptField.text.trim(),
+                    appShotHotkey: appShotHotkeyField.text.trim(),
                     responseLanguage: languageBox.currentText,
                     chatHistoryEnabled: chatHistoryCheck.checked,
                     speakWakeRejectedWarnings: wakeWarningCheck.checked
@@ -535,6 +557,9 @@ ApplicationWindow {
         root.thinkingVolume = 0.32
         root.maxUtteranceSeconds = 15
         root.popupFontSize = 14
+        root.screenCaptureDirectory = ""
+        root.screenDescribePrompt = ""
+        root.appShotHotkey = "left_cmd+right_cmd"
         root.chatHistoryEnabled = true
         root.speakWakeRejectedWarnings = true
         root.codexAlwaysStartNewThread = false
@@ -549,6 +574,9 @@ ApplicationWindow {
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (maxUtteranceSlider) maxUtteranceSlider.value = root.maxUtteranceSeconds
         if (popupFontSizeSlider) popupFontSizeSlider.value = root.popupFontSize
+        if (screenDirectoryField) screenDirectoryField.text = root.screenCaptureDirectory
+        if (screenPromptField) screenPromptField.text = root.screenDescribePrompt
+        if (appShotHotkeyField) appShotHotkeyField.text = root.appShotHotkey
         if (chatHistoryCheck) chatHistoryCheck.checked = true
         if (wakeWarningCheck) wakeWarningCheck.checked = true
         if (newThreadCheck) newThreadCheck.checked = false
@@ -713,6 +741,9 @@ ApplicationWindow {
         root.thinkingVolume = settings.thinkingVolume === undefined ? 0.32 : Math.max(0, Math.min(0.8, settings.thinkingVolume))
         root.maxUtteranceSeconds = settings.maxUtteranceSeconds === undefined ? 15 : Math.max(5, Math.min(55, settings.maxUtteranceSeconds))
         root.popupFontSize = settings.popupFontSize === undefined ? 14 : Math.max(12, Math.min(24, settings.popupFontSize))
+        root.screenCaptureDirectory = settings.screenCaptureDirectory || ""
+        root.screenDescribePrompt = settings.screenDescribePrompt || ""
+        root.appShotHotkey = settings.appShotHotkey || "left_cmd+right_cmd"
         root.responseLanguage = settings.responseLanguage || "auto"
         root.chatHistoryEnabled = settings.chatHistoryEnabled === undefined ? true : !!settings.chatHistoryEnabled
         root.speakWakeRejectedWarnings = settings.speakWakeRejectedWarnings === undefined ? true : !!settings.speakWakeRejectedWarnings
@@ -720,6 +751,9 @@ ApplicationWindow {
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (maxUtteranceSlider) maxUtteranceSlider.value = root.maxUtteranceSeconds
         if (popupFontSizeSlider) popupFontSizeSlider.value = root.popupFontSize
+        if (screenDirectoryField) screenDirectoryField.text = root.screenCaptureDirectory
+        if (screenPromptField) screenPromptField.text = root.screenDescribePrompt
+        if (appShotHotkeyField) appShotHotkeyField.text = root.appShotHotkey
         if (chatHistoryCheck) chatHistoryCheck.checked = root.chatHistoryEnabled
         if (wakeWarningCheck) wakeWarningCheck.checked = root.speakWakeRejectedWarnings
         if (languageBox) languageBox.currentIndex = root.indexOfValue(["auto", "ko", "en"], root.responseLanguage)
@@ -2103,6 +2137,47 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     spacing: 10
 
+                    Text { text: root.uiText("screenCaptureDirectory"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    TextField {
+                        id: screenDirectoryField
+                        Layout.fillWidth: true
+                        text: root.screenCaptureDirectory
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("screenCaptureDirectoryHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("appShotHotkey"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    TextField {
+                        id: appShotHotkeyField
+                        Layout.fillWidth: true
+                        text: root.appShotHotkey
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("appShotHotkeyHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("screenDescribePrompt"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    TextArea {
+                        id: screenPromptField
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 72
+                        text: root.screenDescribePrompt
+                        wrapMode: TextArea.Wrap
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("screenDescribePromptHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
                     Text { text: root.uiText("gestureWake"); color: "#91a4bd"; Layout.preferredWidth: 142 }
                     ComboBox {
                         id: gestureWakeBox
@@ -2723,6 +2798,15 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 text: root.uiText("settings")
                 onClicked: root.settingsOpen = !root.settingsOpen
+            }
+            Button {
+                Layout.fillWidth: true
+                text: root.uiText("appShot")
+                hoverEnabled: true
+                ToolTip.visible: hovered
+                ToolTip.delay: 250
+                ToolTip.text: root.uiText("appShotHelp")
+                onClicked: root.sendControl("describe_screen")
             }
             Button {
                 Layout.fillWidth: true

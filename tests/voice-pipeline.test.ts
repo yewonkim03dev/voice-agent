@@ -41,6 +41,7 @@ import { ManualRecordingGate } from "../src/listening/ManualRecordingGate.ts";
 import { RecordingController } from "../src/recorder/RecordingController.ts";
 import { UtteranceRecorder } from "../src/recorder/UtteranceRecorder.ts";
 import type { UtteranceAudio } from "../src/recorder/UtteranceAudio.ts";
+import { defaultScreenDescribePrompt, type ScreenCaptureProvider, type ScreenCaptureResult } from "../src/screen/ScreenCapture.ts";
 import type { SpeechProcessor } from "../src/speech/SpeechProcessor.ts";
 import { normalizeTranscriptText, type Language, type Transcript } from "../src/speech/Transcript.ts";
 import { EchoGuard } from "../src/voice/EchoGuard.ts";
@@ -890,6 +891,62 @@ test("always-on voice runner routes visual direct go immediately", async () => {
       op: "voice-agent-ui",
       type: "question",
       text: "README 보고 요약해줘"
+    }
+  );
+});
+
+test("always-on voice runner captures app shot from terminal command", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const screenCaptureProvider = new FakeScreenCaptureProvider("/tmp/app-shot-terminal.png");
+  const { backend, runner, logs } = createAlwaysOnRunner([], {
+    visualBridge,
+    screenCaptureProvider
+  });
+
+  await runner.start();
+  await runner.processLine("/app-shot");
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(screenCaptureProvider.captureCount, 1);
+  assert.equal(backend.prompts.length, 1);
+  assert.match(backend.prompts[0].text, new RegExp(defaultScreenDescribePrompt().slice(0, 20), "u"));
+  assert.match(backend.prompts[0].text, /\/tmp\/app-shot-terminal\.png/u);
+  assert.ok(logs.includes("[screen:capture] saved /tmp/app-shot-terminal.png"));
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "question" }> => event.type === "question").at(-1),
+    {
+      op: "voice-agent-ui",
+      type: "question",
+      text: "앱샷: 현재 화면 설명",
+      references: ["/tmp/app-shot-terminal.png"]
+    }
+  );
+});
+
+test("always-on voice runner captures app shot from visual control", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const screenCaptureProvider = new FakeScreenCaptureProvider("/tmp/app-shot-visual.png");
+  const { backend, runner } = createAlwaysOnRunner([], {
+    visualBridge,
+    screenCaptureProvider
+  });
+
+  await runner.start();
+  visualBridge.emitControl("describe_screen");
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(screenCaptureProvider.captureCount, 1);
+  assert.equal(backend.prompts.length, 1);
+  assert.match(backend.prompts[0].text, /\/tmp\/app-shot-visual\.png/u);
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "question" }> => event.type === "question").at(-1),
+    {
+      op: "voice-agent-ui",
+      type: "question",
+      text: "앱샷: 현재 화면 설명",
+      references: ["/tmp/app-shot-visual.png"]
     }
   );
 });
@@ -3154,6 +3211,8 @@ function createVoiceRunner(
   options: {
     writeLine?: (line: string) => void;
     onVisualRequest?: () => Promise<void>;
+    visualBridge?: VisualBridgeLike;
+    screenCaptureProvider?: ScreenCaptureProvider;
   } = {}
 ): {
   backend: InMemoryAgentBackend;
@@ -3171,6 +3230,7 @@ function createVoiceRunner(
     backendLabel: "codex-test",
     routingMode: "passthrough",
     agentTarget: "codex",
+    visualBridge: options.visualBridge,
     now: () => 1000,
     createId
   });
@@ -3194,7 +3254,9 @@ function createVoiceRunner(
     gate,
     recordingController: controller,
     speechProcessor,
+    visualBridge: options.visualBridge,
     onVisualRequest: options.onVisualRequest,
+    screenCaptureProvider: options.screenCaptureProvider,
     writeLine: options.writeLine
   });
 
@@ -3221,6 +3283,7 @@ function createAlwaysOnRunner(
     cameraGestureEnabled?: boolean;
     cameraGestureWatcher?: CameraGestureWatcher;
     cameraPermissionManager?: CameraPermissionManager;
+    screenCaptureProvider?: ScreenCaptureProvider;
     debug?: boolean;
     wakeFollowUpWindowMs?: number;
   } = {}
@@ -3265,6 +3328,7 @@ function createAlwaysOnRunner(
     cameraGestureEnabled: options.cameraGestureEnabled,
     cameraGestureWatcher: options.cameraGestureWatcher,
     cameraPermissionManager: options.cameraPermissionManager,
+    screenCaptureProvider: options.screenCaptureProvider,
     writeLine: (line) => logs.push(line),
     now: () => 1000,
     createId,
@@ -3570,6 +3634,28 @@ class AutoFinishVoiceOutput implements VoiceOutput {
 
   onFinished(callback: (id: string) => void): void {
     this.finishedListeners.push(callback);
+  }
+}
+
+class FakeScreenCaptureProvider implements ScreenCaptureProvider {
+  preflightCount = 0;
+  captureCount = 0;
+  private readonly path: string;
+
+  constructor(path = "/tmp/voice-agent-test-app-shot.png") {
+    this.path = path;
+  }
+
+  async preflight(): Promise<void> {
+    this.preflightCount += 1;
+  }
+
+  async capture(): Promise<ScreenCaptureResult> {
+    this.captureCount += 1;
+    return {
+      path: this.path,
+      createdAt: 1000
+    };
   }
 }
 

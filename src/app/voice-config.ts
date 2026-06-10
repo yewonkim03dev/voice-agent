@@ -43,6 +43,9 @@ export type VoiceVisualFileConfig = Partial<{
   hudCompact: boolean;
   popupPreferred: boolean;
   popupFontSize: string | number;
+  screenDescribePrompt: string;
+  screenCaptureDirectory: string;
+  appShotHotkey: string;
   speakWakeRejectedWarnings: boolean;
   maxUtteranceSeconds: string | number;
 }>;
@@ -355,6 +358,9 @@ export async function resetVoiceLocalSettings(options: {
   delete visual.hudCompact;
   delete visual.popupPreferred;
   delete visual.popupFontSize;
+  delete visual.screenDescribePrompt;
+  delete visual.screenCaptureDirectory;
+  delete visual.appShotHotkey;
   delete visual.speakWakeRejectedWarnings;
   delete visual.maxUtteranceSeconds;
 
@@ -613,6 +619,15 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
     ...(typeof record.popupPreferred === "boolean" ? { popupPreferred: record.popupPreferred } : {}),
     ...(parseVisualPopupFontSize(record.popupFontSize) !== undefined
       ? { popupFontSize: parseVisualPopupFontSize(record.popupFontSize) }
+      : {}),
+    ...(parseOptionalString(record.screenDescribePrompt)
+      ? { screenDescribePrompt: parseOptionalString(record.screenDescribePrompt) }
+      : {}),
+    ...(parseOptionalString(record.screenCaptureDirectory)
+      ? { screenCaptureDirectory: parseOptionalString(record.screenCaptureDirectory) }
+      : {}),
+    ...(parseOptionalString(record.appShotHotkey)
+      ? { appShotHotkey: parseOptionalString(record.appShotHotkey) }
       : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }

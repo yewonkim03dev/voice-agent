@@ -575,6 +575,10 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /References/u);
   assert.match(qml, /add_context/u);
   assert.match(qml, /direct_go/u);
+  assert.match(qml, /describe_screen/u);
+  assert.match(qml, /screenCaptureDirectory/u);
+  assert.match(qml, /screenDescribePrompt/u);
+  assert.match(qml, /appShotHotkey/u);
   assert.match(qml, /clear_context/u);
   assert.match(qml, /show_context/u);
   assert.match(qml, /context_list/u);
@@ -782,6 +786,9 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /final class MenuBarCompanion/u);
   assert.match(swift, /hudCameraButton/u);
   assert.match(swift, /camera_toggle/u);
+  assert.match(swift, /hudAppShotButton/u);
+  assert.match(swift, /describe_screen/u);
+  assert.match(swift, /left_cmd\+right_cmd/u);
   assert.match(swift, /cameraGestureCancelled/u);
   assert.match(swift, /NSStatusBar\.system\.statusItem/u);
   assert.match(swift, /compactState\("idle"\)/u);
@@ -790,7 +797,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /func setHudCompact\(_ compact: Bool\)/u);
   assert.match(swift, /@objc private func toggleHudCompact\(\)/u);
   assert.match(swift, /onHudCompactChange: @escaping \(Bool\) -> Void/u);
-  assert.match(swift, /hudCompact \? NSSize\(width: 116, height: 116\) : NSSize\(width: 326, height: 264\)/u);
+  assert.match(swift, /hudCompact \? NSSize\(width: 116, height: 116\) : NSSize\(width: 326, height: 292\)/u);
   assert.match(swift, /hudCircle\.frame = hudCompact/u);
   assert.match(swift, /hudStateLabel\.isHidden = hudCompact/u);
   assert.match(swift, /hudCompactButton\?\.title = hudCompact \? "↗" : "−"/u);

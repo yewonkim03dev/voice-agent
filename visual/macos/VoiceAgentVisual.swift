@@ -50,6 +50,8 @@ private let visualTextEn: [String: String] = [
     "copy": "Copy",
     "plainText": "Text",
     "markdownView": "Markdown",
+    "appShot": "App Shot",
+    "appShotHelp": "Capture the current screen and ask the agent to explain it.",
     "stop": "STOP",
     "ttsStop": "TTS Stop",
     "tts": "TTS",
@@ -95,6 +97,9 @@ private let visualTextEn: [String: String] = [
     "showFloatingHud": "Show floating HUD",
     "popupPreferred": "Prefer popup for long answers",
     "popupFontSize": "Popup Font",
+    "screenDescribePrompt": "App Shot Prompt",
+    "screenCaptureDirectory": "Shot Directory",
+    "appShotHotkey": "App Shot Hotkey",
     "speakWakeWarning": "Speak wake warning",
     "alwaysStartNewThread": "Always start new thread",
     "reactionMode": "Reaction design",
@@ -155,6 +160,9 @@ private let visualTextEn: [String: String] = [
     "hudHelp": "Shows or hides the floating HUD above other apps.",
     "popupHelp": "Lets long or study-oriented answers open in a native popup instead of being spoken in full.",
     "popupFontHelp": "Base font size for native popup answers, from 12 to 24 points.",
+    "screenDescribePromptHelp": "Prompt automatically attached to App Shot screen captures.",
+    "screenCaptureDirectoryHelp": "Directory where App Shot screenshots are saved before sending their path to the agent.",
+    "appShotHotkeyHelp": "Supported values: left_cmd+right_cmd or off.",
     "reactionModeHelp": "Chooses the reactive visual surface. Audio circle keeps the original design; Particle orb adds a glowing point-sphere mode.",
     "wakeWarningHelp": "Controls whether wake mismatch warnings are spoken aloud.",
     "wakePhrasesHelp": "Wake phrase list. One phrase per line replaces the current list.",
@@ -214,6 +222,8 @@ private let visualTextKo: [String: String] = [
     "copy": "복사",
     "plainText": "텍스트",
     "markdownView": "마크다운",
+    "appShot": "앱샷",
+    "appShotHelp": "현재 화면을 캡처하고 에이전트에게 설명을 요청합니다.",
     "stop": "정지",
     "ttsStop": "TTS 정지",
     "tts": "TTS",
@@ -259,6 +269,9 @@ private let visualTextKo: [String: String] = [
     "showFloatingHud": "floating HUD 표시",
     "popupPreferred": "긴 답변 팝업 선호",
     "popupFontSize": "팝업 글자 크기",
+    "screenDescribePrompt": "앱샷 프롬프트",
+    "screenCaptureDirectory": "캡처 저장 위치",
+    "appShotHotkey": "앱샷 단축키",
     "speakWakeWarning": "호출어 경고 말하기",
     "alwaysStartNewThread": "항상 새 스레드로 시작",
     "reactionMode": "반응 디자인",
@@ -319,6 +332,9 @@ private let visualTextKo: [String: String] = [
     "hudHelp": "다른 앱 위에 뜨는 floating HUD 표시 여부입니다.",
     "popupHelp": "긴 설명이나 공부용 답변을 전부 읽지 않고 네이티브 팝업으로 띄웁니다.",
     "popupFontHelp": "네이티브 팝업 답변의 기본 글자 크기입니다. 12에서 24 사이입니다.",
+    "screenDescribePromptHelp": "앱샷 화면 캡처 요청에 자동으로 붙일 프롬프트입니다.",
+    "screenCaptureDirectoryHelp": "앱샷 PNG를 저장한 뒤 해당 경로를 에이전트에게 전달할 디렉토리입니다.",
+    "appShotHotkeyHelp": "지원 값: left_cmd+right_cmd 또는 off.",
     "reactionModeHelp": "상태와 음량에 반응하는 비주얼을 고릅니다. Audio circle은 기존 디자인이고 Particle orb는 빛나는 점 구체 모드입니다.",
     "wakeWarningHelp": "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
     "wakePhrasesHelp": "호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.",
@@ -1698,6 +1714,7 @@ final class VisualRootView: NSView {
             localizedText("stop", language: uiLanguage),
             localizedText("settings", language: uiLanguage),
             localizedText("recentPopups", language: uiLanguage),
+            localizedText("appShot", language: uiLanguage),
             localizedText("ttsStop", language: uiLanguage),
             localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage),
             localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage),
@@ -2177,6 +2194,7 @@ final class MenuBarCompanion {
     private weak var hudTtsStopButton: NSButton?
     private weak var hudMicButton: NSButton?
     private weak var hudCameraButton: NSButton?
+    private weak var hudAppShotButton: NSButton?
     private weak var hudShowButton: NSButton?
     private weak var hudCompactButton: NSButton?
     private let stateLabel = NSTextField(labelWithString: "idle")
@@ -2200,6 +2218,7 @@ final class MenuBarCompanion {
     private var onShowContext: (() -> Void)?
     private var onMicToggle: (() -> Void)?
     private var onCameraToggle: (() -> Void)?
+    private var onDescribeScreen: (() -> Void)?
     private var onHudCompactChange: ((Bool) -> Void)?
     private var hudEnabled = true
     private var hudCompact = false
@@ -2223,6 +2242,7 @@ final class MenuBarCompanion {
         onShowContext: @escaping () -> Void,
         onMicToggle: @escaping () -> Void,
         onCameraToggle: @escaping () -> Void,
+        onDescribeScreen: @escaping () -> Void,
         onHudCompactChange: @escaping (Bool) -> Void
     ) {
         self.onStop = onStop
@@ -2234,6 +2254,7 @@ final class MenuBarCompanion {
         self.onShowContext = onShowContext
         self.onMicToggle = onMicToggle
         self.onCameraToggle = onCameraToggle
+        self.onDescribeScreen = onDescribeScreen
         self.onHudCompactChange = onHudCompactChange
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -2368,6 +2389,10 @@ final class MenuBarCompanion {
         onCameraToggle?()
     }
 
+    @objc private func describeScreen() {
+        onDescribeScreen?()
+    }
+
     @objc private func showWindow() {
         onShowWindow?()
     }
@@ -2442,7 +2467,7 @@ final class MenuBarCompanion {
     }
 
     private func hudSize() -> NSSize {
-        hudCompact ? NSSize(width: 116, height: 116) : NSSize(width: 326, height: 264)
+        hudCompact ? NSSize(width: 116, height: 116) : NSSize(width: 326, height: 292)
     }
 
     private func resizeHudPanel(anchoredToTopRight: Bool) {
@@ -2468,7 +2493,7 @@ final class MenuBarCompanion {
         hudCircle.compactStatusStyle = true
         hudCircle.frame = hudCompact
             ? NSRect(x: 12, y: 12, width: 92, height: 92)
-            : NSRect(x: 14, y: 132, width: 110, height: 110)
+            : NSRect(x: 14, y: 160, width: 110, height: 110)
         hudOrb.compactStatusStyle = true
         hudOrb.frame = hudCircle.frame
         hudCircle.isHidden = reactionMode != "audio_circle"
@@ -2488,11 +2513,12 @@ final class MenuBarCompanion {
         hudTtsStopButton?.isHidden = hudCompact
         hudMicButton?.isHidden = hudCompact
         hudCameraButton?.isHidden = hudCompact
+        hudAppShotButton?.isHidden = hudCompact
         hudShowButton?.isHidden = hudCompact
 
         hudCompactButton?.frame = hudCompact
             ? NSRect(x: 86, y: 86, width: 24, height: 22)
-            : NSRect(x: 294, y: 230, width: 24, height: 22)
+            : NSRect(x: 294, y: 258, width: 24, height: 22)
         hudCompactButton?.title = hudCompact ? "↗" : "−"
         hudCompactButton?.toolTip = localizedText(hudCompact ? "restoreHud" : "compactHud", language: uiLanguage)
     }
@@ -2569,7 +2595,7 @@ final class MenuBarCompanion {
     }
 
     private func makeHudView() -> NSView {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 326, height: 264))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 326, height: 292))
         view.wantsLayer = true
         view.layer?.cornerRadius = 16
         view.layer?.borderWidth = 1
@@ -2577,7 +2603,7 @@ final class MenuBarCompanion {
         view.layer?.backgroundColor = NSColor(calibratedRed: 0.03, green: 0.05, blue: 0.08, alpha: 0.88).cgColor
 
         hudCircle.compactStatusStyle = true
-        hudCircle.frame = NSRect(x: 14, y: 132, width: 110, height: 110)
+        hudCircle.frame = NSRect(x: 14, y: 160, width: 110, height: 110)
         view.addSubview(hudCircle)
         hudOrb.compactStatusStyle = true
         hudOrb.frame = hudCircle.frame
@@ -2586,17 +2612,17 @@ final class MenuBarCompanion {
 
         hudStateLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
         hudStateLabel.textColor = NSColor(calibratedRed: 0.53, green: 0.78, blue: 1.0, alpha: 1)
-        hudStateLabel.frame = NSRect(x: 140, y: 220, width: 168, height: 18)
+        hudStateLabel.frame = NSRect(x: 140, y: 248, width: 168, height: 18)
         view.addSubview(hudStateLabel)
 
         hudDetailLabel.font = NSFont.systemFont(ofSize: 12)
         hudDetailLabel.textColor = NSColor(calibratedRed: 0.86, green: 0.90, blue: 0.96, alpha: 1)
-        hudDetailLabel.frame = NSRect(x: 140, y: 166, width: 168, height: 50)
+        hudDetailLabel.frame = NSRect(x: 140, y: 194, width: 168, height: 50)
         view.addSubview(hudDetailLabel)
 
         hudQuestionLabel.font = NSFont.systemFont(ofSize: 11)
         hudQuestionLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
-        hudQuestionLabel.frame = NSRect(x: 140, y: 136, width: 168, height: 26)
+        hudQuestionLabel.frame = NSRect(x: 140, y: 164, width: 168, height: 26)
         view.addSubview(hudQuestionLabel)
 
         hudUsageLabel.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
@@ -2610,7 +2636,7 @@ final class MenuBarCompanion {
 
         hudContextSummary.font = NSFont.systemFont(ofSize: 10)
         hudContextSummary.textColor = NSColor(calibratedRed: 0.41, green: 0.47, blue: 0.55, alpha: 1)
-        hudContextSummary.frame = NSRect(x: 14, y: 106, width: 298, height: 16)
+        hudContextSummary.frame = NSRect(x: 14, y: 134, width: 298, height: 16)
         view.addSubview(hudContextSummary)
 
         hudContextField.placeholderString = localizedText("referenceText", language: uiLanguage)
@@ -2619,28 +2645,34 @@ final class MenuBarCompanion {
         hudContextField.isSelectable = true
         hudContextField.target = self
         hudContextField.action = #selector(addContext)
-        hudContextField.frame = NSRect(x: 14, y: 80, width: 100, height: 22)
+        hudContextField.frame = NSRect(x: 14, y: 108, width: 100, height: 22)
         view.addSubview(hudContextField)
 
         let addReference = NSButton(title: localizedText("add", language: uiLanguage), target: self, action: #selector(addContext))
         hudAddReferenceButton = addReference
-        addReference.frame = NSRect(x: 120, y: 78, width: 42, height: 26)
+        addReference.frame = NSRect(x: 120, y: 106, width: 42, height: 26)
         view.addSubview(addReference)
 
         let directReference = NSButton(title: localizedText("directGo", language: uiLanguage), target: self, action: #selector(directContext))
         hudDirectReferenceButton = directReference
-        directReference.frame = NSRect(x: 166, y: 78, width: 42, height: 26)
+        directReference.frame = NSRect(x: 166, y: 106, width: 42, height: 26)
         view.addSubview(directReference)
 
         let showReference = NSButton(title: localizedText("refs", language: uiLanguage), target: self, action: #selector(showContext))
         hudShowReferenceButton = showReference
-        showReference.frame = NSRect(x: 212, y: 78, width: 42, height: 26)
+        showReference.frame = NSRect(x: 212, y: 106, width: 42, height: 26)
         view.addSubview(showReference)
 
         let clearReference = NSButton(title: localizedText("clear", language: uiLanguage), target: self, action: #selector(clearContext))
         hudClearReferenceButton = clearReference
-        clearReference.frame = NSRect(x: 258, y: 78, width: 54, height: 26)
+        clearReference.frame = NSRect(x: 258, y: 106, width: 54, height: 26)
         view.addSubview(clearReference)
+
+        let appShot = NSButton(title: localizedText("appShot", language: uiLanguage), target: self, action: #selector(describeScreen))
+        hudAppShotButton = appShot
+        appShot.toolTip = localizedText("appShotHelp", language: uiLanguage)
+        appShot.frame = NSRect(x: 14, y: 78, width: 298, height: 26)
+        view.addSubview(appShot)
 
         let stop = NSButton(title: localizedText("stop", language: uiLanguage), target: self, action: #selector(stopAgent))
         hudStopButton = stop
@@ -2706,6 +2738,8 @@ final class MenuBarCompanion {
         hudMicButton?.toolTip = localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage)
         hudCameraButton?.title = localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage)
         hudCameraButton?.toolTip = localizedText(cameraEnabled ? "cameraTurnOff" : "cameraTurnOn", language: uiLanguage)
+        hudAppShotButton?.title = localizedText("appShot", language: uiLanguage)
+        hudAppShotButton?.toolTip = localizedText("appShotHelp", language: uiLanguage)
         hudShowButton?.title = localizedText("show", language: uiLanguage)
         hudCompactButton?.toolTip = localizedText(hudCompact ? "restoreHud" : "compactHud", language: uiLanguage)
         hudContextField.placeholderString = localizedText("referenceText", language: uiLanguage)
@@ -3326,6 +3360,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsThinkingVolumeField = NSTextField(string: "0.32")
     private let settingsMaxUtteranceField = NSTextField(string: "15")
     private let settingsPopupFontSizeField = NSTextField(string: "14")
+    private let settingsScreenCaptureDirectoryField = NSTextField(string: "")
+    private let settingsAppShotHotkeyField = NSTextField(string: "left_cmd+right_cmd")
+    private let settingsScreenDescribePromptView = NSTextView(frame: .zero)
     private let settingsReactionModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
     private let settingsHudCheckbox = NSButton(checkboxWithTitle: "Show floating HUD", target: nil, action: nil)
@@ -3361,6 +3398,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var thinkingVolume = 0.32
     private var maxUtteranceSeconds = 15.0
     private var popupFontSize = 14.0
+    private var screenCaptureDirectory = ""
+    private var appShotHotkey = "left_cmd+right_cmd"
+    private var screenDescribePrompt = ""
     private var responseLanguage = "auto"
     private var reactionMode = "audio_circle"
     private var chatHistoryEnabled = true
@@ -3387,6 +3427,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var codexThreadId = ""
     private var uiLanguage: UiLanguage = .en
     private var uiLanguageInitialized = false
+    private var appShotHotkeyMonitor: Any?
+    private var appShotHotkeyLocalMonitor: Any?
+    private var appShotHotkeyActive = false
 
     init(bridgeUrl: String) {
         self.bridgeUrl = bridgeUrl
@@ -3416,12 +3459,14 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             onShowContext: { [weak self] in self?.showContext() },
             onMicToggle: { [weak self] in self?.toggleMicInput() },
             onCameraToggle: { [weak self] in self?.toggleCameraInput() },
+            onDescribeScreen: { [weak self] in self?.describeScreen() },
             onHudCompactChange: { [weak self] compact in self?.updateHudCompact(compact, sendSettings: true) }
         )
         menuBarCompanion.uiLanguage = uiLanguage
         menuBarCompanion.updateMicEnabled(micEnabled)
         menuBarCompanion.setReactionMode(reactionMode)
         menuBarCompanion.setHudCompact(hudCompact)
+        installAppShotHotkeyMonitor()
         connect()
     }
 
@@ -3447,11 +3492,47 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         NSApp.mainMenu = mainMenu
     }
 
+    private func installAppShotHotkeyMonitor() {
+        let handler: (NSEvent) -> Void = { [weak self] event in
+            self?.handleAppShotFlagsChanged(event)
+        }
+
+        if appShotHotkeyMonitor == nil {
+            appShotHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: handler)
+        }
+        if appShotHotkeyLocalMonitor == nil {
+            appShotHotkeyLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                self?.handleAppShotFlagsChanged(event)
+                return event
+            }
+        }
+    }
+
+    private func handleAppShotFlagsChanged(_ event: NSEvent) {
+        guard appShotHotkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "left_cmd+right_cmd" else {
+            appShotHotkeyActive = false
+            return
+        }
+
+        let raw = event.modifierFlags.rawValue
+        let leftCommandMask: UInt = 0x00000008
+        let rightCommandMask: UInt = 0x00000010
+        let bothCommands = (raw & leftCommandMask) != 0 && (raw & rightCommandMask) != 0
+
+        if bothCommands && !appShotHotkeyActive {
+            appShotHotkeyActive = true
+            describeScreen()
+        } else if !bothCommands {
+            appShotHotkeyActive = false
+        }
+    }
+
     private func buildContentView() -> NSView {
         let controls = NSStackView()
         controls.addArrangedSubview(emergencyButton())
         controls.addArrangedSubview(button(localizedText("settings", language: uiLanguage), action: #selector(showSettings)))
         controls.addArrangedSubview(button(localizedText("recentPopups", language: uiLanguage), action: #selector(showRecentPopups)))
+        controls.addArrangedSubview(button(localizedText("appShot", language: uiLanguage), action: #selector(describeScreen)))
         controls.addArrangedSubview(button(localizedText("ttsStop", language: uiLanguage), action: #selector(stopTts)))
         controls.addArrangedSubview(button(localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage), action: #selector(toggleMicInput)))
         controls.addArrangedSubview(button(localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage), action: #selector(toggleCameraInput)))
@@ -3747,6 +3828,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         sendControl("tts_stop")
     }
 
+    @objc private func describeScreen() {
+        sendControl("describe_screen")
+    }
+
     @objc private func toggleMicInput() {
         let next = !micEnabled
         updateMicEnabled(next)
@@ -3858,6 +3943,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
         maxUtteranceSeconds = clampedDouble(settingsMaxUtteranceField.stringValue, fallback: maxUtteranceSeconds, min: 5, max: 55)
         popupFontSize = clampedDouble(settingsPopupFontSizeField.stringValue, fallback: popupFontSize, min: 12, max: 24)
+        screenCaptureDirectory = settingsScreenCaptureDirectoryField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        appShotHotkey = settingsAppShotHotkeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        screenDescribePrompt = settingsScreenDescribePromptView.string.trimmingCharacters(in: .whitespacesAndNewlines)
         reactionMode = normalizedReactionMode(settingsReactionModePopup.selectedRepresentedValue(fallback: "audio_circle"))
         responseLanguage = ttsLanguage
         chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
@@ -3902,6 +3990,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         thinkingVolume = 0.32
         maxUtteranceSeconds = 15
         popupFontSize = 14
+        screenCaptureDirectory = ""
+        appShotHotkey = "left_cmd+right_cmd"
+        screenDescribePrompt = ""
         reactionMode = "audio_circle"
         chatHistoryEnabled = true
         hudEnabled = true
@@ -4041,6 +4132,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             popupFontSize = min(24, max(12, value))
             popupPanel.updateFontSize(CGFloat(popupFontSize))
         }
+        if let value = settings["screenCaptureDirectory"] as? String {
+            screenCaptureDirectory = value
+        }
+        if let value = settings["appShotHotkey"] as? String {
+            appShotHotkey = value
+        }
+        if let value = settings["screenDescribePrompt"] as? String {
+            screenDescribePrompt = value
+        }
         if let value = settings["speakWakeRejectedWarnings"] as? Bool {
             speakWakeRejectedWarnings = value
         }
@@ -4123,7 +4223,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let contentWidth: CGFloat = 380
-        let contentHeight: CGFloat = 1400
+        let contentHeight: CGFloat = 1510
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -4164,6 +4264,18 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsCustomGestureClearButton.target = self
         settingsCustomGestureClearButton.action = #selector(clearCustomGestureTemplatesFromSettings)
 
+        addSettingsPhraseArea(
+            view,
+            label: localizedText("screenDescribePrompt", language: uiLanguage),
+            textView: settingsScreenDescribePromptView,
+            y: 1448,
+            placeholderHeight: 54,
+            help: localizedText("screenDescribePromptHelp", language: uiLanguage)
+        )
+        addSettingsRow(view, label: localizedText("screenCaptureDirectory", language: uiLanguage), control: settingsScreenCaptureDirectoryField, y: 1408)
+        addSettingsHelp(view, y: 1408, text: localizedText("screenCaptureDirectoryHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("appShotHotkey", language: uiLanguage), control: settingsAppShotHotkeyField, y: 1368)
+        addSettingsHelp(view, y: 1368, text: localizedText("appShotHotkeyHelp", language: uiLanguage))
         addSettingsRow(view, label: localizedText("popupFontSize", language: uiLanguage), control: settingsPopupFontSizeField, y: 1326)
         addSettingsHelp(view, y: 1326, text: localizedText("popupFontHelp", language: uiLanguage))
         addSettingsRow(view, label: localizedText("reactionMode", language: uiLanguage), control: settingsReactionModePopup, y: 1286)
@@ -4390,6 +4502,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
         settingsMaxUtteranceField.stringValue = String(format: "%.0f", maxUtteranceSeconds)
         settingsPopupFontSizeField.stringValue = String(format: "%.0f", popupFontSize)
+        settingsScreenCaptureDirectoryField.stringValue = screenCaptureDirectory
+        settingsAppShotHotkeyField.stringValue = appShotHotkey
+        settingsScreenDescribePromptView.string = screenDescribePrompt
         settingsReactionModePopup.selectRepresentedValue(reactionMode)
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
         settingsHudCheckbox.state = hudEnabled ? .on : .off
@@ -4522,6 +4637,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "hudCompact": hudCompact,
                 "popupPreferred": popupPreferred,
                 "popupFontSize": popupFontSize,
+                "screenCaptureDirectory": screenCaptureDirectory,
+                "screenDescribePrompt": screenDescribePrompt,
+                "appShotHotkey": appShotHotkey,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])
@@ -4542,6 +4660,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "hudCompact": hudCompact,
                 "popupPreferred": popupPreferred,
                 "popupFontSize": popupFontSize,
+                "screenCaptureDirectory": screenCaptureDirectory,
+                "screenDescribePrompt": screenDescribePrompt,
+                "appShotHotkey": appShotHotkey,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])

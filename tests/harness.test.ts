@@ -4,6 +4,11 @@ import test from "node:test";
 import { createTerminalHarnessFromArgs, InMemoryAgentBackend, parseHarnessCliArgs, TerminalHarness, type TerminalHarnessOptions } from "../src/app/harness.ts";
 import type { VoiceLocalSettingsOverride, VoiceSettingsPersistence } from "../src/app/voice-config.ts";
 import {
+  defaultAppShotHotkey,
+  defaultScreenCaptureDirectory,
+  defaultScreenDescribePrompt
+} from "../src/screen/ScreenCapture.ts";
+import {
   parseVoiceAgentEventLine,
   parseVoiceAgentEventSequence,
   voiceAgentProtocolPrompt,
@@ -260,6 +265,9 @@ test("visual settings apply persists TTS and visual overrides", async () => {
         hudCompact: true,
         popupPreferred: true,
         popupFontSize: 24,
+        screenDescribePrompt: defaultScreenDescribePrompt("en"),
+        screenCaptureDirectory: defaultScreenCaptureDirectory,
+        appShotHotkey: defaultAppShotHotkey,
         speakWakeRejectedWarnings: false,
         maxUtteranceSeconds: 55
       }
@@ -376,6 +384,9 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
     hudCompact: false,
     popupPreferred: false,
     popupFontSize: 14,
+    screenDescribePrompt: defaultScreenDescribePrompt(),
+    screenCaptureDirectory: defaultScreenCaptureDirectory,
+    appShotHotkey: defaultAppShotHotkey,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: 15
   });
@@ -417,6 +428,9 @@ test("visual reset_settings clears persisted overrides", async () => {
     hudCompact: false,
     popupPreferred: false,
     popupFontSize: 14,
+    screenDescribePrompt: defaultScreenDescribePrompt(),
+    screenCaptureDirectory: defaultScreenCaptureDirectory,
+    appShotHotkey: defaultAppShotHotkey,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: 15
   });
@@ -1075,6 +1089,9 @@ test("visual popup preference updates backend protocol prompt and persists", asy
       hudCompact: false,
       popupPreferred: true,
       popupFontSize: 14,
+      screenDescribePrompt: defaultScreenDescribePrompt(),
+      screenCaptureDirectory: defaultScreenCaptureDirectory,
+      appShotHotkey: defaultAppShotHotkey,
       speakWakeRejectedWarnings: true,
       maxUtteranceSeconds: 15
     }

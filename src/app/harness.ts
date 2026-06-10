@@ -31,6 +31,12 @@ import {
   withTranscriptText,
   type Transcript
 } from "../speech/Transcript.ts";
+import {
+  defaultAppShotHotkey,
+  defaultScreenCaptureDirectory,
+  defaultScreenDescribePrompt,
+  sanitizeScreenCaptureDirectory
+} from "../screen/ScreenCapture.ts";
 import { ConsoleVoiceOutput, type InspectableVoiceOutput } from "../voice/ConsoleVoiceOutput.ts";
 import { createVoiceOutput } from "../voice/createVoiceOutput.ts";
 import {
@@ -422,6 +428,10 @@ export class TerminalHarness {
       state: "shutdown"
     });
     this.started = false;
+  }
+
+  getVisualRuntimeSettings(): VisualRuntimeSettings {
+    return this.currentVisualRuntimeSettings();
   }
 
   async processLine(line: string): Promise<HarnessLineResult> {
@@ -1842,6 +1852,10 @@ export class TerminalHarness {
       hudCompact: this.visualSettings.hudCompact ?? false,
       popupPreferred: this.visualSettings.popupPreferred ?? false,
       popupFontSize: this.visualSettings.popupFontSize ?? 14,
+      screenDescribePrompt: this.visualSettings.screenDescribePrompt ??
+        defaultScreenDescribePrompt(this.visualSettings.responseLanguage ?? "auto"),
+      screenCaptureDirectory: this.visualSettings.screenCaptureDirectory ?? defaultScreenCaptureDirectory,
+      appShotHotkey: this.visualSettings.appShotHotkey ?? defaultAppShotHotkey,
       speakWakeRejectedWarnings: this.visualSettings.speakWakeRejectedWarnings ?? true,
       maxUtteranceSeconds: this.visualSettings.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
     };
@@ -2373,6 +2387,9 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
     hudCompact: false,
     popupPreferred: false,
     popupFontSize: 14,
+    screenDescribePrompt: defaultScreenDescribePrompt(),
+    screenCaptureDirectory: defaultScreenCaptureDirectory,
+    appShotHotkey: defaultAppShotHotkey,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: defaultMaxUtteranceSeconds
   };
@@ -2399,6 +2416,9 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
     hudCompact: typeof settings?.hudCompact === "boolean" ? settings.hudCompact : undefined,
     popupPreferred: typeof settings?.popupPreferred === "boolean" ? settings.popupPreferred : undefined,
     popupFontSize: parsePersistedNumber(settings?.popupFontSize),
+    screenDescribePrompt: typeof settings?.screenDescribePrompt === "string" ? settings.screenDescribePrompt : undefined,
+    screenCaptureDirectory: sanitizeScreenCaptureDirectory(settings?.screenCaptureDirectory),
+    appShotHotkey: typeof settings?.appShotHotkey === "string" ? settings.appShotHotkey : undefined,
     speakWakeRejectedWarnings: typeof settings?.speakWakeRejectedWarnings === "boolean"
       ? settings.speakWakeRejectedWarnings
       : undefined,
@@ -2412,11 +2432,19 @@ function sanitizeVisualRuntimeSettings(
   settings: VisualRuntimeSettings,
   fallback: VisualRuntimeSettings = defaultVisualRuntimeSettings()
 ): VisualRuntimeSettings {
+  const responseLanguage = settings.responseLanguage ?? fallback.responseLanguage ?? "auto";
+  const fallbackPrompt = fallback.screenDescribePrompt;
+  const fallbackPromptIsDefault =
+    !fallbackPrompt ||
+    fallbackPrompt === defaultScreenDescribePrompt("auto") ||
+    fallbackPrompt === defaultScreenDescribePrompt("ko") ||
+    fallbackPrompt === defaultScreenDescribePrompt("en");
+
   return {
     thinkingVolume: settings.thinkingVolume === undefined
       ? fallback.thinkingVolume ?? defaultVisualThinkingVolume
       : clamp(settings.thinkingVolume, 0, 0.8),
-    responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto",
+    responseLanguage,
     reactionMode: settings.reactionMode ?? fallback.reactionMode ?? "audio_circle",
     chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true,
     hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true,
@@ -2425,6 +2453,18 @@ function sanitizeVisualRuntimeSettings(
     popupFontSize: settings.popupFontSize === undefined
       ? fallback.popupFontSize ?? 14
       : clamp(settings.popupFontSize, 12, 24),
+    screenDescribePrompt: settings.screenDescribePrompt !== undefined
+      ? settings.screenDescribePrompt.trim() ||
+        defaultScreenDescribePrompt(responseLanguage)
+      : fallbackPromptIsDefault
+        ? defaultScreenDescribePrompt(responseLanguage)
+        : fallbackPrompt,
+    screenCaptureDirectory: sanitizeScreenCaptureDirectory(settings.screenCaptureDirectory) ??
+      fallback.screenCaptureDirectory ??
+      defaultScreenCaptureDirectory,
+    appShotHotkey: settings.appShotHotkey !== undefined
+      ? settings.appShotHotkey.trim() || defaultAppShotHotkey
+      : fallback.appShotHotkey ?? defaultAppShotHotkey,
     speakWakeRejectedWarnings: settings.speakWakeRejectedWarnings ?? fallback.speakWakeRejectedWarnings ?? true,
     maxUtteranceSeconds: settings.maxUtteranceSeconds === undefined
       ? fallback.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
