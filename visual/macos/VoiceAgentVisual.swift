@@ -3041,15 +3041,15 @@ private func markdownBodyHtml(_ markdown: String) -> String {
         } else if trimmed.isEmpty {
             output.append("<div class=\"spacer\"></div>")
         } else if trimmed.hasPrefix("### ") {
-            output.append("<h3>\(htmlEscaped(String(trimmed.dropFirst(4))))</h3>")
+            output.append("<h3>\(inlineMarkdownHtml(String(trimmed.dropFirst(4))))</h3>")
         } else if trimmed.hasPrefix("## ") {
-            output.append("<h2>\(htmlEscaped(String(trimmed.dropFirst(3))))</h2>")
+            output.append("<h2>\(inlineMarkdownHtml(String(trimmed.dropFirst(3))))</h2>")
         } else if trimmed.hasPrefix("# ") {
-            output.append("<h1>\(htmlEscaped(String(trimmed.dropFirst(2))))</h1>")
+            output.append("<h1>\(inlineMarkdownHtml(String(trimmed.dropFirst(2))))</h1>")
         } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
-            output.append("<p class=\"bullet\">&bull; \(htmlEscaped(String(trimmed.dropFirst(2))))</p>")
+            output.append("<p class=\"bullet\">&bull; \(inlineMarkdownHtml(String(trimmed.dropFirst(2))))</p>")
         } else {
-            output.append("<p>\(htmlEscaped(line))</p>")
+            output.append("<p>\(inlineMarkdownHtml(line))</p>")
         }
     }
 
@@ -3061,6 +3061,76 @@ private func markdownBodyHtml(_ markdown: String) -> String {
     }
 
     return output.joined(separator: "\n")
+}
+
+private extension String {
+    func hasPrefix(_ prefix: String, at index: String.Index) -> Bool {
+        self[index...].hasPrefix(prefix)
+    }
+}
+
+private func inlineMarkdownHtml(_ value: String) -> String {
+    var output = ""
+    var index = value.startIndex
+
+    while index < value.endIndex {
+        if value.hasPrefix("`", at: index),
+           let range = inlineRange(in: value, from: index, opening: "`", closing: "`") {
+            let inner = value[range.content]
+            output += "<code>\(htmlEscaped(String(inner)))</code>"
+            index = range.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("\\(", at: index),
+           let range = inlineRange(in: value, from: index, opening: "\\(", closing: "\\)") {
+            output += htmlEscaped(String(value[range.full]))
+            index = range.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("\\[", at: index),
+           let range = inlineRange(in: value, from: index, opening: "\\[", closing: "\\]") {
+            output += htmlEscaped(String(value[range.full]))
+            index = range.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("$", at: index),
+           !value.hasPrefix("$$", at: index),
+           let range = inlineRange(in: value, from: index, opening: "$", closing: "$") {
+            output += htmlEscaped(String(value[range.full]))
+            index = range.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("**", at: index),
+           let range = inlineRange(in: value, from: index, opening: "**", closing: "**") {
+            let inner = String(value[range.content])
+            output += "<strong>\(inlineMarkdownHtml(inner))</strong>"
+            index = range.full.upperBound
+            continue
+        }
+
+        output += htmlEscaped(String(value[index]))
+        index = value.index(after: index)
+    }
+
+    return output
+}
+
+private func inlineRange(
+    in value: String,
+    from index: String.Index,
+    opening: String,
+    closing: String
+) -> (full: Range<String.Index>, content: Range<String.Index>)? {
+    guard value.hasPrefix(opening, at: index) else { return nil }
+    let contentStart = value.index(index, offsetBy: opening.count)
+    guard contentStart < value.endIndex else { return nil }
+    guard let closingRange = value.range(of: closing, range: contentStart..<value.endIndex) else { return nil }
+    guard contentStart < closingRange.lowerBound else { return nil }
+    return (index..<closingRange.upperBound, contentStart..<closingRange.lowerBound)
 }
 
 private func oneLineDisplayMath(_ trimmed: String) -> String? {
