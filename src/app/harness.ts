@@ -881,7 +881,7 @@ export class TerminalHarness {
       return;
     }
 
-    if (remainder.length >= 2_000) {
+    if (remainder.length >= 2_000 && !looksLikePendingVoiceAgentJson(remainder)) {
       this.handlePassthroughOutputLine(type, sessionId, remainder);
       this.passthroughOutputBuffers.delete(key);
       return;
@@ -2686,6 +2686,12 @@ function passthroughOutputBufferKey(sessionId: string, type: CodexOutputEvent["t
 
 function popupGenerationKey(sessionId: string, generation: number | undefined): string {
   return `${sessionId}\u0000${generation ?? "unknown"}`;
+}
+
+function looksLikePendingVoiceAgentJson(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith("{")) return false;
+  return /"op"\s*:\s*"voice-agent"/u.test(trimmed);
 }
 
 function parsePassthroughOutputBufferKey(key: string): { sessionId: string; type: CodexOutputEvent["type"] } {

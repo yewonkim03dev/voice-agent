@@ -1371,6 +1371,50 @@ test("pass-through popup opens once per turn and is not spoken", async () => {
   assert.deepEqual(voiceOutput.messages.map((message) => message.text), ["팝업으로 열었습니다."]);
 });
 
+test("pass-through popup buffers long split voice-agent JSON until complete", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, lines, visualBridge, undefined, undefined, {
+    visualConfig: {
+      popupPreferred: true
+    }
+  });
+
+  await harness.start();
+  await harness.processLine("코덱스 긴 수식 설명해줘");
+  const popupJson = JSON.stringify({
+    op: "voice-agent",
+    type: "popup",
+    title: "긴 수식",
+    text: `# 수식\n\n${"긴 설명입니다. ".repeat(300)}\n\n$$x^2 + y^2 = z^2$$`
+  });
+  const splitIndex = 2_500;
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: popupJson.slice(0, splitIndex),
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(visualBridge.events.some((event) => event.type === "popup"), false);
+  assert.equal(lines.some((line) => line.includes("[agent:stdout]")), false);
+
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: `${popupJson.slice(splitIndex)}\n`,
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  const popup = visualBridge.events.find((event) => event.type === "popup");
+  assert.equal(popup?.title, "긴 수식");
+  assert.match(popup?.text ?? "", /\$\$x\^2 \+ y\^2 = z\^2\$\$/u);
+  assert.equal(lines.some((line) => line.includes("[agent:popup] 긴 수식")), true);
+});
+
 test("recent popup slash commands list and reopen popup answers", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
