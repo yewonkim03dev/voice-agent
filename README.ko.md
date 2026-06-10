@@ -59,6 +59,29 @@ npm run tts:test -- --en "Codex voice output test."
 npm test
 ```
 
+## 기능
+
+| 기능 | 설명 | 상태 |
+| --- | --- | --- |
+| 항시 대기 wake pass-through | 계속 듣고 있다가 설정된 호출어를 감지하고, 호출어를 제거한 뒤 남은 자연어 요청을 로컬 의도 분류 없이 agent app-server로 그대로 전달합니다. | 핵심 |
+| Wake-only follow-up 및 streaming wake | `코덱스`/`자비스`만 먼저 부른 뒤 follow-up window 안에서 다음 명령을 말할 수 있고, partial wake 감지로 listening 상태 전환을 더 빠르게 할 수 있습니다. | 추가/개선 |
+| Codex app-server approval bridge | command, file-change, permissions, MCP elicitation, user-input 요청을 request id 기준으로 보관하고, 허용/거부/세션 허용/계속 허용 결정을 공식 app-server 경로로 돌려보냅니다. | 핵심/개선 |
+| Codex app plugin 및 connector | Codex app에 설치한 plugin, MCP connector, Google Calendar, Gmail 같은 도구 호출은 Codex app-server가 담당하고, Voice Agent는 입력과 승인만 중재합니다. | 핵심 |
+| Visual companion 및 floating HUD | listening, thinking, speaking, approval, usage, command output, 현재 질문, 참고자료, emergency control을 native macOS visual window와 floating HUD로 보여줍니다. | 핵심/개선 |
+| Compact HUD mode | HUD를 dock으로 내리지 않고 floating 상태를 유지한 채, state와 audio feedback만 보이는 작은 둥근 정사각형 형태로 줄였다가 다시 복원할 수 있습니다. | 추가 |
+| Visual UI 한영 전환 | visual window, HUD control, settings label, state text, interaction button을 영어/한국어 UI 텍스트로 전환할 수 있습니다. | 추가 |
+| 참고자료 및 direct-go | `/add`, `/refs`, visual/HUD 참고자료 입력, 대기 중인 참고자료 목록 확인, 음성 없이 참고자료 텍스트 바로 전송을 지원합니다. | 추가/개선 |
+| App Shot | visual/HUD/terminal control 또는 설정 가능한 hotkey로 현재 화면을 캡처하고, 설정 가능한 임시 디렉토리에 저장한 뒤 커스텀 설명 프롬프트와 함께 바로 보내거나 참고자료로 대기시킵니다. | 추가 |
+| Popup answer | 긴 설명, 공부용 답변, 수식이 많은 답변, markdown-heavy 답변은 TTS로 짧은 안내만 말하고 본문은 native popup 하나로 띄울 수 있습니다. | 추가/개선 |
+| Popup rendering 및 history | Popup은 KaTeX 수식, 표, 목록, 링크, 이미지, 코드블록, 인용문, 취소선, task list, 각주, details 접기 블록, 글자 크기 설정, 최근 팝업 목록, 팝업 다시 열기를 지원합니다. | 추가/개선 |
+| Thread visual history | 같은 Codex thread id로 재시작하면 최근 visual Q/A와 popup history를 복원합니다. | 추가 |
+| 마이크 제어 및 복구 | visual/HUD/terminal 마이크 토글, `/mic-reconnect`, 절전 복귀/장치 재연결/무음 입력 정체 상황을 위한 audio recovery 흐름을 제공합니다. | 추가/개선 |
+| Camera gesture wake | 선택적 `--cam` 모드에서 카메라 gesture wake/stop/approval, hold/cooldown 설정, gesture label, 로컬 커스텀 gesture template, 삭제/초기화를 지원합니다. | 실험적 |
+| Reaction mode | 기존 audio circle은 유지하고, 상태별 색상이 있는 Three.js particle orb reaction mode와 HUD용 낮은 particle density를 추가했습니다. | 추가 |
+| TTS gating 및 barge-in | 실제 음성 출력은 `--tts`가 켜진 경우에만 사용하고, 그 외 stop/approval은 효과음 중심으로 처리합니다. wake + stop 또는 wake + 새 명령으로 speech/work를 안전하게 interrupt할 수 있습니다. | 개선 |
+| Terminal command help | `/help`가 사용 가능한 terminal command를 색상 섹션과 실행 옵션 안내로 출력하고, 알 수 없는 명령은 `/help`를 안내합니다. | 추가 |
+| Thread 시작 설정 | 설정에서 마지막 Codex thread를 이어갈지, 재시작할 때 항상 새 thread로 시작할지 선택할 수 있습니다. | 추가 |
+
 ## 아키텍처
 
 ![Voice Agent architecture](./docs/architecture.png)

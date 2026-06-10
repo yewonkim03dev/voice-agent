@@ -53,6 +53,29 @@ npm run tts:test -- --en "Codex voice output test."
 npm test
 ```
 
+## Features
+
+| Feature | What it does | Status |
+| --- | --- | --- |
+| Always-on wake voice pass-through | Listens continuously, detects configured wake phrases, strips the wake phrase, and forwards the remaining natural-language request to the agent app-server without local coding-intent classification. | Core |
+| Wake-only follow-up and streaming wake | Lets you say only `codex`/`jarvis`, then speak the next command within the follow-up window; streaming partial wake detection can move the UI into listening faster. | Added/Improved |
+| Codex app-server approval bridge | Handles command, file-change, permissions, MCP elicitation, and user-input requests by request id, then returns allow/deny/session/persistent decisions through the official app-server path. | Core/Improved |
+| Codex app plugins and connectors | Requests for installed Codex app plugins, MCP connectors, Google Calendar, Gmail, and similar tools stay owned by Codex app-server; Voice Agent only mediates input and approvals. | Core |
+| Visual companion and floating HUD | Shows listening, thinking, speaking, approval, usage, command output, current question, references, and emergency controls in a native macOS visual window and floating HUD. | Core/Improved |
+| Compact HUD mode | Keeps the HUD floating but shrinks it to a small rounded square with state and audio feedback, then restores to the full HUD when needed. | Added |
+| Localized visual UI | Visual window, HUD controls, settings labels, state text, and interaction buttons can switch between English and Korean UI text. | Added |
+| Reference context and direct-go | Supports `/add`, `/refs`, visual/HUD reference entry, queued reference review, and direct submission of reference text without speaking. | Added/Improved |
+| App Shot | Captures the current screen from visual/HUD/terminal controls or a configurable hotkey, saves it to a configurable temporary directory, and sends or queues it with a customizable explanation prompt. | Added |
+| Popup answers | Long, study-oriented, math-heavy, or markdown-heavy answers can open in one native popup while TTS speaks only a short handoff. | Added/Improved |
+| Popup rendering and history | Popup content supports KaTeX math, tables, lists, links, images, code blocks, blockquotes, strikethrough, task lists, footnotes, details blocks, font-size control, recent popup listing, and popup reopening. | Added/Improved |
+| Thread visual history | Restores recent visual Q/A and popup history by Codex thread id when the same session is resumed. | Added |
+| Microphone controls and recovery | Adds visual/HUD/terminal microphone toggles, `/mic-reconnect`, and audio recovery behavior for sleep, reconnects, and silent input stalls. | Added/Improved |
+| Camera gesture wake | Optional `--cam` mode adds camera gesture wake/stop/approval controls, configurable hold/cooldown timing, gesture labels, local custom gesture templates, and delete/reset controls. | Experimental |
+| Reaction modes | Keeps the original audio circle and adds an optional Three.js particle orb reaction mode with state colors and lighter HUD density. | Added |
+| TTS gating and barge-in | Real speech is gated behind `--tts`; otherwise stop/approval cues use effects. Wake + stop or wake + new command can interrupt active speech/work safely. | Improved |
+| Terminal command help | `/help` prints available terminal commands with colored sections and run-parameter guidance; unknown commands suggest `/help`. | Added |
+| Thread startup setting | Settings can resume the last Codex thread or always start a new thread on restart. | Added |
+
 ## Architecture
 
 ![Voice Agent architecture](./docs/architecture.png)
