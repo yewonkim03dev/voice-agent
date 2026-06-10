@@ -47,6 +47,7 @@ private let visualTextEn: [String: String] = [
     "popup": "Popup",
     "recentPopups": "Popups",
     "noRecentPopups": "No recent popups",
+    "selectPopup": "Select a popup to open",
     "copy": "Copy",
     "plainText": "Text",
     "markdownView": "Markdown",
@@ -100,6 +101,8 @@ private let visualTextEn: [String: String] = [
     "screenDescribePrompt": "App Shot Prompt",
     "screenCaptureDirectory": "Shot Directory",
     "appShotHotkey": "App Shot Hotkey",
+    "appShotAutoSend": "Send App Shot immediately",
+    "trashAppShots": "Move App Shots to Trash",
     "speakWakeWarning": "Speak wake warning",
     "alwaysStartNewThread": "Always start new thread",
     "reactionMode": "Reaction design",
@@ -163,6 +166,8 @@ private let visualTextEn: [String: String] = [
     "screenDescribePromptHelp": "Prompt automatically attached to App Shot screen captures.",
     "screenCaptureDirectoryHelp": "Directory where App Shot screenshots are saved before sending their path to the agent.",
     "appShotHotkeyHelp": "Supported values: left_cmd+right_cmd or off.",
+    "appShotAutoSendHelp": "When off, App Shot only queues the captured image path as a reference for the next voice or text request.",
+    "trashAppShotsHelp": "Moves temporary App Shot PNG files from the configured directory to Trash.",
     "reactionModeHelp": "Chooses the reactive visual surface. Audio circle keeps the original design; Particle orb adds a glowing point-sphere mode.",
     "wakeWarningHelp": "Controls whether wake mismatch warnings are spoken aloud.",
     "wakePhrasesHelp": "Wake phrase list. One phrase per line replaces the current list.",
@@ -219,6 +224,7 @@ private let visualTextKo: [String: String] = [
     "popup": "팝업",
     "recentPopups": "팝업",
     "noRecentPopups": "최근 팝업 없음",
+    "selectPopup": "열 팝업을 선택하세요",
     "copy": "복사",
     "plainText": "텍스트",
     "markdownView": "마크다운",
@@ -272,6 +278,8 @@ private let visualTextKo: [String: String] = [
     "screenDescribePrompt": "앱샷 프롬프트",
     "screenCaptureDirectory": "캡처 저장 위치",
     "appShotHotkey": "앱샷 단축키",
+    "appShotAutoSend": "앱샷 바로 전송",
+    "trashAppShots": "앱샷 임시 파일 휴지통으로 이동",
     "speakWakeWarning": "호출어 경고 말하기",
     "alwaysStartNewThread": "항상 새 스레드로 시작",
     "reactionMode": "반응 디자인",
@@ -335,6 +343,8 @@ private let visualTextKo: [String: String] = [
     "screenDescribePromptHelp": "앱샷 화면 캡처 요청에 자동으로 붙일 프롬프트입니다.",
     "screenCaptureDirectoryHelp": "앱샷 PNG를 저장한 뒤 해당 경로를 에이전트에게 전달할 디렉토리입니다.",
     "appShotHotkeyHelp": "지원 값: left_cmd+right_cmd 또는 off.",
+    "appShotAutoSendHelp": "끄면 앱샷이 바로 전송되지 않고, 다음 음성 또는 텍스트 요청에 붙을 참고자료로만 대기합니다.",
+    "trashAppShotsHelp": "설정된 캡처 저장 위치의 임시 앱샷 PNG 파일을 휴지통으로 이동합니다.",
     "reactionModeHelp": "상태와 음량에 반응하는 비주얼을 고릅니다. Audio circle은 기존 디자인이고 Particle orb는 빛나는 점 구체 모드입니다.",
     "wakeWarningHelp": "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
     "wakePhrasesHelp": "호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.",
@@ -2907,6 +2917,126 @@ final class PopupPanelController: NSObject {
     }
 }
 
+final class PopupListPanelController: NSObject {
+    private var panel: NSPanel?
+    private var entries: [PopupHistoryEntry] = []
+    private var onSelect: ((PopupHistoryEntry) -> Void)?
+    private let listContainer = NSView(frame: .zero)
+    private let scrollView = NSScrollView(frame: .zero)
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let helpLabel = NSTextField(labelWithString: "")
+    private let closeButton = NSButton(title: "OK", target: nil, action: nil)
+    private var currentLanguage: UiLanguage = .en
+    private var fontSize: CGFloat = 14
+
+    func show(
+        entries: [PopupHistoryEntry],
+        language: UiLanguage,
+        fontSize: CGFloat,
+        onSelect: @escaping (PopupHistoryEntry) -> Void
+    ) {
+        self.entries = entries
+        self.currentLanguage = language
+        self.fontSize = clampedCGFloat(fontSize, min: 12, max: 24)
+        self.onSelect = onSelect
+        ensurePanel()
+        rebuildList()
+        panel?.title = localizedText("recentPopups", language: language)
+        titleLabel.stringValue = localizedText("recentPopups", language: language)
+        helpLabel.stringValue = localizedText("selectPopup", language: language)
+        closeButton.title = localizedText("ok", language: language)
+        panel?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func ensurePanel() {
+        guard panel == nil else { return }
+
+        let size = NSSize(width: 560, height: 420)
+        let window = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.hidesOnDeactivate = false
+        window.minSize = NSSize(width: 440, height: 280)
+
+        let content = NSView(frame: NSRect(origin: .zero, size: size))
+        content.autoresizingMask = [.width, .height]
+        content.wantsLayer = true
+        content.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 0.96).cgColor
+
+        titleLabel.frame = NSRect(x: 18, y: size.height - 48, width: size.width - 36, height: 24)
+        titleLabel.autoresizingMask = [.width, .minYMargin]
+        titleLabel.font = NSFont.systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.textColor = NSColor(calibratedRed: 0.92, green: 0.95, blue: 1, alpha: 1)
+        content.addSubview(titleLabel)
+
+        helpLabel.frame = NSRect(x: 18, y: size.height - 74, width: size.width - 36, height: 20)
+        helpLabel.autoresizingMask = [.width, .minYMargin]
+        helpLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        helpLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.70, blue: 0.82, alpha: 1)
+        content.addSubview(helpLabel)
+
+        scrollView.frame = NSRect(x: 16, y: 58, width: size.width - 32, height: size.height - 140)
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.documentView = listContainer
+        content.addSubview(scrollView)
+
+        closeButton.target = self
+        closeButton.action = #selector(close)
+        closeButton.frame = NSRect(x: size.width - 106, y: 18, width: 90, height: 28)
+        closeButton.autoresizingMask = [.minXMargin, .maxYMargin]
+        content.addSubview(closeButton)
+
+        window.contentView = content
+        panel = window
+    }
+
+    private func rebuildList() {
+        listContainer.subviews.forEach { $0.removeFromSuperview() }
+        let rowHeight: CGFloat = 38
+        let gap: CGFloat = 8
+        let width = max(360, scrollView.contentSize.width)
+        let totalHeight = max(scrollView.contentSize.height, CGFloat(entries.count) * (rowHeight + gap) + gap)
+        listContainer.frame = NSRect(x: 0, y: 0, width: width, height: totalHeight)
+
+        for (index, entry) in entries.enumerated() {
+            let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? localizedText("popup", language: currentLanguage)
+                : entry.title
+            let summary = compactPopupSummary(entry.text, limit: 72)
+            let button = NSButton(title: "\(index + 1). \(title) - \(summary)", target: self, action: #selector(openPopupFromButton(_:)))
+            button.tag = index
+            button.alignment = .left
+            button.bezelStyle = .rounded
+            button.font = NSFont.systemFont(ofSize: max(12, fontSize - 1), weight: .regular)
+            button.lineBreakMode = .byTruncatingTail
+            let y = totalHeight - gap - CGFloat(index + 1) * rowHeight - CGFloat(index) * gap
+            button.frame = NSRect(x: 6, y: y, width: width - 12, height: rowHeight)
+            button.autoresizingMask = [.width, .minYMargin]
+            listContainer.addSubview(button)
+        }
+    }
+
+    @objc private func openPopupFromButton(_ sender: NSButton) {
+        guard sender.tag >= 0 && sender.tag < entries.count else { return }
+        let entry = entries[sender.tag]
+        panel?.orderOut(nil)
+        onSelect?(entry)
+    }
+
+    @objc private func close() {
+        panel?.orderOut(nil)
+    }
+}
+
 struct PopupHistoryEntry {
     let id: String
     let title: String
@@ -2920,6 +3050,16 @@ private func combinedRecentPopupMarkdown(_ entries: [PopupHistoryEntry]) -> Stri
         let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Popup" : entry.title
         return "## \(index + 1). \(title)\n\n\(entry.text)"
     }.joined(separator: "\n\n---\n\n")
+}
+
+private func compactPopupSummary(_ text: String, limit: Int) -> String {
+    let compact = text
+        .replacingOccurrences(of: "\n", with: " ")
+        .split(separator: " ")
+        .joined(separator: " ")
+    guard compact.count > limit else { return compact }
+    let end = compact.index(compact.startIndex, offsetBy: max(0, limit - 1))
+    return String(compact[..<end]) + "…"
 }
 
 private func popupHtmlDocument(_ markdown: String, fontSize: CGFloat = 14) -> String {
@@ -3341,6 +3481,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var mainWindow: NSWindow?
     private let menuBarCompanion = MenuBarCompanion()
     private let popupPanel = PopupPanelController()
+    private let popupListPanel = PopupListPanelController()
     private var recentPopups: [PopupHistoryEntry] = []
     private let commandView = NSTextView(frame: .zero)
     private let contextField = NSTextField(string: "")
@@ -3362,6 +3503,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsPopupFontSizeField = NSTextField(string: "14")
     private let settingsScreenCaptureDirectoryField = NSTextField(string: "")
     private let settingsAppShotHotkeyField = NSTextField(string: "left_cmd+right_cmd")
+    private let settingsAppShotAutoSendCheckbox = NSButton(checkboxWithTitle: "Send App Shot immediately", target: nil, action: nil)
+    private let settingsTrashAppShotsButton = NSButton(title: "Move App Shots to Trash", target: nil, action: nil)
     private let settingsScreenDescribePromptView = NSTextView(frame: .zero)
     private let settingsReactionModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
@@ -3400,6 +3543,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var popupFontSize = 14.0
     private var screenCaptureDirectory = ""
     private var appShotHotkey = "left_cmd+right_cmd"
+    private var appShotAutoSend = true
     private var screenDescribePrompt = ""
     private var responseLanguage = "auto"
     private var reactionMode = "audio_circle"
@@ -3581,10 +3725,26 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             return
         }
 
+        if recentPopups.count == 1 {
+            showPopupEntry(recentPopups[0])
+            return
+        }
+
+        popupListPanel.show(
+            entries: recentPopups,
+            language: uiLanguage,
+            fontSize: CGFloat(popupFontSize),
+            onSelect: { [weak self] entry in
+                self?.showPopupEntry(entry)
+            }
+        )
+    }
+
+    private func showPopupEntry(_ entry: PopupHistoryEntry) {
         popupPanel.show(
-            title: localizedText("recentPopups", language: uiLanguage),
-            text: combinedRecentPopupMarkdown(recentPopups),
-            format: "markdown",
+            title: entry.title,
+            text: entry.text,
+            format: entry.format,
             language: uiLanguage,
             fontSize: CGFloat(popupFontSize)
         )
@@ -3832,6 +3992,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         sendControl("describe_screen")
     }
 
+    @objc private func trashAppShots() {
+        sendControl("trash_app_shots")
+    }
+
     @objc private func toggleMicInput() {
         let next = !micEnabled
         updateMicEnabled(next)
@@ -3945,6 +4109,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         popupFontSize = clampedDouble(settingsPopupFontSizeField.stringValue, fallback: popupFontSize, min: 12, max: 24)
         screenCaptureDirectory = settingsScreenCaptureDirectoryField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         appShotHotkey = settingsAppShotHotkeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        appShotAutoSend = settingsAppShotAutoSendCheckbox.state == .on
         screenDescribePrompt = settingsScreenDescribePromptView.string.trimmingCharacters(in: .whitespacesAndNewlines)
         reactionMode = normalizedReactionMode(settingsReactionModePopup.selectedRepresentedValue(fallback: "audio_circle"))
         responseLanguage = ttsLanguage
@@ -3992,6 +4157,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         popupFontSize = 14
         screenCaptureDirectory = ""
         appShotHotkey = "left_cmd+right_cmd"
+        appShotAutoSend = true
         screenDescribePrompt = ""
         reactionMode = "audio_circle"
         chatHistoryEnabled = true
@@ -4089,6 +4255,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsChatHistoryCheckbox.title = localizedText("showRecentQa", language: uiLanguage)
         settingsHudCheckbox.title = localizedText("showFloatingHud", language: uiLanguage)
         settingsPopupPreferredCheckbox.title = localizedText("popupPreferred", language: uiLanguage)
+        settingsAppShotAutoSendCheckbox.title = localizedText("appShotAutoSend", language: uiLanguage)
+        settingsTrashAppShotsButton.title = localizedText("trashAppShots", language: uiLanguage)
         settingsWakeRejectedWarningCheckbox.title = localizedText("speakWakeWarning", language: uiLanguage)
         settingsNewThreadCheckbox.title = localizedText("alwaysStartNewThread", language: uiLanguage)
         popupPanel.updateLanguage(uiLanguage)
@@ -4137,6 +4305,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         }
         if let value = settings["appShotHotkey"] as? String {
             appShotHotkey = value
+        }
+        if let value = settings["appShotAutoSend"] as? Bool {
+            appShotAutoSend = value
         }
         if let value = settings["screenDescribePrompt"] as? String {
             screenDescribePrompt = value
@@ -4223,7 +4394,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let contentWidth: CGFloat = 380
-        let contentHeight: CGFloat = 1510
+        let contentHeight: CGFloat = 1590
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -4263,19 +4434,26 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsCustomGestureClearButton.title = localizedText("gestureDeleteAll", language: uiLanguage)
         settingsCustomGestureClearButton.target = self
         settingsCustomGestureClearButton.action = #selector(clearCustomGestureTemplatesFromSettings)
+        settingsTrashAppShotsButton.target = self
+        settingsTrashAppShotsButton.action = #selector(trashAppShots)
 
         addSettingsPhraseArea(
             view,
             label: localizedText("screenDescribePrompt", language: uiLanguage),
             textView: settingsScreenDescribePromptView,
-            y: 1448,
+            y: 1530,
             placeholderHeight: 54,
             help: localizedText("screenDescribePromptHelp", language: uiLanguage)
         )
-        addSettingsRow(view, label: localizedText("screenCaptureDirectory", language: uiLanguage), control: settingsScreenCaptureDirectoryField, y: 1408)
-        addSettingsHelp(view, y: 1408, text: localizedText("screenCaptureDirectoryHelp", language: uiLanguage))
-        addSettingsRow(view, label: localizedText("appShotHotkey", language: uiLanguage), control: settingsAppShotHotkeyField, y: 1368)
-        addSettingsHelp(view, y: 1368, text: localizedText("appShotHotkeyHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("screenCaptureDirectory", language: uiLanguage), control: settingsScreenCaptureDirectoryField, y: 1490)
+        addSettingsHelp(view, y: 1490, text: localizedText("screenCaptureDirectoryHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("appShotHotkey", language: uiLanguage), control: settingsAppShotHotkeyField, y: 1450)
+        addSettingsHelp(view, y: 1450, text: localizedText("appShotHotkeyHelp", language: uiLanguage))
+        settingsAppShotAutoSendCheckbox.frame = NSRect(x: 132, y: 1410, width: 216, height: 22)
+        view.addSubview(settingsAppShotAutoSendCheckbox)
+        addSettingsHelp(view, y: 1410, text: localizedText("appShotAutoSendHelp", language: uiLanguage))
+        addSettingsRow(view, label: localizedText("trashAppShots", language: uiLanguage), control: settingsTrashAppShotsButton, y: 1370)
+        addSettingsHelp(view, y: 1370, text: localizedText("trashAppShotsHelp", language: uiLanguage))
         addSettingsRow(view, label: localizedText("popupFontSize", language: uiLanguage), control: settingsPopupFontSizeField, y: 1326)
         addSettingsHelp(view, y: 1326, text: localizedText("popupFontHelp", language: uiLanguage))
         addSettingsRow(view, label: localizedText("reactionMode", language: uiLanguage), control: settingsReactionModePopup, y: 1286)
@@ -4504,6 +4682,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsPopupFontSizeField.stringValue = String(format: "%.0f", popupFontSize)
         settingsScreenCaptureDirectoryField.stringValue = screenCaptureDirectory
         settingsAppShotHotkeyField.stringValue = appShotHotkey
+        settingsAppShotAutoSendCheckbox.state = appShotAutoSend ? .on : .off
         settingsScreenDescribePromptView.string = screenDescribePrompt
         settingsReactionModePopup.selectRepresentedValue(reactionMode)
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
@@ -4640,6 +4819,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "screenCaptureDirectory": screenCaptureDirectory,
                 "screenDescribePrompt": screenDescribePrompt,
                 "appShotHotkey": appShotHotkey,
+                "appShotAutoSend": appShotAutoSend,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])
@@ -4663,6 +4843,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "screenCaptureDirectory": screenCaptureDirectory,
                 "screenDescribePrompt": screenDescribePrompt,
                 "appShotHotkey": appShotHotkey,
+                "appShotAutoSend": appShotAutoSend,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])

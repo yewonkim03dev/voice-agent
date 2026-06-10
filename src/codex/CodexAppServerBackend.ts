@@ -1821,7 +1821,7 @@ function protocolPromptRuntimeSyncPrompt(prompt: string): string {
       "Runtime policy: Popup preference is enabled.",
       "For long explanations, study notes, lecture/video summaries, markdown-heavy answers, tables, or math content, emit exactly one short speech final summary for TTS and exactly one popup containing the full answer body:",
       "{\"op\":\"voice-agent\",\"type\":\"popup\",\"text\":\"markdown or plain text content\",\"title\":\"optional title\"}",
-      "Use KaTeX-compatible LaTeX for math. Do not speak the popup body."
+      "Use KaTeX-compatible LaTeX for math. Do not speak the popup body. Phrase the short speech final summary as a brief handoff, for example that the content will be organized in the popup."
     ].join("\n");
   }
 

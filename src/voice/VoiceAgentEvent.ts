@@ -31,7 +31,7 @@ export const voiceAgentPopupProtocolPrompt = [
   "For those popup-worthy answers, emit exactly one short speech final summary for TTS and exactly one popup containing the full answer body.",
   "Popup math is rendered with KaTeX. Write inline math as $...$ or \\(...\\), and display math as $$...$$ or \\[...\\].",
   "Do not use Unicode-only pseudo math when LaTeX is intended; prefer KaTeX-compatible LaTeX such as \\frac, \\sum, _{}, ^{}, \\lambda, and \\|w\\|_2^2.",
-  "Do not speak the popup body. Keep the speech final summary concise, such as \"핵심 내용은 팝업에 정리했어.\" in the configured response language.",
+  "Do not speak the popup body. Keep the speech final summary concise, phrased as a brief handoff such as \"핵심 내용은 팝업에 정리하겠습니다.\" in the configured response language.",
   "Across all NDJSON lines for one answer, emit no more than one popup event."
 ].join("\n");
 

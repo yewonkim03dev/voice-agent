@@ -214,7 +214,7 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","reactionMode":"particle_orb","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"popupPreferred":true,"popupFontSize":30,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","reactionMode":"particle_orb","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"popupPreferred":true,"popupFontSize":30,"appShotAutoSend":false,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
@@ -227,9 +227,15 @@ test("visual bridge parses allowed control events only", () => {
       hudCompact: true,
       popupPreferred: true,
       popupFontSize: 24,
+      appShotAutoSend: false,
       speakWakeRejectedWarnings: false,
       maxUtteranceSeconds: 80
     }
+  });
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"trash_app_shots"}'), {
+    op: "voice-agent-ui",
+    type: "control",
+    action: "trash_app_shots"
   });
   assert.equal(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"run_command"}'), null);
   assert.equal(parseVisualControlEvent("not-json"), null);
@@ -579,6 +585,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /screenCaptureDirectory/u);
   assert.match(qml, /screenDescribePrompt/u);
   assert.match(qml, /appShotHotkey/u);
+  assert.match(qml, /appShotAutoSend/u);
+  assert.match(qml, /trash_app_shots/u);
   assert.match(qml, /clear_context/u);
   assert.match(qml, /show_context/u);
   assert.match(qml, /context_list/u);
@@ -748,7 +756,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /case "popup_history":/u);
   assert.match(swift, /private var recentPopups: \[PopupHistoryEntry\] = \[\]/u);
   assert.match(swift, /@objc private func showRecentPopups/u);
-  assert.match(swift, /combinedRecentPopupMarkdown/u);
+  assert.match(swift, /final class PopupListPanelController/u);
+  assert.match(swift, /selectPopup/u);
   assert.match(swift, /final class PopupPanelController/u);
   assert.match(swift, /import WebKit/u);
   assert.match(swift, /WKWebView/u);
@@ -788,6 +797,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /camera_toggle/u);
   assert.match(swift, /hudAppShotButton/u);
   assert.match(swift, /describe_screen/u);
+  assert.match(swift, /trash_app_shots/u);
+  assert.match(swift, /appShotAutoSend/u);
   assert.match(swift, /left_cmd\+right_cmd/u);
   assert.match(swift, /cameraGestureCancelled/u);
   assert.match(swift, /NSStatusBar\.system\.statusItem/u);

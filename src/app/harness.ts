@@ -1856,6 +1856,7 @@ export class TerminalHarness {
         defaultScreenDescribePrompt(this.visualSettings.responseLanguage ?? "auto"),
       screenCaptureDirectory: this.visualSettings.screenCaptureDirectory ?? defaultScreenCaptureDirectory,
       appShotHotkey: this.visualSettings.appShotHotkey ?? defaultAppShotHotkey,
+      appShotAutoSend: this.visualSettings.appShotAutoSend ?? true,
       speakWakeRejectedWarnings: this.visualSettings.speakWakeRejectedWarnings ?? true,
       maxUtteranceSeconds: this.visualSettings.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
     };
@@ -2390,6 +2391,7 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
     screenDescribePrompt: defaultScreenDescribePrompt(),
     screenCaptureDirectory: defaultScreenCaptureDirectory,
     appShotHotkey: defaultAppShotHotkey,
+    appShotAutoSend: true,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: defaultMaxUtteranceSeconds
   };
@@ -2419,6 +2421,7 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
     screenDescribePrompt: typeof settings?.screenDescribePrompt === "string" ? settings.screenDescribePrompt : undefined,
     screenCaptureDirectory: sanitizeScreenCaptureDirectory(settings?.screenCaptureDirectory),
     appShotHotkey: typeof settings?.appShotHotkey === "string" ? settings.appShotHotkey : undefined,
+    appShotAutoSend: typeof settings?.appShotAutoSend === "boolean" ? settings.appShotAutoSend : undefined,
     speakWakeRejectedWarnings: typeof settings?.speakWakeRejectedWarnings === "boolean"
       ? settings.speakWakeRejectedWarnings
       : undefined,
@@ -2465,6 +2468,7 @@ function sanitizeVisualRuntimeSettings(
     appShotHotkey: settings.appShotHotkey !== undefined
       ? settings.appShotHotkey.trim() || defaultAppShotHotkey
       : fallback.appShotHotkey ?? defaultAppShotHotkey,
+    appShotAutoSend: settings.appShotAutoSend ?? fallback.appShotAutoSend ?? true,
     speakWakeRejectedWarnings: settings.speakWakeRejectedWarnings ?? fallback.speakWakeRejectedWarnings ?? true,
     maxUtteranceSeconds: settings.maxUtteranceSeconds === undefined
       ? fallback.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds

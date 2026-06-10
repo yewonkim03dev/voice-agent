@@ -30,6 +30,7 @@ export type VisualControlAction =
   | "show_context"
   | "direct_go"
   | "describe_screen"
+  | "trash_app_shots"
   | "emergency_stop"
   | "reset_settings"
   | "update_wake_phrases"
@@ -65,6 +66,7 @@ export interface VisualRuntimeSettings {
   screenDescribePrompt?: string;
   screenCaptureDirectory?: string;
   appShotHotkey?: string;
+  appShotAutoSend?: boolean;
   speakWakeRejectedWarnings?: boolean;
   maxUtteranceSeconds?: number;
 }
@@ -427,6 +429,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "show_context" &&
     record.action !== "direct_go" &&
     record.action !== "describe_screen" &&
+    record.action !== "trash_app_shots" &&
     record.action !== "emergency_stop" &&
     record.action !== "reset_settings" &&
     record.action !== "update_wake_phrases" &&
@@ -548,6 +551,7 @@ function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRunt
     ...(typeof record.screenDescribePrompt === "string" ? { screenDescribePrompt: record.screenDescribePrompt } : {}),
     ...(typeof record.screenCaptureDirectory === "string" ? { screenCaptureDirectory: record.screenCaptureDirectory } : {}),
     ...(typeof record.appShotHotkey === "string" ? { appShotHotkey: record.appShotHotkey } : {}),
+    ...(typeof record.appShotAutoSend === "boolean" ? { appShotAutoSend: record.appShotAutoSend } : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
       : {}),

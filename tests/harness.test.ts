@@ -268,6 +268,7 @@ test("visual settings apply persists TTS and visual overrides", async () => {
         screenDescribePrompt: defaultScreenDescribePrompt("en"),
         screenCaptureDirectory: defaultScreenCaptureDirectory,
         appShotHotkey: defaultAppShotHotkey,
+        appShotAutoSend: true,
         speakWakeRejectedWarnings: false,
         maxUtteranceSeconds: 55
       }
@@ -387,6 +388,7 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
     screenDescribePrompt: defaultScreenDescribePrompt(),
     screenCaptureDirectory: defaultScreenCaptureDirectory,
     appShotHotkey: defaultAppShotHotkey,
+    appShotAutoSend: true,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: 15
   });
@@ -431,6 +433,7 @@ test("visual reset_settings clears persisted overrides", async () => {
     screenDescribePrompt: defaultScreenDescribePrompt(),
     screenCaptureDirectory: defaultScreenCaptureDirectory,
     appShotHotkey: defaultAppShotHotkey,
+    appShotAutoSend: true,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: 15
   });
@@ -1092,6 +1095,7 @@ test("visual popup preference updates backend protocol prompt and persists", asy
       screenDescribePrompt: defaultScreenDescribePrompt(),
       screenCaptureDirectory: defaultScreenCaptureDirectory,
       appShotHotkey: defaultAppShotHotkey,
+      appShotAutoSend: true,
       speakWakeRejectedWarnings: true,
       maxUtteranceSeconds: 15
     }

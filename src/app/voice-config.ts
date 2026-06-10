@@ -46,6 +46,7 @@ export type VoiceVisualFileConfig = Partial<{
   screenDescribePrompt: string;
   screenCaptureDirectory: string;
   appShotHotkey: string;
+  appShotAutoSend: boolean;
   speakWakeRejectedWarnings: boolean;
   maxUtteranceSeconds: string | number;
 }>;
@@ -361,6 +362,7 @@ export async function resetVoiceLocalSettings(options: {
   delete visual.screenDescribePrompt;
   delete visual.screenCaptureDirectory;
   delete visual.appShotHotkey;
+  delete visual.appShotAutoSend;
   delete visual.speakWakeRejectedWarnings;
   delete visual.maxUtteranceSeconds;
 
@@ -629,6 +631,7 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
     ...(parseOptionalString(record.appShotHotkey)
       ? { appShotHotkey: parseOptionalString(record.appShotHotkey) }
       : {}),
+    ...(typeof record.appShotAutoSend === "boolean" ? { appShotAutoSend: record.appShotAutoSend } : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
       : {}),

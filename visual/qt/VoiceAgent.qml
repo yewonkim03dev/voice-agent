@@ -53,6 +53,7 @@ ApplicationWindow {
     property string screenCaptureDirectory: ""
     property string screenDescribePrompt: ""
     property string appShotHotkey: "left_cmd+right_cmd"
+    property bool appShotAutoSend: true
     property string responseLanguage: "auto"
     property bool speakWakeRejectedWarnings: true
     property var wakePhrases: []
@@ -132,6 +133,8 @@ ApplicationWindow {
             screenDescribePrompt: "앱샷 프롬프트",
             screenCaptureDirectory: "캡처 저장 위치",
             appShotHotkey: "앱샷 단축키",
+            appShotAutoSend: "앱샷 바로 전송",
+            trashAppShots: "앱샷 임시 파일 휴지통으로 이동",
             appShot: "앱샷",
             appShotHelp: "현재 화면을 캡처하고 에이전트에게 설명을 요청합니다.",
             showRecentQa: "최근 Q/A 패널 표시",
@@ -216,6 +219,8 @@ ApplicationWindow {
             screenDescribePromptHelp: "앱샷 화면 캡처 요청에 자동으로 붙일 프롬프트입니다.",
             screenCaptureDirectoryHelp: "앱샷 PNG를 저장한 뒤 해당 경로를 에이전트에게 전달할 디렉토리입니다.",
             appShotHotkeyHelp: "지원 값: left_cmd+right_cmd 또는 off.",
+            appShotAutoSendHelp: "끄면 앱샷이 바로 전송되지 않고 다음 음성 또는 텍스트 요청에 붙을 참고자료로만 대기합니다.",
+            trashAppShotsHelp: "설정된 캡처 저장 위치의 임시 앱샷 PNG 파일을 휴지통으로 이동합니다.",
             chatHelp: "최근 질문과 답변 패널 표시 여부입니다.",
             wakeWarningHelp: "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
             wakePhrasesHelp: "줄마다 하나씩 호출어를 입력하면 기존 목록을 대체합니다.",
@@ -280,6 +285,8 @@ ApplicationWindow {
             screenDescribePrompt: "App Shot Prompt",
             screenCaptureDirectory: "Shot Directory",
             appShotHotkey: "App Shot Hotkey",
+            appShotAutoSend: "Send App Shot immediately",
+            trashAppShots: "Move App Shots to Trash",
             appShot: "App Shot",
             appShotHelp: "Capture the current screen and ask the agent to explain it.",
             showRecentQa: "Show Recent Q/A panel",
@@ -364,6 +371,8 @@ ApplicationWindow {
             screenDescribePromptHelp: "Prompt automatically attached to App Shot screen captures.",
             screenCaptureDirectoryHelp: "Directory where App Shot screenshots are saved before sending their path to the agent.",
             appShotHotkeyHelp: "Supported values: left_cmd+right_cmd or off.",
+            appShotAutoSendHelp: "When off, App Shot only queues the captured image path as a reference for the next voice or text request.",
+            trashAppShotsHelp: "Moves temporary App Shot PNG files from the configured directory to Trash.",
             chatHelp: "Shows or hides the Recent Q/A panel.",
             wakeWarningHelp: "Speaks or mutes wake mismatch warnings.",
             wakePhrasesHelp: "One wake phrase per line replaces the current list.",
@@ -544,6 +553,7 @@ ApplicationWindow {
                     screenCaptureDirectory: screenDirectoryField.text.trim(),
                     screenDescribePrompt: screenPromptField.text.trim(),
                     appShotHotkey: appShotHotkeyField.text.trim(),
+                    appShotAutoSend: appShotAutoSendCheck.checked,
                     responseLanguage: languageBox.currentText,
                     chatHistoryEnabled: chatHistoryCheck.checked,
                     speakWakeRejectedWarnings: wakeWarningCheck.checked
@@ -560,6 +570,7 @@ ApplicationWindow {
         root.screenCaptureDirectory = ""
         root.screenDescribePrompt = ""
         root.appShotHotkey = "left_cmd+right_cmd"
+        root.appShotAutoSend = true
         root.chatHistoryEnabled = true
         root.speakWakeRejectedWarnings = true
         root.codexAlwaysStartNewThread = false
@@ -577,6 +588,7 @@ ApplicationWindow {
         if (screenDirectoryField) screenDirectoryField.text = root.screenCaptureDirectory
         if (screenPromptField) screenPromptField.text = root.screenDescribePrompt
         if (appShotHotkeyField) appShotHotkeyField.text = root.appShotHotkey
+        if (appShotAutoSendCheck) appShotAutoSendCheck.checked = root.appShotAutoSend
         if (chatHistoryCheck) chatHistoryCheck.checked = true
         if (wakeWarningCheck) wakeWarningCheck.checked = true
         if (newThreadCheck) newThreadCheck.checked = false
@@ -744,6 +756,7 @@ ApplicationWindow {
         root.screenCaptureDirectory = settings.screenCaptureDirectory || ""
         root.screenDescribePrompt = settings.screenDescribePrompt || ""
         root.appShotHotkey = settings.appShotHotkey || "left_cmd+right_cmd"
+        root.appShotAutoSend = settings.appShotAutoSend === undefined ? true : !!settings.appShotAutoSend
         root.responseLanguage = settings.responseLanguage || "auto"
         root.chatHistoryEnabled = settings.chatHistoryEnabled === undefined ? true : !!settings.chatHistoryEnabled
         root.speakWakeRejectedWarnings = settings.speakWakeRejectedWarnings === undefined ? true : !!settings.speakWakeRejectedWarnings
@@ -754,6 +767,7 @@ ApplicationWindow {
         if (screenDirectoryField) screenDirectoryField.text = root.screenCaptureDirectory
         if (screenPromptField) screenPromptField.text = root.screenDescribePrompt
         if (appShotHotkeyField) appShotHotkeyField.text = root.appShotHotkey
+        if (appShotAutoSendCheck) appShotAutoSendCheck.checked = root.appShotAutoSend
         if (chatHistoryCheck) chatHistoryCheck.checked = root.chatHistoryEnabled
         if (wakeWarningCheck) wakeWarningCheck.checked = root.speakWakeRejectedWarnings
         if (languageBox) languageBox.currentIndex = root.indexOfValue(["auto", "ko", "en"], root.responseLanguage)
@@ -2157,6 +2171,32 @@ ApplicationWindow {
                         text: root.appShotHotkey
                     }
                     Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("appShotHotkeyHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: ""; Layout.preferredWidth: 142 }
+                    CheckBox {
+                        id: appShotAutoSendCheck
+                        text: root.uiText("appShotAutoSend")
+                        checked: root.appShotAutoSend
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("appShotAutoSendHelp") }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text { text: root.uiText("trashAppShots"); color: "#91a4bd"; Layout.preferredWidth: 142 }
+                    Button {
+                        Layout.fillWidth: true
+                        text: root.uiText("trashAppShots")
+                        onClicked: root.sendControl("trash_app_shots")
+                    }
+                    Button { text: "?"; Layout.preferredWidth: 22; Layout.preferredHeight: 22; hoverEnabled: true; ToolTip.visible: hovered; ToolTip.delay: 250; ToolTip.text: root.uiText("trashAppShotsHelp") }
                 }
 
                 RowLayout {

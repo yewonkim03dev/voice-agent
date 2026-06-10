@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { homedir, platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -8,9 +8,15 @@ export interface ScreenCaptureResult {
   createdAt: number;
 }
 
+export interface ScreenCaptureTrashResult {
+  count: number;
+  paths: string[];
+}
+
 export interface ScreenCaptureProvider {
   preflight?(options: ScreenCaptureOptions): Promise<void>;
   capture(options: ScreenCaptureOptions): Promise<ScreenCaptureResult>;
+  trashCaptures?(options: ScreenCaptureOptions): Promise<ScreenCaptureTrashResult>;
 }
 
 export interface ScreenCaptureOptions {
@@ -77,11 +83,32 @@ export class MacosScreenCaptureProvider implements ScreenCaptureProvider {
       createdAt: now()
     };
   }
+
+  async trashCaptures(options: ScreenCaptureOptions): Promise<ScreenCaptureTrashResult> {
+    const directory = await ensureCaptureDirectory(options);
+    const entries = await readdir(directory, { withFileTypes: true });
+    const paths = entries
+      .filter((entry) => entry.isFile() && isAppShotCaptureFile(entry.name))
+      .map((entry) => join(directory, entry.name));
+
+    for (const path of paths) {
+      await moveToMacosTrash(path);
+    }
+
+    return {
+      count: paths.length,
+      paths
+    };
+  }
 }
 
 export class UnsupportedScreenCaptureProvider implements ScreenCaptureProvider {
   async capture(): Promise<ScreenCaptureResult> {
     throw new Error("screen capture is only implemented for macOS in this build");
+  }
+
+  async trashCaptures(): Promise<ScreenCaptureTrashResult> {
+    throw new Error("moving screen captures to Trash is only implemented for macOS in this build");
   }
 }
 
@@ -118,4 +145,36 @@ function runScreenCapture(path: string): Promise<void> {
       reject(new Error(`screen capture failed${suffix}`));
     });
   });
+}
+
+function isAppShotCaptureFile(name: string): boolean {
+  return /^app_shot_.+\.png$/u.test(name) || name === ".voice-agent-screen-capture-preflight.png";
+}
+
+function moveToMacosTrash(path: string): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    const script = `tell application "Finder" to delete POSIX file "${escapeAppleScriptString(path)}"`;
+    const child = spawn("osascript", ["-e", script], {
+      stdio: ["ignore", "ignore", "pipe"]
+    });
+    let stderr = "";
+
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (code === 0) {
+        resolvePromise();
+        return;
+      }
+
+      const suffix = stderr.trim() ? `: ${stderr.trim()}` : signal ? `: ${signal}` : "";
+      reject(new Error(`moving screen capture to Trash failed${suffix}`));
+    });
+  });
+}
+
+function escapeAppleScriptString(value: string): string {
+  return value.replace(/\\/gu, "\\\\").replace(/"/gu, "\\\"");
 }

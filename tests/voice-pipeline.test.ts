@@ -951,6 +951,50 @@ test("always-on voice runner captures app shot from visual control", async () =>
   );
 });
 
+test("always-on voice runner queues app shot as reference when auto-send is off", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const screenCaptureProvider = new FakeScreenCaptureProvider("/tmp/app-shot-queued.png");
+  const { backend, runner, logs } = createAlwaysOnRunner([], {
+    visualBridge,
+    screenCaptureProvider
+  });
+
+  await runner.start();
+  visualBridge.emitVisualControl({ appShotAutoSend: false });
+  visualBridge.emitControl("describe_screen");
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(screenCaptureProvider.captureCount, 1);
+  assert.equal(backend.prompts.length, 0);
+  assert.ok(logs.includes("[screen:capture] queued /tmp/app-shot-queued.png"));
+  assert.deepEqual(
+    visualBridge.events.filter((event): event is Extract<VisualEvent, { type: "context" }> => event.type === "context").at(-1),
+    {
+      op: "voice-agent-ui",
+      type: "context",
+      entries: ["앱샷 이미지 경로: /tmp/app-shot-queued.png"]
+    }
+  );
+});
+
+test("always-on voice runner moves temporary app shots to Trash from visual control", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const screenCaptureProvider = new FakeScreenCaptureProvider("/tmp/app-shot-trash.png");
+  const { runner, logs } = createAlwaysOnRunner([], {
+    visualBridge,
+    screenCaptureProvider
+  });
+
+  await runner.start();
+  visualBridge.emitControl("trash_app_shots");
+  await flushAsync();
+  await runner.stop();
+
+  assert.equal(screenCaptureProvider.trashCount, 1);
+  assert.ok(logs.includes("[screen:capture] moved 1 app shot file(s) to Trash."));
+});
+
 test("always-on voice runner attaches queued references to visual direct go", async () => {
   const visualBridge = new FakeVisualBridge();
   const { backend, runner } = createAlwaysOnRunner([], {
@@ -3640,6 +3684,7 @@ class AutoFinishVoiceOutput implements VoiceOutput {
 class FakeScreenCaptureProvider implements ScreenCaptureProvider {
   preflightCount = 0;
   captureCount = 0;
+  trashCount = 0;
   private readonly path: string;
 
   constructor(path = "/tmp/voice-agent-test-app-shot.png") {
@@ -3655,6 +3700,14 @@ class FakeScreenCaptureProvider implements ScreenCaptureProvider {
     return {
       path: this.path,
       createdAt: 1000
+    };
+  }
+
+  async trashCaptures() {
+    this.trashCount += 1;
+    return {
+      count: 1,
+      paths: [this.path]
     };
   }
 }

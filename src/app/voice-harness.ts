@@ -146,7 +146,7 @@ export class VoiceHarnessRunner {
     );
     bindVisualContextControls(this.textContext, options.visualBridge);
     bindVisualDirectGoControls((text) => this.routeDirectText(text), options.visualBridge);
-    bindVisualScreenDescribeControls(() => this.describeScreen(), options.visualBridge);
+    bindVisualScreenControls(() => this.describeScreen(), () => this.trashAppShots(), options.visualBridge);
     this.recordingController.onUtterance((audio) => {
       const task = this.transcribeAndRoute(audio).finally(() => {
         this.pendingTranscripts.delete(task);
@@ -307,14 +307,35 @@ export class VoiceHarnessRunner {
       const capture = await this.screenCaptureProvider.capture({
         directory: settings.screenCaptureDirectory
       });
-      const prompt = buildScreenDescribePrompt(settings.screenDescribePrompt, settings.responseLanguage, capture.path);
       this.writeLine(`[screen:capture] saved ${capture.path}`);
+      if (settings.appShotAutoSend === false) {
+        this.textContext.queue(buildScreenReferenceText(settings.responseLanguage, capture.path));
+        this.writeLine(`[screen:capture] queued ${capture.path}`);
+        return;
+      }
+
+      const prompt = buildScreenDescribePrompt(settings.screenDescribePrompt, settings.responseLanguage, capture.path);
       await this.terminalHarness.processTranscript(createDirectTranscript(prompt), {
         visualQuestionText: localizedScreenQuestion(settings.responseLanguage),
         visualQuestionReferences: [capture.path]
       });
     } catch (error) {
       this.writeLine(`[screen:capture] failed: ${formatError(error)}`);
+    }
+  }
+
+  private async trashAppShots(): Promise<void> {
+    try {
+      const settings = this.terminalHarness.getVisualRuntimeSettings();
+      if (!this.screenCaptureProvider.trashCaptures) {
+        throw new Error("screen capture cleanup is unavailable for this provider");
+      }
+      const result = await this.screenCaptureProvider.trashCaptures({
+        directory: settings.screenCaptureDirectory
+      });
+      this.writeLine(`[screen:capture] moved ${result.count} app shot file(s) to Trash.`);
+    } catch (error) {
+      this.writeLine(`[screen:capture] trash failed: ${formatError(error)}`);
     }
   }
 
@@ -439,7 +460,7 @@ export class AlwaysOnVoiceHarnessRunner {
     );
     bindVisualContextControls(this.textContext, options.visualBridge);
     bindVisualDirectGoControls((text) => this.routeDirectText(text), options.visualBridge);
-    bindVisualScreenDescribeControls(() => this.describeScreen(), options.visualBridge);
+    bindVisualScreenControls(() => this.describeScreen(), () => this.trashAppShots(), options.visualBridge);
     bindVisualWakeSettingsControls(this, options.visualBridge);
     this.manualRecorder = new UtteranceRecorder({
       now: this.now,
@@ -1677,14 +1698,37 @@ export class AlwaysOnVoiceHarnessRunner {
         now: this.now,
         createId: this.createId
       });
-      const prompt = buildScreenDescribePrompt(settings.screenDescribePrompt, settings.responseLanguage, capture.path);
       this.writeLine(`[screen:capture] saved ${capture.path}`);
+      if (settings.appShotAutoSend === false) {
+        this.textContext.queue(buildScreenReferenceText(settings.responseLanguage, capture.path));
+        this.writeLine(`[screen:capture] queued ${capture.path}`);
+        return;
+      }
+
+      const prompt = buildScreenDescribePrompt(settings.screenDescribePrompt, settings.responseLanguage, capture.path);
       await this.processTranscriptAndRefreshGestureState(createDirectTranscript(prompt, this.now, this.createId), {
         visualQuestionText: localizedScreenQuestion(settings.responseLanguage),
         visualQuestionReferences: [capture.path]
       });
     } catch (error) {
       this.writeLine(`[screen:capture] failed: ${formatError(error)}`);
+    }
+  }
+
+  private async trashAppShots(): Promise<void> {
+    try {
+      const settings = this.terminalHarness.getVisualRuntimeSettings();
+      if (!this.screenCaptureProvider.trashCaptures) {
+        throw new Error("screen capture cleanup is unavailable for this provider");
+      }
+      const result = await this.screenCaptureProvider.trashCaptures({
+        directory: settings.screenCaptureDirectory,
+        now: this.now,
+        createId: this.createId
+      });
+      this.writeLine(`[screen:capture] moved ${result.count} app shot file(s) to Trash.`);
+    } catch (error) {
+      this.writeLine(`[screen:capture] trash failed: ${formatError(error)}`);
     }
   }
 
@@ -2446,13 +2490,19 @@ function bindVisualDirectGoControls(
   });
 }
 
-function bindVisualScreenDescribeControls(
+function bindVisualScreenControls(
   onDescribeScreen: () => void | Promise<void>,
+  onTrashAppShots: () => void | Promise<void>,
   visualBridge: VisualBridgeLike | undefined
 ): void {
   visualBridge?.onControl((event) => {
-    if (event.action !== "describe_screen") return;
-    void onDescribeScreen();
+    if (event.action === "describe_screen") {
+      void onDescribeScreen();
+      return;
+    }
+    if (event.action === "trash_app_shots") {
+      void onTrashAppShots();
+    }
   });
 }
 
@@ -2560,6 +2610,10 @@ function buildScreenDescribePrompt(prompt: string | undefined, language: "auto" 
 
 function localizedScreenQuestion(language: "auto" | "ko" | "en" | undefined): string {
   return language === "en" ? "App shot: explain the current screen" : "앱샷: 현재 화면 설명";
+}
+
+function buildScreenReferenceText(language: "auto" | "ko" | "en" | undefined, path: string): string {
+  return language === "en" ? `App Shot image path: ${path}` : `앱샷 이미지 경로: ${path}`;
 }
 
 function createDirectTranscript(
