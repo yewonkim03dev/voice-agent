@@ -985,8 +985,8 @@ final class ParticleOrbView: NSView {
     private var phase: CGFloat = 0
     private let particles: [OrbParticleSample]
 
-    override init(frame frameRect: NSRect) {
-        particles = Self.makeParticles(count: 720)
+    init(frame frameRect: NSRect, particleCount: Int = 720) {
+        particles = Self.makeParticles(count: max(180, particleCount))
         super.init(frame: frameRect)
         Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -2180,7 +2180,7 @@ final class MenuBarCompanion {
     private let questionLabel = NSTextField(wrappingLabelWithString: "Q: none")
     private let usageLabel = NSTextField(labelWithString: "")
     private let hudCircle = AgentCircleView(frame: .zero)
-    private let hudOrb = ParticleOrbView(frame: .zero)
+    private let hudOrb = ParticleOrbView(frame: .zero, particleCount: 280)
     private let hudStateLabel = NSTextField(labelWithString: "idle")
     private let hudDetailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
     private let hudQuestionLabel = NSTextField(wrappingLabelWithString: "")

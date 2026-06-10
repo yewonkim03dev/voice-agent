@@ -800,7 +800,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /showFloatingHud\(\)\s*\n\s*popover\.show/u);
   assert.doesNotMatch(swift, /panel\.orderOut\(nil\)\s*\n\s*panel\.orderFrontRegardless\(\)/u);
   assert.match(swift, /hudCircle = AgentCircleView\(frame: \.zero\)/u);
-  assert.match(swift, /hudOrb = ParticleOrbView\(frame: \.zero\)/u);
+  assert.match(swift, /hudOrb = ParticleOrbView\(frame: \.zero, particleCount: 280\)/u);
   assert.match(swift, /hudQuestionLabel = NSTextField\(wrappingLabelWithString: ""\)/u);
   assert.match(swift, /hudQuestionLabel\.stringValue = trimmed\.isEmpty \? "" : "Q: \\\(trimmed\)"/u);
   assert.match(swift, /hudCircle\.compactStatusStyle = true/u);
