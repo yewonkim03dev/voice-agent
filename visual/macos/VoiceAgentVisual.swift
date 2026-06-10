@@ -3089,7 +3089,7 @@ body {
   font-size: var(--popup-font-size);
   line-height: 1.58;
 }
-h1, h2, h3 {
+h1, h2, h3, h4, h5, h6 {
   margin: 18px 0 10px;
   line-height: 1.25;
   color: #f5f8ff;
@@ -3097,15 +3097,40 @@ h1, h2, h3 {
 h1 { font-size: calc(var(--popup-font-size) + 10px); }
 h2 { font-size: calc(var(--popup-font-size) + 6px); }
 h3 { font-size: calc(var(--popup-font-size) + 3px); }
+h4 { font-size: calc(var(--popup-font-size) + 1px); }
+h5, h6 { font-size: var(--popup-font-size); }
 p {
   margin: 9px 0;
 }
-.bullet {
-  padding-left: 1.1em;
-  text-indent: -1.1em;
-}
 .spacer {
   height: 8px;
+}
+hr {
+  border: 0;
+  border-top: 1px solid #314054;
+  margin: 18px 0;
+}
+blockquote {
+  margin: 12px 0;
+  padding: 8px 14px;
+  border-left: 4px solid #52637a;
+  color: #c8d4e5;
+  background: #0d1726;
+}
+ul, ol {
+  margin: 9px 0 12px 1.35em;
+  padding: 0;
+}
+li {
+  margin: 5px 0;
+  padding-left: 0.12em;
+}
+.task-list {
+  list-style: none;
+  margin-left: 0;
+}
+.task-list input {
+  margin-right: 8px;
 }
 pre {
   overflow-x: auto;
@@ -3119,6 +3144,35 @@ code {
   font-family: "SF Mono", Menlo, Consolas, monospace;
   font-size: calc(var(--popup-font-size) - 1px);
 }
+a {
+  color: #7db7ff;
+}
+img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.table-wrap {
+  overflow-x: auto;
+  margin: 14px 0;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 420px;
+}
+th, td {
+  border: 1px solid #314054;
+  padding: 8px 10px;
+  vertical-align: top;
+}
+th {
+  background: #162235;
+  color: #f5f8ff;
+  font-weight: 700;
+}
+td {
+  background: #0d1726;
+}
 .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
@@ -3127,6 +3181,37 @@ code {
 .math-display {
   margin: 14px 0;
   overflow-x: auto;
+}
+details {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #314054;
+  border-radius: 8px;
+  background: #0d1726;
+}
+summary {
+  cursor: pointer;
+  color: #f5f8ff;
+  font-weight: 700;
+}
+.footnotes {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid #314054;
+  color: #c8d4e5;
+  font-size: calc(var(--popup-font-size) - 1px);
+}
+.footnotes ol {
+  margin-left: 1.4em;
+}
+.footnote-ref {
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 0;
+}
+.footnote-backref {
+  margin-left: 6px;
+  text-decoration: none;
 }
 </style>
 </head>
@@ -3171,70 +3256,553 @@ setTimeout(renderPopupMath, 0);
 }
 
 private func markdownBodyHtml(_ markdown: String) -> String {
+    let extracted = extractMarkdownFootnotes(markdown.components(separatedBy: .newlines))
+    let lines = extracted.lines
+    let context = MarkdownRenderContext(footnotes: extracted.footnotes)
     var output: [String] = []
-    var inCodeBlock = false
-    var displayMathDelimiter: String?
-    var displayMathLines: [String] = []
+    var index = 0
 
-    for line in markdown.components(separatedBy: .newlines) {
+    while index < lines.count {
+        let line = lines[index]
         let trimmed = line.trimmingCharacters(in: .whitespaces)
 
-        if let delimiter = displayMathDelimiter {
-            if trimmed == delimiter {
-                output.append(displayMathHtml(displayMathLines.joined(separator: "\n")))
-                displayMathDelimiter = nil
-                displayMathLines = []
-            } else {
-                displayMathLines.append(line)
-            }
+        if trimmed.isEmpty {
+            output.append("<div class=\"spacer\"></div>")
+            index += 1
             continue
         }
 
-        if trimmed.hasPrefix("```") {
-            if inCodeBlock {
-                output.append("</code></pre>")
-            } else {
-                output.append("<pre><code>")
-            }
-            inCodeBlock.toggle()
-            continue
-        }
-
-        if inCodeBlock {
-            output.append(htmlEscaped(line))
+        if let codeBlock = markdownCodeBlockHtml(lines, start: index) {
+            output.append(codeBlock.html)
+            index = codeBlock.nextIndex
             continue
         }
 
         if let display = oneLineDisplayMath(trimmed) {
             output.append(displayMathHtml(display))
-        } else if let opened = openedDisplayMathBlock(trimmed) {
-            displayMathDelimiter = opened.delimiter
-            displayMathLines = opened.initialLine.map { [$0] } ?? []
-        } else if trimmed == "---" {
-            output.append("<hr>")
-        } else if trimmed.isEmpty {
-            output.append("<div class=\"spacer\"></div>")
-        } else if trimmed.hasPrefix("### ") {
-            output.append("<h3>\(inlineMarkdownHtml(String(trimmed.dropFirst(4))))</h3>")
-        } else if trimmed.hasPrefix("## ") {
-            output.append("<h2>\(inlineMarkdownHtml(String(trimmed.dropFirst(3))))</h2>")
-        } else if trimmed.hasPrefix("# ") {
-            output.append("<h1>\(inlineMarkdownHtml(String(trimmed.dropFirst(2))))</h1>")
-        } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
-            output.append("<p class=\"bullet\">&bull; \(inlineMarkdownHtml(String(trimmed.dropFirst(2))))</p>")
-        } else {
-            output.append("<p>\(inlineMarkdownHtml(line))</p>")
+            index += 1
+            continue
         }
+
+        if let mathBlock = markdownDisplayMathBlockHtml(lines, start: index) {
+            output.append(mathBlock.html)
+            index = mathBlock.nextIndex
+            continue
+        }
+
+        if markdownHorizontalRule(trimmed) {
+            output.append("<hr>")
+            index += 1
+            continue
+        }
+
+        if let details = markdownDetailsHtml(lines, start: index, context: context) {
+            output.append(details.html)
+            index = details.nextIndex
+            continue
+        }
+
+        if let heading = markdownHeadingHtml(trimmed, context: context) {
+            output.append(heading)
+            index += 1
+            continue
+        }
+
+        if let table = markdownTableHtml(lines, start: index, context: context) {
+            output.append(table.html)
+            index = table.nextIndex
+            continue
+        }
+
+        if let list = markdownListHtml(lines, start: index, context: context) {
+            output.append(list.html)
+            index = list.nextIndex
+            continue
+        }
+
+        if let quote = markdownBlockquoteHtml(lines, start: index, context: context) {
+            output.append(quote.html)
+            index = quote.nextIndex
+            continue
+        }
+
+        let paragraph = markdownParagraphHtml(lines, start: index, context: context)
+        output.append(paragraph.html)
+        index = paragraph.nextIndex
     }
 
-    if displayMathDelimiter != nil {
-        output.append(displayMathHtml(displayMathLines.joined(separator: "\n")))
-    }
-    if inCodeBlock {
-        output.append("</code></pre>")
+    if let footnotes = markdownFootnotesHtml(context) {
+        output.append(footnotes)
     }
 
     return output.joined(separator: "\n")
+}
+
+private func markdownCodeBlockHtml(_ lines: [String], start: Int) -> (html: String, nextIndex: Int)? {
+    let trimmed = lines[start].trimmingCharacters(in: .whitespaces)
+    let fence: String
+    if trimmed.hasPrefix("```") {
+        fence = "```"
+    } else if trimmed.hasPrefix("~~~") {
+        fence = "~~~"
+    } else {
+        return nil
+    }
+
+    let language = trimmed.dropFirst(fence.count).trimmingCharacters(in: .whitespacesAndNewlines)
+    var codeLines: [String] = []
+    var index = start + 1
+    while index < lines.count {
+        if lines[index].trimmingCharacters(in: .whitespaces).hasPrefix(fence) {
+            index += 1
+            break
+        }
+        codeLines.append(lines[index])
+        index += 1
+    }
+
+    let languageClass = language.isEmpty ? "" : " class=\"language-\(htmlAttributeEscaped(String(language)))\""
+    return ("<pre><code\(languageClass)>\(htmlEscaped(codeLines.joined(separator: "\n")))</code></pre>", index)
+}
+
+private final class MarkdownRenderContext {
+    let footnotes: [String: String]
+    private(set) var orderedFootnoteIds: [String] = []
+
+    init(footnotes: [String: String]) {
+        self.footnotes = footnotes
+    }
+
+    func footnoteNumber(for id: String) -> Int? {
+        guard footnotes[id] != nil else { return nil }
+        if let existing = orderedFootnoteIds.firstIndex(of: id) {
+            return existing + 1
+        }
+        orderedFootnoteIds.append(id)
+        return orderedFootnoteIds.count
+    }
+}
+
+private func extractMarkdownFootnotes(_ lines: [String]) -> (lines: [String], footnotes: [String: String]) {
+    var bodyLines: [String] = []
+    var footnotes: [String: String] = [:]
+    var index = 0
+
+    while index < lines.count {
+        if let definition = parseFootnoteDefinition(lines[index]) {
+            var contentLines = [definition.text]
+            index += 1
+            while index < lines.count {
+                let line = lines[index]
+                if parseFootnoteDefinition(line) != nil { break }
+                let leadingWhitespace = line.prefix { $0 == " " || $0 == "\t" }.count
+                guard line.trimmingCharacters(in: .whitespaces).isEmpty || leadingWhitespace >= 2 else { break }
+                contentLines.append(line.trimmingCharacters(in: .whitespaces))
+                index += 1
+            }
+            footnotes[definition.id] = contentLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            bodyLines.append(lines[index])
+            index += 1
+        }
+    }
+
+    return (bodyLines, footnotes)
+}
+
+private func parseFootnoteDefinition(_ line: String) -> (id: String, text: String)? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix("[^") else { return nil }
+    guard let close = trimmed.firstIndex(of: "]") else { return nil }
+    let afterClose = trimmed.index(after: close)
+    guard afterClose < trimmed.endIndex, trimmed[afterClose] == ":" else { return nil }
+    let idStart = trimmed.index(trimmed.startIndex, offsetBy: 2)
+    let id = String(trimmed[idStart..<close]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !id.isEmpty else { return nil }
+    let textStart = trimmed.index(after: afterClose)
+    let text = textStart < trimmed.endIndex ? String(trimmed[textStart...]).trimmingCharacters(in: .whitespaces) : ""
+    return (id, text)
+}
+
+private func markdownFootnotesHtml(_ context: MarkdownRenderContext) -> String? {
+    guard !context.orderedFootnoteIds.isEmpty else { return nil }
+    let ids = context.orderedFootnoteIds
+    let items = ids.compactMap { id -> String? in
+        guard let text = context.footnotes[id] else { return nil }
+        return "<li id=\"fn-\(htmlAttributeEscaped(id))\">\(inlineMarkdownHtml(text, context: context)) <a class=\"footnote-backref\" href=\"#fnref-\(htmlAttributeEscaped(id))\">↩</a></li>"
+    }.joined(separator: "\n")
+    return "<section class=\"footnotes\"><ol>\n\(items)\n</ol></section>"
+}
+
+private func markdownDisplayMathBlockHtml(_ lines: [String], start: Int) -> (html: String, nextIndex: Int)? {
+    let trimmed = lines[start].trimmingCharacters(in: .whitespaces)
+    guard let opened = openedDisplayMathBlock(trimmed) else { return nil }
+
+    var mathLines = opened.initialLine.map { [$0] } ?? []
+    var index = start + 1
+    while index < lines.count {
+        let current = lines[index].trimmingCharacters(in: .whitespaces)
+        if current == opened.delimiter {
+            index += 1
+            break
+        }
+        mathLines.append(lines[index])
+        index += 1
+    }
+
+    return (displayMathHtml(mathLines.joined(separator: "\n")), index)
+}
+
+private func markdownHorizontalRule(_ trimmed: String) -> Bool {
+    let compact = trimmed.replacingOccurrences(of: " ", with: "")
+    guard compact.count >= 3 else { return false }
+    let allowed = Set(compact)
+    return allowed == Set<Character>(["-"]) ||
+        allowed == Set<Character>(["*"]) ||
+        allowed == Set<Character>(["_"])
+}
+
+private func markdownDetailsHtml(_ lines: [String], start: Int, context: MarkdownRenderContext) -> (html: String, nextIndex: Int)? {
+    let trimmed = lines[start].trimmingCharacters(in: .whitespaces)
+    guard trimmed.lowercased().hasPrefix("<details") else { return nil }
+
+    var summary = "Details"
+    var contentLines: [String] = []
+    var index = start
+    var consumedClosing = false
+
+    while index < lines.count {
+        let line = lines[index]
+        let lower = line.lowercased()
+
+        if let parsedSummary = extractDetailsSummary(line) {
+            summary = parsedSummary
+        }
+
+        var content = line
+        if index == start {
+            content = removeDetailsOpenTag(content)
+        }
+        content = removeSummaryTag(content)
+
+        if lower.contains("</details>") {
+            content = removeDetailsCloseTag(content)
+            consumedClosing = true
+        }
+
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedContent.isEmpty {
+            contentLines.append(trimmedContent)
+        }
+
+        index += 1
+        if consumedClosing { break }
+    }
+
+    let inner = markdownFragmentHtml(contentLines, context: context)
+    return ("<details><summary>\(inlineMarkdownHtml(summary, context: context))</summary>\n\(inner)\n</details>", index)
+}
+
+private func extractDetailsSummary(_ line: String) -> String? {
+    guard let openRange = line.range(of: "<summary>", options: [.caseInsensitive]),
+          let closeRange = line.range(
+            of: "</summary>",
+            options: [.caseInsensitive],
+            range: openRange.upperBound..<line.endIndex
+          ),
+          openRange.upperBound <= closeRange.lowerBound else { return nil }
+    return String(line[openRange.upperBound..<closeRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func removeDetailsOpenTag(_ value: String) -> String {
+    guard let range = value.range(of: "<details", options: [.caseInsensitive]) else { return value }
+    guard let close = value[range.lowerBound...].firstIndex(of: ">") else { return value }
+    return String(value[value.index(after: close)...])
+}
+
+private func removeDetailsCloseTag(_ value: String) -> String {
+    value.replacingOccurrences(of: "</details>", with: "", options: [.caseInsensitive])
+}
+
+private func removeSummaryTag(_ value: String) -> String {
+    guard let openRange = value.range(of: "<summary>", options: [.caseInsensitive]),
+          let closeRange = value.range(
+            of: "</summary>",
+            options: [.caseInsensitive],
+            range: openRange.upperBound..<value.endIndex
+          ) else { return value }
+    return String(value[..<openRange.lowerBound]) + String(value[closeRange.upperBound...])
+}
+
+private func markdownFragmentHtml(_ lines: [String], context: MarkdownRenderContext) -> String {
+    var output: [String] = []
+    var index = 0
+
+    while index < lines.count {
+        let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            output.append("<div class=\"spacer\"></div>")
+            index += 1
+        } else if let table = markdownTableHtml(lines, start: index, context: context) {
+            output.append(table.html)
+            index = table.nextIndex
+        } else if let list = markdownListHtml(lines, start: index, context: context) {
+            output.append(list.html)
+            index = list.nextIndex
+        } else if let quote = markdownBlockquoteHtml(lines, start: index, context: context) {
+            output.append(quote.html)
+            index = quote.nextIndex
+        } else {
+            let paragraph = markdownParagraphHtml(lines, start: index, context: context)
+            output.append(paragraph.html)
+            index = paragraph.nextIndex
+        }
+    }
+
+    return output.joined(separator: "\n")
+}
+
+private func markdownHeadingHtml(_ trimmed: String, context: MarkdownRenderContext) -> String? {
+    var level = 0
+    for character in trimmed {
+        if character == "#" {
+            level += 1
+        } else {
+            break
+        }
+    }
+    guard level >= 1 && level <= 6 else { return nil }
+    let prefix = String(repeating: "#", count: level)
+    guard trimmed.hasPrefix(prefix + " ") else { return nil }
+    let content = String(trimmed.dropFirst(level + 1)).trimmingCharacters(in: .whitespaces)
+    return "<h\(level)>\(inlineMarkdownHtml(content, context: context))</h\(level)>"
+}
+
+private func markdownTableHtml(_ lines: [String], start: Int, context: MarkdownRenderContext) -> (html: String, nextIndex: Int)? {
+    guard start + 1 < lines.count else { return nil }
+    let header = splitMarkdownTableRow(lines[start])
+    guard header.count > 0 else { return nil }
+    guard let alignments = markdownTableAlignments(lines[start + 1]), alignments.count == header.count else { return nil }
+
+    var rows: [[String]] = []
+    var index = start + 2
+    while index < lines.count {
+        let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty || !trimmed.contains("|") || markdownBlockStart(lines, index: index, context: context) {
+            break
+        }
+        let row = normalizedTableRow(splitMarkdownTableRow(lines[index]), columnCount: header.count)
+        rows.append(row)
+        index += 1
+    }
+
+    let headCells = zip(header, alignments).map { cell, alignment in
+        "<th\(alignmentAttribute(alignment))>\(inlineMarkdownHtml(cell.trimmingCharacters(in: .whitespaces), context: context))</th>"
+    }.joined()
+    let bodyRows = rows.map { row in
+        let cells = zip(row, alignments).map { cell, alignment in
+            "<td\(alignmentAttribute(alignment))>\(inlineMarkdownHtml(cell.trimmingCharacters(in: .whitespaces), context: context))</td>"
+        }.joined()
+        return "<tr>\(cells)</tr>"
+    }.joined(separator: "\n")
+
+    return (
+        """
+<div class="table-wrap"><table>
+<thead><tr>\(headCells)</tr></thead>
+<tbody>
+\(bodyRows)
+</tbody>
+</table></div>
+""",
+        index
+    )
+}
+
+private func splitMarkdownTableRow(_ line: String) -> [String] {
+    var trimmed = line.trimmingCharacters(in: .whitespaces)
+    if trimmed.hasPrefix("|") { trimmed.removeFirst() }
+    if trimmed.hasSuffix("|") { trimmed.removeLast() }
+
+    var cells: [String] = []
+    var current = ""
+    var escaped = false
+    for character in trimmed {
+        if escaped {
+            current.append(character)
+            escaped = false
+        } else if character == "\\" {
+            escaped = true
+        } else if character == "|" {
+            cells.append(current)
+            current = ""
+        } else {
+            current.append(character)
+        }
+    }
+    cells.append(current)
+    return cells
+}
+
+private func markdownTableAlignments(_ line: String) -> [String]? {
+    let cells = splitMarkdownTableRow(line)
+    guard !cells.isEmpty else { return nil }
+    var alignments: [String] = []
+    for cell in cells {
+        let trimmed = cell.trimmingCharacters(in: .whitespaces)
+        let inner = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+        guard inner.count >= 3, inner.allSatisfy({ $0 == "-" }) else { return nil }
+        if trimmed.hasPrefix(":"), trimmed.hasSuffix(":") {
+            alignments.append("center")
+        } else if trimmed.hasSuffix(":") {
+            alignments.append("right")
+        } else if trimmed.hasPrefix(":") {
+            alignments.append("left")
+        } else {
+            alignments.append("")
+        }
+    }
+    return alignments
+}
+
+private func normalizedTableRow(_ row: [String], columnCount: Int) -> [String] {
+    if row.count == columnCount { return row }
+    if row.count > columnCount { return Array(row.prefix(columnCount)) }
+    return row + Array(repeating: "", count: columnCount - row.count)
+}
+
+private func alignmentAttribute(_ alignment: String) -> String {
+    alignment.isEmpty ? "" : " style=\"text-align: \(alignment)\""
+}
+
+private func markdownListHtml(_ lines: [String], start: Int, context: MarkdownRenderContext) -> (html: String, nextIndex: Int)? {
+    guard let first = parseMarkdownListItem(lines[start]) else { return nil }
+    var index = start
+    var items: [MarkdownListItem] = []
+
+    while index < lines.count {
+        guard let item = parseMarkdownListItem(lines[index]), item.kind == first.kind else { break }
+        items.append(item)
+        index += 1
+    }
+
+    let tag = first.kind == .ordered ? "ol" : "ul"
+    let taskClass = items.contains(where: { $0.checked != nil }) ? " class=\"task-list\"" : ""
+    let htmlItems = items.map { item -> String in
+        let checkbox: String
+        if let checked = item.checked {
+            checkbox = "<input type=\"checkbox\" disabled\(checked ? " checked" : "")>"
+        } else {
+            checkbox = ""
+        }
+        return "<li>\(checkbox)\(inlineMarkdownHtml(item.content, context: context))</li>"
+    }.joined(separator: "\n")
+
+    return ("<\(tag)\(taskClass)>\n\(htmlItems)\n</\(tag)>", index)
+}
+
+private enum MarkdownListKind {
+    case unordered
+    case ordered
+}
+
+private struct MarkdownListItem {
+    let kind: MarkdownListKind
+    let content: String
+    let checked: Bool?
+}
+
+private func parseMarkdownListItem(_ line: String) -> MarkdownListItem? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    let unorderedMarkers = ["- ", "* ", "+ "]
+    for marker in unorderedMarkers where trimmed.hasPrefix(marker) {
+        return markdownListItem(kind: .unordered, content: String(trimmed.dropFirst(marker.count)))
+    }
+
+    var digitCount = 0
+    for character in trimmed {
+        if character.isNumber {
+            digitCount += 1
+        } else {
+            break
+        }
+    }
+    guard digitCount > 0, trimmed.count > digitCount + 1 else { return nil }
+    let markerIndex = trimmed.index(trimmed.startIndex, offsetBy: digitCount)
+    let afterMarkerIndex = trimmed.index(after: markerIndex)
+    guard (trimmed[markerIndex] == "." || trimmed[markerIndex] == ")"),
+          afterMarkerIndex < trimmed.endIndex,
+          trimmed[afterMarkerIndex].isWhitespace else { return nil }
+
+    let contentStart = trimmed.index(after: afterMarkerIndex)
+    return markdownListItem(kind: .ordered, content: String(trimmed[contentStart...]))
+}
+
+private func markdownListItem(kind: MarkdownListKind, content: String) -> MarkdownListItem {
+    let trimmed = content.trimmingCharacters(in: .whitespaces)
+    let lower = trimmed.lowercased()
+    if lower.hasPrefix("[ ] ") {
+        return MarkdownListItem(kind: kind, content: String(trimmed.dropFirst(4)), checked: false)
+    }
+    if lower.hasPrefix("[x] ") {
+        return MarkdownListItem(kind: kind, content: String(trimmed.dropFirst(4)), checked: true)
+    }
+    return MarkdownListItem(kind: kind, content: content, checked: nil)
+}
+
+private func markdownBlockquoteHtml(_ lines: [String], start: Int, context: MarkdownRenderContext) -> (html: String, nextIndex: Int)? {
+    let trimmed = lines[start].trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix(">") else { return nil }
+    var parts: [String] = []
+    var index = start
+
+    while index < lines.count {
+        let current = lines[index].trimmingCharacters(in: .whitespaces)
+        guard current.hasPrefix(">") else { break }
+        let content = String(current.dropFirst()).trimmingCharacters(in: .whitespaces)
+        parts.append(inlineMarkdownHtml(String(content), context: context))
+        index += 1
+    }
+
+    return ("<blockquote><p>\(parts.joined(separator: "<br>"))</p></blockquote>", index)
+}
+
+private func markdownParagraphHtml(_ lines: [String], start: Int, context: MarkdownRenderContext) -> (html: String, nextIndex: Int) {
+    var parts: [String] = []
+    var index = start
+
+    while index < lines.count {
+        let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty || markdownBlockStart(lines, index: index, context: context) {
+            break
+        }
+        parts.append(lines[index].trimmingCharacters(in: .whitespaces))
+        index += 1
+    }
+
+    if parts.isEmpty {
+        return ("<div class=\"spacer\"></div>", max(start + 1, index))
+    }
+
+    return ("<p>\(inlineMarkdownHtml(parts.joined(separator: " "), context: context))</p>", index)
+}
+
+private func markdownBlockStart(_ lines: [String], index: Int, context: MarkdownRenderContext) -> Bool {
+    guard index < lines.count else { return false }
+    let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+    if trimmed.isEmpty { return true }
+    if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") { return true }
+    if oneLineDisplayMath(trimmed) != nil || openedDisplayMathBlock(trimmed) != nil { return true }
+    if markdownHorizontalRule(trimmed) || markdownHeadingHtml(trimmed, context: context) != nil { return true }
+    if parseMarkdownListItem(lines[index]) != nil { return true }
+    if trimmed.hasPrefix(">") { return true }
+    if trimmed.lowercased().hasPrefix("<details") { return true }
+    if index + 1 < lines.count,
+       splitMarkdownTableRow(lines[index]).count > 0,
+       markdownTableAlignments(lines[index + 1]) != nil {
+        return true
+    }
+    return false
 }
 
 private extension String {
@@ -3243,11 +3811,39 @@ private extension String {
     }
 }
 
-private func inlineMarkdownHtml(_ value: String) -> String {
+private func inlineMarkdownHtml(_ value: String, context: MarkdownRenderContext) -> String {
     var output = ""
     var index = value.startIndex
 
     while index < value.endIndex {
+        if value.hasPrefix("![", at: index),
+           let image = markdownInlineLink(in: value, from: index, image: true) {
+            output += "<img src=\"\(htmlAttributeEscaped(image.url))\" alt=\"\(htmlAttributeEscaped(image.label))\">"
+            index = image.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("[^", at: index),
+           let footnote = markdownFootnoteReference(in: value, from: index, context: context) {
+            output += footnote.html
+            index = footnote.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("[", at: index),
+           let link = markdownInlineLink(in: value, from: index, image: false) {
+            output += "<a href=\"\(htmlAttributeEscaped(link.url))\">\(inlineMarkdownHtml(link.label, context: context))</a>"
+            index = link.full.upperBound
+            continue
+        }
+
+        if let auto = markdownAutoLink(in: value, from: index) {
+            let label = htmlEscaped(String(value[auto]))
+            output += "<a href=\"\(htmlAttributeEscaped(String(value[auto])))\">\(label)</a>"
+            index = auto.upperBound
+            continue
+        }
+
         if value.hasPrefix("`", at: index),
            let range = inlineRange(in: value, from: index, opening: "`", closing: "`") {
             let inner = value[range.content]
@@ -3281,9 +3877,52 @@ private func inlineMarkdownHtml(_ value: String) -> String {
         if value.hasPrefix("**", at: index),
            let range = inlineRange(in: value, from: index, opening: "**", closing: "**") {
             let inner = String(value[range.content])
-            output += "<strong>\(inlineMarkdownHtml(inner))</strong>"
+            output += "<strong>\(inlineMarkdownHtml(inner, context: context))</strong>"
             index = range.full.upperBound
             continue
+        }
+
+        if value.hasPrefix("__", at: index),
+           let range = inlineRange(in: value, from: index, opening: "__", closing: "__") {
+            let inner = String(value[range.content])
+            output += "<strong>\(inlineMarkdownHtml(inner, context: context))</strong>"
+            index = range.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("~~", at: index),
+           let range = inlineRange(in: value, from: index, opening: "~~", closing: "~~") {
+            let inner = String(value[range.content])
+            output += "<del>\(inlineMarkdownHtml(inner, context: context))</del>"
+            index = range.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("*", at: index),
+           !value.hasPrefix("**", at: index),
+           let range = inlineRange(in: value, from: index, opening: "*", closing: "*") {
+            let inner = String(value[range.content])
+            output += "<em>\(inlineMarkdownHtml(inner, context: context))</em>"
+            index = range.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("_", at: index),
+           !value.hasPrefix("__", at: index),
+           let range = inlineRange(in: value, from: index, opening: "_", closing: "_") {
+            let inner = String(value[range.content])
+            output += "<em>\(inlineMarkdownHtml(inner, context: context))</em>"
+            index = range.full.upperBound
+            continue
+        }
+
+        if value.hasPrefix("\\", at: index) {
+            let next = value.index(after: index)
+            if next < value.endIndex {
+                output += htmlEscaped(String(value[next]))
+                index = value.index(after: next)
+                continue
+            }
         }
 
         output += htmlEscaped(String(value[index]))
@@ -3291,6 +3930,57 @@ private func inlineMarkdownHtml(_ value: String) -> String {
     }
 
     return output
+}
+
+private func markdownInlineLink(
+    in value: String,
+    from index: String.Index,
+    image: Bool
+) -> (full: Range<String.Index>, label: String, url: String)? {
+    let labelStart = image ? value.index(index, offsetBy: 2) : value.index(after: index)
+    guard labelStart <= value.endIndex else { return nil }
+    guard let labelEnd = value.range(of: "]", range: labelStart..<value.endIndex)?.lowerBound else { return nil }
+    let afterLabel = value.index(after: labelEnd)
+    guard afterLabel < value.endIndex, value[afterLabel] == "(" else { return nil }
+    let urlStart = value.index(after: afterLabel)
+    guard let urlEnd = value.range(of: ")", range: urlStart..<value.endIndex)?.lowerBound else { return nil }
+    let fullStart = index
+    let fullEnd = value.index(after: urlEnd)
+    let label = String(value[labelStart..<labelEnd])
+    let url = String(value[urlStart..<urlEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !url.isEmpty else { return nil }
+    return (fullStart..<fullEnd, label, url)
+}
+
+private func markdownFootnoteReference(
+    in value: String,
+    from index: String.Index,
+    context: MarkdownRenderContext
+) -> (full: Range<String.Index>, html: String)? {
+    guard value.hasPrefix("[^", at: index) else { return nil }
+    let idStart = value.index(index, offsetBy: 2)
+    guard let close = value.range(of: "]", range: idStart..<value.endIndex)?.lowerBound else { return nil }
+    let id = String(value[idStart..<close]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !id.isEmpty, let number = context.footnoteNumber(for: id) else { return nil }
+    let full = index..<value.index(after: close)
+    let escapedId = htmlAttributeEscaped(id)
+    return (
+        full,
+        "<sup id=\"fnref-\(escapedId)\" class=\"footnote-ref\"><a href=\"#fn-\(escapedId)\">\(number)</a></sup>"
+    )
+}
+
+private func markdownAutoLink(in value: String, from index: String.Index) -> Range<String.Index>? {
+    guard value.hasPrefix("https://", at: index) || value.hasPrefix("http://", at: index) else { return nil }
+    var end = index
+    while end < value.endIndex {
+        let character = value[end]
+        if character.isWhitespace || character == "<" || character == ">" {
+            break
+        }
+        end = value.index(after: end)
+    }
+    return index < end ? index..<end : nil
 }
 
 private func inlineRange(
@@ -3358,6 +4048,12 @@ private func htmlEscaped(_ value: String) -> String {
         .replacingOccurrences(of: ">", with: "&gt;")
         .replacingOccurrences(of: "\"", with: "&quot;")
         .replacingOccurrences(of: "'", with: "&#39;")
+}
+
+private func htmlAttributeEscaped(_ value: String) -> String {
+    htmlEscaped(value)
+        .replacingOccurrences(of: "\n", with: " ")
+        .replacingOccurrences(of: "\r", with: " ")
 }
 
 private func katexAssetTags() -> String {
