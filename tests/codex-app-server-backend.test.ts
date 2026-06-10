@@ -466,6 +466,8 @@ test("syncs popup protocol changes on the next turn after a thread is open", asy
   const firstTurn = socket.sent.filter((message) => message.method === "turn/start").at(-1);
   assert.match(firstTurn?.params.input[0]?.text, /Popup preference is enabled/u);
   assert.match(firstTurn?.params.input[0]?.text, /"type":"popup"/u);
+  assert.match(firstTurn?.params.input[0]?.text, /exactly one short speech final summary/u);
+  assert.match(firstTurn?.params.input[0]?.text, /lecture\/video summaries/u);
   assert.equal(firstTurn?.params.input.at(-1)?.text, "수식 포함해서 설명해줘");
 
   await backend.sendPrompt({

@@ -1036,6 +1036,9 @@ test("voice-agent protocol prefers speech for audible progress", () => {
   assert.doesNotMatch(voiceAgentProtocolPrompt, /Popup channel/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /Popup channel/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /at most one popup event per assistant answer/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /MUST use a popup/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /lecture\/video summaries/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /exactly one short speech final summary/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /KaTeX/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /\$\.\.\.\$/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /\$\$\.\.\.\$\$/u);
