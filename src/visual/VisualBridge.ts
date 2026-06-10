@@ -122,8 +122,20 @@ export type VisualEvent =
       op: "voice-agent-ui";
       type: "popup";
       text: string;
+      id?: string;
       title?: string;
       format?: "markdown" | "plain";
+    }
+  | {
+      op: "voice-agent-ui";
+      type: "popup_history";
+      entries: Array<{
+        id: string;
+        title: string;
+        text: string;
+        format: "markdown" | "plain";
+        createdAt: number;
+      }>;
     }
   | {
       op: "voice-agent-ui";
@@ -211,6 +223,7 @@ export class VisualBridge implements VisualBridgeLike {
   private latestUsage: Extract<VisualEvent, { type: "usage" }> | undefined;
   private latestQuestion: Extract<VisualEvent, { type: "question" }> | undefined;
   private latestContext: Extract<VisualEvent, { type: "context" }> | undefined;
+  private latestPopupHistory: Extract<VisualEvent, { type: "popup_history" }> | undefined;
   private server: Server | undefined;
   private bridgeUrl: string | undefined;
 
@@ -248,6 +261,9 @@ export class VisualBridge implements VisualBridgeLike {
           }
           if (this.latestQuestion) {
             readyClient.send(this.latestQuestion);
+          }
+          if (this.latestPopupHistory) {
+            readyClient.send(this.latestPopupHistory);
           }
         },
         onControl: (event) => this.handleControl(event),
@@ -294,6 +310,7 @@ export class VisualBridge implements VisualBridgeLike {
     this.rememberUsage(event);
     this.rememberQuestion(event);
     this.rememberContext(event);
+    this.rememberPopupHistory(event);
     const payload = serializeVisualEvent(event);
     for (const client of this.clients) {
       client.sendRaw(payload);
@@ -365,6 +382,16 @@ export class VisualBridge implements VisualBridgeLike {
       op: "voice-agent-ui",
       type: "context",
       entries: [...event.entries]
+    };
+  }
+
+  private rememberPopupHistory(event: VisualEvent): void {
+    if (event.type !== "popup_history") return;
+
+    this.latestPopupHistory = {
+      op: "voice-agent-ui",
+      type: "popup_history",
+      entries: event.entries.map((entry) => ({ ...entry }))
     };
   }
 }

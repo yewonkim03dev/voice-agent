@@ -88,6 +88,8 @@ test("help slash command prints terminal commands", async () => {
   assert.ok(lines.includes("Commands:"));
   assert.ok(lines.includes("  /help shows this command list."));
   assert.ok(lines.includes("  /status shows the current agent status."));
+  assert.ok(lines.includes("  /popups lists recent popup answers."));
+  assert.ok(lines.includes("  /popup <number> reopens a recent popup answer."));
   assert.ok(lines.includes("  /tts-stop stops current TTS playback."));
   assert.ok(lines.includes("  /quit exits Voice Agent."));
   assert.ok(lines.includes("Backend/TTS run options:"));
@@ -1352,18 +1354,50 @@ test("pass-through popup opens once per turn and is not spoken", async () => {
   });
   await flushAsync();
 
-  assert.deepEqual(visualBridge.events.filter((event) => event.type === "popup"), [
-    {
-      op: "voice-agent-ui",
-      type: "popup",
-      title: "정리",
-      text: "# 긴 설명\n본문입니다.",
-      format: "markdown"
-    }
-  ]);
+  const popupEvents = visualBridge.events.filter((event) => event.type === "popup");
+  assert.equal(popupEvents.length, 1);
+  assert.equal(popupEvents[0].op, "voice-agent-ui");
+  assert.equal(popupEvents[0].type, "popup");
+  assert.match(popupEvents[0].id ?? "", /^popup_/u);
+  assert.equal(popupEvents[0].title, "정리");
+  assert.equal(popupEvents[0].text, "# 긴 설명\n본문입니다.");
+  assert.equal(popupEvents[0].format, "markdown");
+  const history = visualBridge.events.find((event) => event.type === "popup_history");
+  assert.equal(history?.entries.length, 1);
+  assert.equal(history?.entries[0]?.title, "정리");
+  assert.equal(history?.entries[0]?.text, "# 긴 설명\n본문입니다.");
   assert.equal(lines.some((line) => line.includes("[agent:popup] 정리")), true);
   assert.equal(lines.some((line) => line.includes("duplicate popup")), true);
   assert.deepEqual(voiceOutput.messages.map((message) => message.text), ["팝업으로 열었습니다."]);
+});
+
+test("recent popup slash commands list and reopen popup answers", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, lines, visualBridge, undefined, undefined, {
+    visualConfig: {
+      popupPreferred: true
+    }
+  });
+
+  await harness.start();
+  await harness.processLine("코덱스 설명해줘");
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text: '{"op":"voice-agent","type":"popup","title":"수식","text":"$$x^2$$"}\n',
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  await harness.processLine("/popups");
+  await harness.processLine("/popup 1");
+
+  assert.equal(lines.some((line) => line.includes("Recent popups:")), true);
+  assert.equal(lines.some((line) => line.includes("/popup 1")), true);
+  assert.equal(lines.some((line) => line.includes("[popup:1] 수식\n$$x^2$$")), true);
+  assert.equal(visualBridge.events.filter((event) => event.type === "popup").length, 2);
 });
 
 test("pass-through popup guard resets on next turn", async () => {

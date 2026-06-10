@@ -147,6 +147,7 @@ export class VoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/help", "shows available terminal commands."));
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
+    this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
     this.writeLine(formatTerminalNote("STT output is printed as [stt:<language>] before routing."));
     this.printRunOptions();
   }
@@ -210,6 +211,7 @@ export class VoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/record", "starts or stops manual recording."));
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
+    this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
     this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
     this.writeLine(formatTerminalCommand("/tts-stop", "stops current TTS playback."));
     this.writeLine(formatTerminalCommand("/quit", "exits Voice Agent."));
@@ -400,6 +402,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/gesture-reset", "clears local gesture mappings and custom templates."));
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
+    this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
     this.writeLine(formatTerminalNote("STT output is printed as [stt:<language>] before routing."));
     this.printRunOptions();
   }
@@ -521,6 +524,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/gesture-reset", "clears local gesture mappings and custom templates."));
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
+    this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
     this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
     this.writeLine(formatTerminalCommand("/tts-stop", "stops current TTS playback."));
     this.writeLine(formatTerminalCommand("/quit", "exits Voice Agent."));
@@ -1905,6 +1909,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (visible.startsWith("[voice:context]")) return true;
   if (visible.startsWith("[voice:capability]")) return true;
   if (visible.startsWith("[settings:error]")) return true;
+  if (visible.startsWith("[popup")) return true;
   if (visible.startsWith("[camera:")) return true;
   if (visible.startsWith("[codex-app] config ")) return true;
   if (visible.startsWith("[harness")) return true;
@@ -1941,6 +1946,8 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
     visible.startsWith("/cam-test ") ||
     visible.startsWith("/add ") ||
     visible.startsWith("/refs ") ||
+    visible.startsWith("/popups ") ||
+    visible.startsWith("/popup ") ||
     visible.startsWith("STT output ")
   ) {
     return true;
@@ -1950,7 +1957,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 }
 
 function isVisibleHelpCommandLine(visible: string): boolean {
-  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-delete|gesture-remove|gesture-rm|gesture-clear-custom|gestures-clear-custom|gesture-delete-all|gestures-delete-all|gesture-reset|gesture-clear|add|refs)(?:\s|$)/u.test(visible);
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-delete|gesture-remove|gesture-rm|gesture-clear-custom|gestures-clear-custom|gesture-delete-all|gestures-delete-all|gesture-reset|gesture-clear|add|refs|popups|popup)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {

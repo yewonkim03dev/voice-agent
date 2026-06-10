@@ -258,6 +258,14 @@ export interface TerminalHarnessOptions {
   onExitRequest?: () => void | Promise<void>;
 }
 
+interface RecentPopupEntry {
+  id: string;
+  title: string;
+  text: string;
+  format: "markdown" | "plain";
+  createdAt: number;
+}
+
 export class TerminalHarness {
   readonly backend: AgentBackend;
   readonly voiceOutput: InspectableVoiceOutput;
@@ -295,6 +303,7 @@ export class TerminalHarness {
   private readonly passthroughOutputBuffers = new Map<string, string>();
   private readonly passthroughStructuredSpeechSessions = new Set<string>();
   private readonly passthroughPopupGenerations = new Set<string>();
+  private readonly recentPopups: RecentPopupEntry[] = [];
   private readonly interruptedPassthroughSessions = new Set<string>();
   private readonly scheduledVoiceTasks = new Set<Promise<void>>();
   private voiceQueue: Promise<void> = Promise.resolve();
@@ -1048,11 +1057,17 @@ export class TerminalHarness {
     this.passthroughPopupGenerations.add(key);
     const title = typeof event.raw.title === "string" ? event.raw.title.trim() : "";
     const format = event.raw.format === "plain" ? "plain" : "markdown";
+    const entry = this.rememberRecentPopup({
+      title: title || "Popup",
+      text: event.text,
+      format
+    });
     this.writeLine(`[agent:popup] ${title || "popup opened"}`);
     this.sendVisualEvent({
       op: "voice-agent-ui",
       type: "popup",
       text: event.text,
+      id: entry.id,
       ...(title ? { title } : {}),
       format
     });
@@ -1060,6 +1075,28 @@ export class TerminalHarness {
       op: "voice-agent-ui",
       type: "status",
       text: "popup opened"
+    });
+  }
+
+  private rememberRecentPopup(entry: Omit<RecentPopupEntry, "id" | "createdAt">): RecentPopupEntry {
+    const popup: RecentPopupEntry = {
+      id: this.createId("popup"),
+      title: entry.title.trim() || "Popup",
+      text: entry.text,
+      format: entry.format,
+      createdAt: this.now()
+    };
+    this.recentPopups.unshift(popup);
+    this.recentPopups.splice(10);
+    this.sendRecentPopupHistory();
+    return popup;
+  }
+
+  private sendRecentPopupHistory(): void {
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "popup_history",
+      entries: this.recentPopups.map((entry) => ({ ...entry }))
     });
   }
 
@@ -1302,6 +1339,12 @@ export class TerminalHarness {
       case "/status":
         this.printStatus();
         return "continue";
+      case "/popups":
+        this.printRecentPopups();
+        return "continue";
+      case "/popup":
+        this.showRecentPopup(argument);
+        return "continue";
       case "/permission":
         await this.requestPermission(argument);
         return "continue";
@@ -1330,6 +1373,8 @@ export class TerminalHarness {
     this.writeLine(formatTerminalSection("Commands:"));
     this.writeLine(formatTerminalCommand("/help", "shows this command list."));
     this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
+    this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
+    this.writeLine(formatTerminalCommand("/popup <number>", "reopens a recent popup answer."));
     if (this.runtime) {
       this.writeLine(formatTerminalCommand("/permission <command>", "asks for a mock command approval."));
       this.writeLine(formatTerminalCommand("/complete", "emits a mock task completion."));
@@ -1341,6 +1386,43 @@ export class TerminalHarness {
     for (const line of terminalBackendRunOptionLines()) {
       this.writeLine(line);
     }
+  }
+
+  private printRecentPopups(): void {
+    if (this.recentPopups.length === 0) {
+      this.writeLine("[popup] no recent popup answers.");
+      return;
+    }
+
+    this.writeLine(formatTerminalSection("Recent popups:"));
+    this.recentPopups.forEach((entry, index) => {
+      const summary = compactTerminalText(entry.text, 96);
+      this.writeLine(formatTerminalCommand(`/popup ${index + 1}`, `${entry.title} - ${summary}`));
+    });
+  }
+
+  private showRecentPopup(argument: string): void {
+    if (this.recentPopups.length === 0) {
+      this.writeLine("[popup] no recent popup answers.");
+      return;
+    }
+
+    const index = parsePopupIndex(argument, this.recentPopups.length);
+    if (index === undefined) {
+      this.writeLine(`[popup] usage: /popup <1-${this.recentPopups.length}>`);
+      return;
+    }
+
+    const entry = this.recentPopups[index];
+    this.writeLine(`[popup:${index + 1}] ${entry.title}\n${entry.text}`);
+    this.sendVisualEvent({
+      op: "voice-agent-ui",
+      type: "popup",
+      id: entry.id,
+      title: entry.title,
+      text: entry.text,
+      format: entry.format
+    });
   }
 
   private async requestPermission(command: string): Promise<void> {
@@ -2119,6 +2201,21 @@ function parseSlashCommand(line: string): { command: string; argument: string } 
     command: line.slice(0, firstSpace).toLowerCase(),
     argument: line.slice(firstSpace).trim()
   };
+}
+
+function parsePopupIndex(argument: string, count: number): number | undefined {
+  const trimmed = argument.trim().toLowerCase();
+  if (!trimmed || trimmed === "latest") return 0;
+
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > count) return undefined;
+  return parsed - 1;
+}
+
+function compactTerminalText(text: string, limit: number): string {
+  const compact = text.trim().replace(/\s+/gu, " ");
+  if (compact.length <= limit) return compact;
+  return `${compact.slice(0, Math.max(0, limit - 3)).trimEnd()}...`;
 }
 
 function promptIfOpen(readline: ReturnType<typeof createInterface>): void {

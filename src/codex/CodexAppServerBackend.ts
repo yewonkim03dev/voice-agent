@@ -148,6 +148,8 @@ export class CodexAppServerBackend implements AgentBackend {
   private deniedApprovalRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
   private deniedApprovalRecoveryTurnId: string | undefined;
   private rateLimits: CodexRateLimits | undefined;
+  private activeThreadProtocolPrompt: string | undefined;
+  private protocolPromptSyncPending = false;
   private status: CodexStatus = {
     process: "not_started",
     task: "idle"
@@ -254,6 +256,7 @@ export class CodexAppServerBackend implements AgentBackend {
       task: "thinking"
     });
 
+    const syncsProtocolPrompt = this.protocolPromptSyncPending;
     const result = await this.sendRequest("turn/start", {
       threadId: this.threadId,
       input: this.createTurnInput(prompt),
@@ -261,6 +264,10 @@ export class CodexAppServerBackend implements AgentBackend {
       approvalPolicy: this.approvalPolicy,
       approvalsReviewer: "user"
     });
+    if (syncsProtocolPrompt) {
+      this.activeThreadProtocolPrompt = this.protocolPrompt;
+      this.protocolPromptSyncPending = false;
+    }
     const turn = asRecord(result).turn;
     const turnId = parseOptionalString(asRecord(turn).id);
     if (turnId) {
@@ -270,7 +277,12 @@ export class CodexAppServerBackend implements AgentBackend {
   }
 
   setVoiceAgentProtocolPrompt(prompt: string): void {
+    if (this.protocolPrompt === prompt) return;
+
     this.protocolPrompt = prompt;
+    if (this.voiceAgentProtocol && this.threadId && this.activeThreadProtocolPrompt !== prompt) {
+      this.protocolPromptSyncPending = true;
+    }
   }
 
   async sendPermission(decision: PermissionDecision): Promise<void> {
@@ -455,6 +467,11 @@ export class CodexAppServerBackend implements AgentBackend {
       throw new Error("Codex app-server did not return a thread id.");
     }
 
+    if (this.voiceAgentProtocol) {
+      this.activeThreadProtocolPrompt = this.protocolPrompt;
+      this.protocolPromptSyncPending = false;
+    }
+
     this.writeLine(`[codex-app] ${source} ${this.threadId}`);
     await this.saveStoredThreadId(this.threadId);
     this.publishStatus({
@@ -530,16 +547,29 @@ export class CodexAppServerBackend implements AgentBackend {
 
     if (!this.voiceAgentProtocol) return input;
 
+    const prefix: Array<{ type: "text"; text: string; text_elements: unknown[] }> = [];
+    if (this.protocolPromptSyncPending) {
+      prefix.push({
+        type: "text" as const,
+        text: protocolPromptRuntimeSyncPrompt(this.protocolPrompt),
+        text_elements: []
+      });
+    }
+
     const policy = responseLanguagePolicyPrompt(prompt.responseLanguage);
 
-    if (!policy) return input;
-
-    return [
-      {
+    if (policy) {
+      prefix.push({
         type: "text" as const,
         text: policy,
         text_elements: []
-      },
+      });
+    }
+
+    if (prefix.length === 0) return input;
+
+    return [
+      ...prefix,
       ...input
     ];
   }
@@ -1783,6 +1813,19 @@ function responseLanguagePolicyPrompt(language: CodexPrompt["responseLanguage"])
     default:
       return undefined;
   }
+}
+
+function protocolPromptRuntimeSyncPrompt(prompt: string): string {
+  if (prompt.includes("Popup channel:")) {
+    return [
+      "Runtime policy: Popup preference is enabled.",
+      "For long explanations, study notes, markdown-heavy answers, tables, or math content, emit at most one popup event:",
+      "{\"op\":\"voice-agent\",\"type\":\"popup\",\"text\":\"markdown or plain text content\",\"title\":\"optional title\"}",
+      "Use KaTeX-compatible LaTeX for math. Do not speak the popup body; optionally emit a short speech final summary."
+    ].join("\n");
+  }
+
+  return "Runtime policy: Popup preference is disabled. Do not emit voice-agent popup events.";
 }
 
 function sanitizeRecoveryTimeout(value: number | undefined): number {

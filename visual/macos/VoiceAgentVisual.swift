@@ -45,6 +45,8 @@ private let visualTextEn: [String: String] = [
     "ok": "OK",
     "settings": "Settings",
     "popup": "Popup",
+    "recentPopups": "Popups",
+    "noRecentPopups": "No recent popups",
     "copy": "Copy",
     "plainText": "Text",
     "markdownView": "Markdown",
@@ -201,6 +203,8 @@ private let visualTextKo: [String: String] = [
     "ok": "확인",
     "settings": "설정",
     "popup": "팝업",
+    "recentPopups": "팝업",
+    "noRecentPopups": "최근 팝업 없음",
     "copy": "복사",
     "plainText": "텍스트",
     "markdownView": "마크다운",
@@ -330,6 +334,13 @@ private func localizedText(_ key: String, language: UiLanguage) -> String {
 
 private func resolvedUiLanguage(from value: String) -> UiLanguage {
     value == "ko" ? .ko : .en
+}
+
+private func numericDouble(_ value: Any?) -> Double? {
+    if let double = value as? Double { return double }
+    if let int = value as? Int { return Double(int) }
+    if let number = value as? NSNumber { return number.doubleValue }
+    return nil
 }
 
 private func stateText(_ state: String, language: UiLanguage) -> String {
@@ -1385,6 +1396,7 @@ final class VisualRootView: NSView {
         let titles = [
             localizedText("stop", language: uiLanguage),
             localizedText("settings", language: uiLanguage),
+            localizedText("recentPopups", language: uiLanguage),
             localizedText("ttsStop", language: uiLanguage),
             localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage),
             localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage),
@@ -2419,7 +2431,9 @@ final class PopupPanelController: NSObject {
         panel?.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? localizedText("popup", language: language)
             : title.trimmingCharacters(in: .whitespacesAndNewlines)
-        panel?.orderFront(nil)
+        panel?.makeKeyAndOrderFront(nil)
+        panel?.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func updateLanguage(_ language: UiLanguage) {
@@ -2528,6 +2542,21 @@ final class PopupPanelController: NSObject {
     }
 }
 
+struct PopupHistoryEntry {
+    let id: String
+    let title: String
+    let text: String
+    let format: String
+    let createdAt: Double
+}
+
+private func combinedRecentPopupMarkdown(_ entries: [PopupHistoryEntry]) -> String {
+    entries.enumerated().map { index, entry in
+        let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Popup" : entry.title
+        return "## \(index + 1). \(title)\n\n\(entry.text)"
+    }.joined(separator: "\n\n---\n\n")
+}
+
 private func popupHtmlDocument(_ markdown: String) -> String {
     let body = markdownBodyHtml(markdown)
     let assets = katexAssetTags()
@@ -2588,13 +2617,28 @@ code {
   overflow-y: hidden;
   padding: 4px 0;
 }
+.math-display {
+  margin: 14px 0;
+  overflow-x: auto;
+}
 </style>
 </head>
 <body>
 \#(body)
 <script>
-if (window.renderMathInElement) {
-  renderMathInElement(document.body, {
+function renderPopupMath() {
+  if (!window.renderMathInElement || document.body.dataset.mathRendered === "true") return;
+  document.body.dataset.mathRendered = "true";
+  if (window.katex) {
+    document.querySelectorAll(".math-display[data-tex]").forEach(function(element) {
+      window.katex.render(element.dataset.tex || "", element, {
+        displayMode: true,
+        throwOnError: false,
+        strict: "warn"
+      });
+    });
+  }
+  window.renderMathInElement(document.body, {
     delimiters: [
       {left: "$$", right: "$$", display: true},
       {left: "\\[", right: "\\]", display: true},
@@ -2606,6 +2650,13 @@ if (window.renderMathInElement) {
     strict: "warn"
   });
 }
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", renderPopupMath);
+} else {
+  renderPopupMath();
+}
+window.addEventListener("load", renderPopupMath);
+setTimeout(renderPopupMath, 0);
 </script>
 </body>
 </html>
@@ -2615,9 +2666,23 @@ if (window.renderMathInElement) {
 private func markdownBodyHtml(_ markdown: String) -> String {
     var output: [String] = []
     var inCodeBlock = false
+    var displayMathDelimiter: String?
+    var displayMathLines: [String] = []
 
     for line in markdown.components(separatedBy: .newlines) {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+        if let delimiter = displayMathDelimiter {
+            if trimmed == delimiter {
+                output.append(displayMathHtml(displayMathLines.joined(separator: "\n")))
+                displayMathDelimiter = nil
+                displayMathLines = []
+            } else {
+                displayMathLines.append(line)
+            }
+            continue
+        }
+
         if trimmed.hasPrefix("```") {
             if inCodeBlock {
                 output.append("</code></pre>")
@@ -2633,7 +2698,14 @@ private func markdownBodyHtml(_ markdown: String) -> String {
             continue
         }
 
-        if trimmed.isEmpty {
+        if let display = oneLineDisplayMath(trimmed) {
+            output.append(displayMathHtml(display))
+        } else if let opened = openedDisplayMathBlock(trimmed) {
+            displayMathDelimiter = opened.delimiter
+            displayMathLines = opened.initialLine.map { [$0] } ?? []
+        } else if trimmed == "---" {
+            output.append("<hr>")
+        } else if trimmed.isEmpty {
             output.append("<div class=\"spacer\"></div>")
         } else if trimmed.hasPrefix("### ") {
             output.append("<h3>\(htmlEscaped(String(trimmed.dropFirst(4))))</h3>")
@@ -2648,11 +2720,58 @@ private func markdownBodyHtml(_ markdown: String) -> String {
         }
     }
 
+    if displayMathDelimiter != nil {
+        output.append(displayMathHtml(displayMathLines.joined(separator: "\n")))
+    }
     if inCodeBlock {
         output.append("</code></pre>")
     }
 
     return output.joined(separator: "\n")
+}
+
+private func oneLineDisplayMath(_ trimmed: String) -> String? {
+    if trimmed.hasPrefix("$$"), trimmed.hasSuffix("$$"), trimmed.count > 4 {
+        return String(trimmed.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    if trimmed.hasPrefix("\\["), trimmed.hasSuffix("\\]"), trimmed.count > 4 {
+        return String(trimmed.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    return nil
+}
+
+private func openedDisplayMathBlock(_ trimmed: String) -> (delimiter: String, initialLine: String?)? {
+    if trimmed == "$$" {
+        return ("$$", nil)
+    }
+
+    if trimmed.hasPrefix("$$") {
+        return ("$$", String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    if trimmed == "\\[" {
+        return ("\\]", nil)
+    }
+
+    if trimmed.hasPrefix("\\[") {
+        return ("\\]", String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    return nil
+}
+
+private func displayMathHtml(_ tex: String) -> String {
+    let trimmed = tex.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return "<div class=\"spacer\"></div>" }
+    return "<div class=\"math-display\" data-tex=\"\(mathAttributeEscaped(trimmed))\"></div>"
+}
+
+private func mathAttributeEscaped(_ value: String) -> String {
+    htmlEscaped(value)
+        .replacingOccurrences(of: "\n", with: "&#10;")
+        .replacingOccurrences(of: "\r", with: "")
 }
 
 private func htmlEscaped(_ value: String) -> String {
@@ -2666,14 +2785,34 @@ private func htmlEscaped(_ value: String) -> String {
 
 private func katexAssetTags() -> String {
     guard let directory = katexDistDirectory() else { return "" }
-    let css = directory.appendingPathComponent("katex.min.css").absoluteString
-    let script = directory.appendingPathComponent("katex.min.js").absoluteString
-    let autoRender = directory.appendingPathComponent("contrib/auto-render.min.js").absoluteString
+    guard
+        let css = readUtf8File(directory.appendingPathComponent("katex.min.css")),
+        let script = readUtf8File(directory.appendingPathComponent("katex.min.js")),
+        let autoRender = readUtf8File(directory.appendingPathComponent("contrib/auto-render.min.js"))
+    else { return "" }
     return #"""
-<link rel="stylesheet" href="\#(css)">
-<script src="\#(script)"></script>
-<script src="\#(autoRender)"></script>
+<style>
+\#(styleEscaped(css))
+</style>
+<script>
+\#(scriptEscaped(script))
+</script>
+<script>
+\#(scriptEscaped(autoRender))
+</script>
 """#
+}
+
+private func readUtf8File(_ url: URL) -> String? {
+    try? String(contentsOf: url, encoding: .utf8)
+}
+
+private func styleEscaped(_ value: String) -> String {
+    value.replacingOccurrences(of: "</style", with: "<\\/style", options: [.caseInsensitive])
+}
+
+private func scriptEscaped(_ value: String) -> String {
+    value.replacingOccurrences(of: "</script", with: "<\\/script", options: [.caseInsensitive])
 }
 
 private func katexDistDirectory() -> URL? {
@@ -2764,6 +2903,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var mainWindow: NSWindow?
     private let menuBarCompanion = MenuBarCompanion()
     private let popupPanel = PopupPanelController()
+    private var recentPopups: [PopupHistoryEntry] = []
     private let commandView = NSTextView(frame: .zero)
     private let contextField = NSTextField(string: "")
     private let contextSummary = NSTextField(labelWithString: "No references queued")
@@ -2902,6 +3042,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         let controls = NSStackView()
         controls.addArrangedSubview(emergencyButton())
         controls.addArrangedSubview(button(localizedText("settings", language: uiLanguage), action: #selector(showSettings)))
+        controls.addArrangedSubview(button(localizedText("recentPopups", language: uiLanguage), action: #selector(showRecentPopups)))
         controls.addArrangedSubview(button(localizedText("ttsStop", language: uiLanguage), action: #selector(stopTts)))
         controls.addArrangedSubview(button(localizedText(micEnabled ? "micOff" : "micOn", language: uiLanguage), action: #selector(toggleMicInput)))
         controls.addArrangedSubview(button(localizedText(cameraEnabled ? "cameraOff" : "cameraOn", language: uiLanguage), action: #selector(toggleCameraInput)))
@@ -2934,6 +3075,41 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private func showMainWindow() {
         mainWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func showRecentPopups() {
+        guard !recentPopups.isEmpty else {
+            popupPanel.show(
+                title: localizedText("recentPopups", language: uiLanguage),
+                text: localizedText("noRecentPopups", language: uiLanguage),
+                format: "plain",
+                language: uiLanguage
+            )
+            return
+        }
+
+        popupPanel.show(
+            title: localizedText("recentPopups", language: uiLanguage),
+            text: combinedRecentPopupMarkdown(recentPopups),
+            format: "markdown",
+            language: uiLanguage
+        )
+    }
+
+    private func updatePopupHistory(_ entries: [[String: Any]]) {
+        recentPopups = entries.compactMap { record in
+            guard let text = record["text"] as? String else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+
+            return PopupHistoryEntry(
+                id: record["id"] as? String ?? UUID().uuidString,
+                title: record["title"] as? String ?? localizedText("popup", language: uiLanguage),
+                text: trimmed,
+                format: record["format"] as? String == "plain" ? "plain" : "markdown",
+                createdAt: numericDouble(record["createdAt"]) ?? 0
+            )
+        }
     }
 
     private func button(_ title: String, action: Selector) -> NSButton {
@@ -3064,6 +3240,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             popupPanel.show(title: title, text: popupText, format: format, language: uiLanguage)
             rootView?.pushChat(role: "assistant", kind: "status", text: localizedText("popup", language: uiLanguage))
             menuBarCompanion.updateMessage(localizedText("popup", language: uiLanguage))
+        case "popup_history":
+            updatePopupHistory(event["entries"] as? [[String: Any]] ?? [])
         case "approval":
             circleView.state = "approval_pending"
             let approval = event["text"] as? String ?? stateText("approval_pending", language: uiLanguage)

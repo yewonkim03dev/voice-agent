@@ -64,6 +64,17 @@ test("visual bridge serializes UI events as JSON", () => {
     },
     {
       op: "voice-agent-ui",
+      type: "popup_history",
+      entries: [{
+        id: "popup_1",
+        title: "공부 노트",
+        text: "$$x^2$$",
+        format: "markdown",
+        createdAt: 1000
+      }]
+    },
+    {
+      op: "voice-agent-ui",
       type: "usage",
       text: "5h 63% left · 1w 88% left",
       primaryText: "5h 63% left",
@@ -227,10 +238,13 @@ test("visual bridge replays latest settings to late visual clients", async () =>
 
   assert.match(source, /private latestSettings/u);
   assert.match(source, /private latestUsage/u);
+  assert.match(source, /private latestPopupHistory/u);
   assert.match(source, /this\.rememberSettings\(event\)/u);
   assert.match(source, /this\.rememberUsage\(event\)/u);
+  assert.match(source, /this\.rememberPopupHistory\(event\)/u);
   assert.match(source, /readyClient\.send\(this\.latestSettings\)/u);
   assert.match(source, /readyClient\.send\(this\.latestUsage\)/u);
+  assert.match(source, /readyClient\.send\(this\.latestPopupHistory\)/u);
   assert.match(source, /event\.wakePhrases !== undefined/u);
   assert.match(source, /event\.stopPhrases !== undefined/u);
   assert.match(source, /event\.approvalPhrases !== undefined/u);
@@ -626,6 +640,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /items\.removeFirst\(items\.count - 10\)/u);
   assert.match(swift, /Recent Q\/A/u);
   assert.match(swift, /Show Recent Q\/A panel/u);
+  assert.match(swift, /"recentPopups": "Popups"/u);
+  assert.match(swift, /"recentPopups": "팝업"/u);
   assert.match(swift, /Speak wake warning/u);
   assert.match(swift, /"chatHistoryEnabled": chatHistoryEnabled/u);
   assert.match(swift, /"hudEnabled": hudEnabled/u);
@@ -711,6 +727,10 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /Prefer popup for long answers/u);
   assert.match(swift, /"popupPreferred": popupPreferred/u);
   assert.match(swift, /case "popup":/u);
+  assert.match(swift, /case "popup_history":/u);
+  assert.match(swift, /private var recentPopups: \[PopupHistoryEntry\] = \[\]/u);
+  assert.match(swift, /@objc private func showRecentPopups/u);
+  assert.match(swift, /combinedRecentPopupMarkdown/u);
   assert.match(swift, /final class PopupPanelController/u);
   assert.match(swift, /import WebKit/u);
   assert.match(swift, /WKWebView/u);
@@ -719,10 +739,23 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /katex\.min\.js/u);
   assert.match(swift, /auto-render\.min\.js/u);
   assert.match(swift, /katex\.min\.css/u);
+  assert.match(swift, /readUtf8File/u);
+  assert.match(swift, /scriptEscaped/u);
+  assert.match(swift, /function renderPopupMath/u);
+  assert.ok(swift.includes('document.querySelectorAll(".math-display[data-tex]")'));
+  assert.match(swift, /window\.katex\.render/u);
+  assert.match(swift, /private func displayMathHtml/u);
+  assert.match(swift, /private func oneLineDisplayMath/u);
+  assert.match(swift, /private func openedDisplayMathBlock/u);
+  assert.ok(swift.includes('<div class=\\"math-display\\" data-tex='));
+  assert.match(swift, /document\.addEventListener\("DOMContentLoaded", renderPopupMath\)/u);
   assert.match(swift, /private func markdownAttributedString/u);
   assert.match(swift, /NSPasteboard\.general\.setString\(rawText, forType: \.string\)/u);
   assert.match(swift, /toggleButton\.action = #selector\(toggleMode\)/u);
   assert.match(swift, /styleMask: \[\.titled, \.closable, \.resizable, \.utilityWindow\]/u);
+  assert.match(swift, /panel\?\.makeKeyAndOrderFront\(nil\)/u);
+  assert.match(swift, /panel\?\.orderFrontRegardless\(\)/u);
+  assert.match(swift, /NSApp\.activate\(ignoringOtherApps: true\)/u);
   assert.match(swift, /Show floating HUD/u);
   assert.match(swift, /Thinking Fx/u);
   assert.match(swift, /thinkingPulseSound\.volume/u);

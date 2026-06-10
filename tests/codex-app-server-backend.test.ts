@@ -8,6 +8,7 @@ import type { CodexStatus } from "../src/codex/CodexOutputEvent.ts";
 import type { PermissionDecision } from "../src/permission/PermissionDecision.ts";
 import type { PermissionRequest } from "../src/permission/PermissionRequest.ts";
 import type { VisualBridgeLike, VisualControlEvent, VisualEvent } from "../src/visual/VisualBridge.ts";
+import { voiceAgentProtocolPrompt, voiceAgentProtocolPromptForSettings } from "../src/voice/VoiceAgentEvent.ts";
 
 test("starts Codex app-server, initializes, and opens a thread", async () => {
   const child = new FakeAppServerProcess();
@@ -439,6 +440,45 @@ test("adds response language runtime policy without changing the base protocol p
       text_elements: []
     }
   ]);
+});
+
+test("syncs popup protocol changes on the next turn after a thread is open", async () => {
+  const { backend, child, socket } = createStartedBackend({
+    voiceAgentProtocol: true,
+    voiceAgentProtocolPrompt
+  });
+
+  const started = backend.start();
+  child.stdout.emit("data", "listening on: ws://127.0.0.1:1234\n");
+  await Promise.resolve();
+  socket.open();
+  await started;
+
+  backend.setVoiceAgentProtocolPrompt(voiceAgentProtocolPromptForSettings({ popupPreferred: true }));
+  await backend.sendPrompt({
+    sessionId: "sess_1",
+    text: "수식 포함해서 설명해줘",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+
+  const firstTurn = socket.sent.filter((message) => message.method === "turn/start").at(-1);
+  assert.match(firstTurn?.params.input[0]?.text, /Popup preference is enabled/u);
+  assert.match(firstTurn?.params.input[0]?.text, /"type":"popup"/u);
+  assert.equal(firstTurn?.params.input.at(-1)?.text, "수식 포함해서 설명해줘");
+
+  await backend.sendPrompt({
+    sessionId: "sess_2",
+    text: "짧게 답해줘",
+    language: "ko",
+    source: "voice",
+    mode: "submit"
+  });
+
+  const secondTurn = socket.sent.filter((message) => message.method === "turn/start").at(-1);
+  assert.doesNotMatch(secondTurn?.params.input[0]?.text, /Popup preference is enabled/u);
+  assert.equal(secondTurn?.params.input.at(-1)?.text, "짧게 답해줘");
 });
 
 test("routes app-server approval requests to RuntimeController and sends decisions back", async () => {
