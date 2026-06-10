@@ -97,6 +97,10 @@ export class TtsVoiceOutput implements InspectableVoiceOutput {
     return this.getSettings();
   }
 
+  isSpeechEnabled(): boolean {
+    return true;
+  }
+
   private async speakQueued(message: VoiceMessage, generation: number): Promise<void> {
     try {
       for (const chunk of chunkSpeechText(message.text, this.maxChunkLength)) {

@@ -34,6 +34,55 @@ test("ConsoleVoiceOutput fallback still prints and records messages", async () =
   assert.deepEqual(lines, ["[voice:permission] 허용할까?"]);
 });
 
+test("createVoiceOutput stays silent when TTS is disabled", async () => {
+  const lines: string[] = [];
+  let finishedId: string | undefined;
+  const output = createVoiceOutput({
+    cli: {
+      enabled: false
+    },
+    writeLine: (line) => lines.push(line),
+    env: {},
+    platform: "darwin"
+  });
+  output.onFinished((id) => {
+    finishedId = id;
+  });
+
+  await output.speak(message("허용할까?", "ko", "permission"));
+
+  assert.equal(output.messages.length, 1);
+  assert.equal(finishedId, "permission_허용할까?");
+  assert.deepEqual(lines, []);
+  assert.equal(output.isSpeechEnabled?.(), false);
+});
+
+test("createVoiceOutput can require explicit --tts before using saved TTS settings", async () => {
+  const spawns: unknown[] = [];
+  const output = createVoiceOutput({
+    file: {
+      enabled: true,
+      provider: "macos-apple",
+      voiceName: "Yuna"
+    },
+    env: {
+      VOICE_AGENT_TTS_ENABLED: "true"
+    },
+    platform: "darwin",
+    requireExplicitCliEnable: true,
+    spawnTtsProcess: (...args) => {
+      spawns.push(args);
+      return new FakeTtsProcess();
+    }
+  });
+
+  await output.speak(message("허용할까?", "ko", "permission"));
+
+  assert.equal(output.messages.length, 1);
+  assert.equal(output.isSpeechEnabled?.(), false);
+  assert.equal(spawns.length, 0);
+});
+
 test("macOS TTS provider is selected by default on macOS when TTS is enabled", () => {
   assert.deepEqual(resolveTtsConfig({
     cli: {

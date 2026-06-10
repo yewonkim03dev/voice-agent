@@ -15,6 +15,7 @@ export interface VoiceOutputSettings {
 
 export interface InspectableVoiceOutput extends VoiceOutput {
   readonly messages: VoiceMessage[];
+  isSpeechEnabled?(): boolean;
   getSettings?(): VoiceOutputSettings;
   updateSettings?(settings: VoiceOutputSettings): VoiceOutputSettings;
 }
@@ -60,6 +61,48 @@ export class ConsoleVoiceOutput implements InspectableVoiceOutput {
       ...settings
     };
     return this.getSettings();
+  }
+
+  isSpeechEnabled(): boolean {
+    return true;
+  }
+}
+
+export class SilentVoiceOutput implements InspectableVoiceOutput {
+  readonly messages: VoiceMessage[] = [];
+
+  private readonly finishedListeners: Array<(id: string) => void> = [];
+  private settings: VoiceOutputSettings = {
+    language: "auto",
+    gender: "auto",
+    rate: 0.56
+  };
+
+  async speak(message: VoiceMessage): Promise<void> {
+    this.messages.push(message);
+    this.finishedListeners.forEach((listener) => listener(message.id));
+  }
+
+  async stop(): Promise<void> {}
+
+  onFinished(callback: (id: string) => void): void {
+    this.finishedListeners.push(callback);
+  }
+
+  getSettings(): VoiceOutputSettings {
+    return { ...this.settings };
+  }
+
+  updateSettings(settings: VoiceOutputSettings): VoiceOutputSettings {
+    this.settings = {
+      ...this.settings,
+      ...settings
+    };
+    return this.getSettings();
+  }
+
+  isSpeechEnabled(): boolean {
+    return false;
   }
 }
 

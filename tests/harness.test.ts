@@ -618,6 +618,27 @@ test("pass-through permission prompt plays a ready cue after TTS finishes", asyn
   await flushAsync();
 
   assert.equal(lines.includes("[voice:cue] approval ready \u0007"), true);
+  assert.equal(lines.some((line) => line.startsWith("[voice:permission]")), false);
+});
+
+test("pass-through ignores saved TTS enabled setting unless --tts is passed", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines, undefined, undefined, undefined, {
+    ttsConfig: {
+      enabled: true,
+      provider: "macos-apple",
+      voiceName: "Yuna"
+    }
+  });
+
+  await harness.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+
+  assert.equal(harness.voiceOutput.isSpeechEnabled?.(), false);
+  assert.equal(lines.includes("[voice:cue] approval ready \u0007"), true);
+  assert.equal(lines.some((line) => line.startsWith("[voice:permission]")), false);
 });
 
 test("pass-through permission prompt waits for queued speech instead of cutting it off", async () => {
@@ -1535,7 +1556,8 @@ test("pass-through permission prompts still work after voice-agent events", asyn
 
 test("pass-through mode maps interrupt phrases during active work", async () => {
   const backend = new InMemoryAgentBackend();
-  const harness = createPassthroughHarness(backend);
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines);
 
   await harness.start();
   await harness.processLine("코덱스 npm test 돌려줘");
@@ -1543,6 +1565,8 @@ test("pass-through mode maps interrupt phrases during active work", async () => 
 
   assert.equal(backend.prompts[0].text, "npm test 돌려줘");
   assert.equal(backend.interrupts.length, 1);
+  assert.equal(lines.includes("[voice:cue] stop \u0007"), true);
+  assert.equal(lines.some((line) => line.startsWith("[voice:status]")), false);
 });
 
 test("pass-through mode does not replay stale speech after interruption", async () => {
@@ -1569,7 +1593,9 @@ test("pass-through mode does not replay stale speech after interruption", async 
   });
   await flushAsync();
 
-  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), ["멈출게."]);
+  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), []);
+  assert.equal(lines.includes("[voice:cue] stop \u0007"), true);
+  assert.equal(lines.some((line) => line === "[voice:status] 멈출게."), false);
   assert.equal(lines.some((line) => line.includes("[agent:stale:speech] 늦게 도착한 답변입니다.")), true);
   assert.equal(
     visualBridge.events.some(
@@ -1610,6 +1636,8 @@ test("pass-through STOP followed by a new command keeps old output stale", async
   await flushAsync();
 
   assert.equal(lines.some((line) => line.includes("[agent:stale:speech] 늦은 옛 답변")), true);
+  assert.equal(lines.includes("[voice:cue] stop \u0007"), true);
+  assert.equal(lines.some((line) => line === "[voice:status] 정지했어."), false);
   assert.equal(harness.voiceOutput.messages.some((message) => message.text === "늦은 옛 답변"), false);
   assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
 
@@ -1627,7 +1655,7 @@ test("pass-through STOP followed by a new command keeps old output stale", async
   });
   await flushAsync();
 
-  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), ["정지했어.", "새 답변입니다."]);
+  assert.deepEqual(harness.voiceOutput.messages.map((message) => message.text), ["새 답변입니다."]);
 });
 
 function createHarness(): TerminalHarness {

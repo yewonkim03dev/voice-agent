@@ -339,7 +339,8 @@ export class TerminalHarness {
         platform: options.platform,
         writeLine: this.writeLine,
         cwd: options.cwd,
-        spawnTtsProcess: options.spawnTtsProcess
+        spawnTtsProcess: options.spawnTtsProcess,
+        requireExplicitCliEnable: true
       });
     this.ttsPlaybackState = new TtsPlaybackState({
       now: this.now
@@ -497,7 +498,7 @@ export class TerminalHarness {
     this.sendVisualQuestion("");
     this.sendVisualState("idle");
     this.emitAgentActivityChange();
-    await this.speak("정지했어.", "status");
+    await this.speakOrCueStop("정지했어.");
   }
 
   async prepareForNewAgentTurn(reason: string): Promise<void> {
@@ -600,7 +601,7 @@ export class TerminalHarness {
       this.clearStalePassthroughOutput();
       this.markCurrentPassthroughSessionInterrupted();
       await this.backend.interrupt(text);
-      await this.speak("멈출게.", "status");
+      await this.speakOrCueStop("멈출게.");
       this.passthroughState = "IDLE";
       return;
     }
@@ -1555,7 +1556,20 @@ export class TerminalHarness {
 
     this.sendVisualQuestion("");
     this.sendVisualState("idle");
-    await this.speak("정지했어.", "status");
+    await this.speakOrCueStop("정지했어.");
+  }
+
+  private async speakOrCueStop(text: string): Promise<void> {
+    if (this.isVoiceSpeechEnabled()) {
+      await this.speak(text, "status");
+      return;
+    }
+
+    this.writeLine("[voice:cue] stop \u0007");
+  }
+
+  private isVoiceSpeechEnabled(): boolean {
+    return this.voiceOutput.isSpeechEnabled?.() ?? true;
   }
 
   private async requestExit(): Promise<void> {
