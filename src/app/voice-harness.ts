@@ -1118,13 +1118,17 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private sendVisualCameraStatus(mode: GestureCameraMode, text?: string): void {
+    const wakeGesture = this.gestureWake.bindings.wake;
+    const stopGesture = this.gestureWake.bindings.stop;
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
       type: "camera",
       enabled: this.isCameraGestureRuntimeEnabled() && mode !== "off",
       mode,
-      wakeGesture: this.gestureWake.bindings.wake,
-      stopGesture: this.gestureWake.bindings.stop,
+      wakeGesture,
+      wakeGestureLabel: gestureDisplayLabel(wakeGesture, this.gestureWake.customGestures),
+      stopGesture,
+      stopGestureLabel: gestureDisplayLabel(stopGesture, this.gestureWake.customGestures),
       runningMode: this.gestureWake.runningMode,
       ...(text ? { text } : {})
     });
@@ -2438,6 +2442,15 @@ function resolveCustomGestureTemplateName(
   ));
   if (match) return match.name;
   return customGestureNameFromLabel(trimmed);
+}
+
+function gestureDisplayLabel(
+  name: string,
+  templates: CustomGestureTemplate[]
+): string | undefined {
+  if (!isCustomGestureName(name)) return undefined;
+  const match = templates.find((template) => template.name === name);
+  return match?.label || name.slice("custom:".length) || name;
 }
 
 function gestureBindingsWithoutCustomNames(

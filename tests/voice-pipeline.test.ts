@@ -487,8 +487,8 @@ test("always-on voice runner prints physical camera gesture test steps when --ca
   assert.equal(camera.startCount, 1);
   assert.equal(permission.requestCount, 1);
   assert.ok(logs.includes("[camera:test] permission=authorized"));
-  assert.ok(logs.includes("[camera:test] hold open_palm for at least 700ms; HUD should enter listening."));
-  assert.ok(logs.includes("[camera:test] while listening, hold thumbs_down for at least 700ms; HUD should return to idle."));
+  assert.ok(logs.includes("[camera:test] hold open_palm for at least 450ms; HUD should enter listening."));
+  assert.ok(logs.includes("[camera:test] while listening, hold thumbs_down for at least 450ms; HUD should return to idle."));
   assert.ok(logs.includes("[camera:test] live observation logging is enabled for 15s. If no [camera:observe] lines appear, the camera helper is not producing hand landmark frames."));
 });
 
@@ -1287,6 +1287,61 @@ test("always-on voice runner manages custom gesture templates from visual contro
   assert.equal(visualBridge.events.some((event) =>
     event.type === "settings" &&
     event.gestureWake?.customGestures?.length === 0
+  ), true);
+});
+
+test("always-on voice runner sends custom gesture labels to visual camera status", async () => {
+  const camera = new FakeCameraGestureWatcher();
+  const visualBridge = new FakeVisualBridge();
+  const waveTemplate: CustomGestureTemplate = {
+    name: "custom:wave",
+    label: "My Wave",
+    vector: Array.from({ length: 42 }, (_, index) => index / 100),
+    threshold: 0.22,
+    samples: 4,
+    createdAt: 1000
+  };
+  const pinchTemplate: CustomGestureTemplate = {
+    name: "custom:pinch",
+    label: "Pinch Stop",
+    vector: Array.from({ length: 42 }, (_, index) => index / 80),
+    threshold: 0.2,
+    samples: 5,
+    createdAt: 1001
+  };
+  const { runner } = createAlwaysOnRunner([], {
+    visualBridge,
+    cameraGestureEnabled: true,
+    cameraGestureWatcher: camera,
+    cameraPermissionManager: new FakeCameraPermissionManager("authorized"),
+    gestureWake: {
+      enabled: true,
+      fps: 15,
+      resolution: {
+        width: 640,
+        height: 480,
+        label: "640x480"
+      },
+      holdMs: 450,
+      cooldownMs: 1500,
+      runningMode: "off",
+      bindings: {
+        wake: "custom:wave",
+        stop: "custom:pinch"
+      },
+      customGestures: [waveTemplate, pinchTemplate]
+    }
+  });
+
+  await runner.start();
+  await runner.stop();
+
+  assert.equal(visualBridge.events.some((event) =>
+    event.type === "camera" &&
+    event.wakeGesture === "custom:wave" &&
+    event.wakeGestureLabel === "My Wave" &&
+    event.stopGesture === "custom:pinch" &&
+    event.stopGestureLabel === "Pinch Stop"
   ), true);
 });
 

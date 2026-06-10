@@ -225,6 +225,6 @@ function customGesturesUsedByBindings(config: GestureWakeConfig): CustomGestureT
 
 function fpsForMode(mode: GestureCameraMode, config: GestureWakeConfig): number {
   if (mode === "emergency") return Math.max(1, Math.min(2, config.fps));
-  if (mode === "listening") return Math.max(2, Math.min(5, config.fps));
+  if (mode === "listening") return Math.max(2, Math.min(15, config.fps));
   return config.fps;
 }

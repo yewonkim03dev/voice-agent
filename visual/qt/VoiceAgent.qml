@@ -769,12 +769,14 @@ ApplicationWindow {
         var enabled = event.enabled ? root.uiText("on") : root.uiText("off")
         var mode = event.mode || "off"
         var wakeGesture = event.wakeGesture || "-"
+        var wakeGestureLabel = event.wakeGestureLabel || ""
         var stopGesture = event.stopGesture || "-"
+        var stopGestureLabel = event.stopGestureLabel || ""
         var runningMode = event.runningMode || "off"
         if (event.text && event.text.length > 0) {
             return root.uiText("cameraLabel") + ": " + enabled + " · " + mode + " · " + root.displayText(event.text, "status")
         }
-        return root.uiText("cameraLabel") + ": " + enabled + " · " + mode + " · " + root.uiText("wake") + " " + root.gestureDisplayName(wakeGesture) + " · " + root.uiText("stop") + " " + root.gestureDisplayName(stopGesture) + " · " + root.runningModeDisplayName(runningMode)
+        return root.uiText("cameraLabel") + ": " + enabled + " · " + mode + " · " + root.uiText("wake") + " " + (wakeGestureLabel || root.gestureDisplayName(wakeGesture)) + " · " + root.uiText("stop") + " " + (stopGestureLabel || root.gestureDisplayName(stopGesture)) + " · " + root.runningModeDisplayName(runningMode)
     }
 
     function referenceSummaryText() {

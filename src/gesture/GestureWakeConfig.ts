@@ -81,13 +81,13 @@ export interface GestureWakeFileConfig {
 
 export const defaultGestureWakeConfig: GestureWakeConfig = {
   enabled: false,
-  fps: 5,
+  fps: 15,
   resolution: {
     width: 640,
     height: 480,
     label: "640x480"
   },
-  holdMs: 700,
+  holdMs: 450,
   cooldownMs: 1500,
   runningMode: "off",
   bindings: {

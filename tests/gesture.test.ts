@@ -238,7 +238,7 @@ test("landmark camera watcher maps provider frames through the classifier", asyn
 
   assert.deepEqual(gestures, ["open_palm"]);
   assert.deepEqual(provider.starts, [{
-    fps: 5,
+    fps: 15,
     width: 640,
     height: 480,
     mode: "idle"

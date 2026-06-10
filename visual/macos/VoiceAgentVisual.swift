@@ -441,13 +441,17 @@ private func cameraStatusText(_ event: [String: Any], language: UiLanguage) -> S
     let enabled = event["enabled"] as? Bool ?? false
     let mode = event["mode"] as? String ?? "off"
     let wake = event["wakeGesture"] as? String ?? "-"
+    let wakeLabel = event["wakeGestureLabel"] as? String
     let stop = event["stopGesture"] as? String ?? "-"
+    let stopLabel = event["stopGestureLabel"] as? String
     let running = event["runningMode"] as? String ?? "off"
     let enabledText = localizedText(enabled ? "on" : "off", language: language)
     if let text = event["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         return localizedText("cameraLabel", language: language) + ": \(enabledText) · \(mode) · " + displayText(text, state: "status", language: language)
     }
-    return localizedText("cameraLabel", language: language) + ": \(enabledText) · \(mode) · " + localizedText("wake", language: language) + " \(gestureDisplayName(wake, language: language)) · " + localizedText("stop", language: language) + " \(gestureDisplayName(stop, language: language)) · \(gestureRunningModeDisplayName(running, language: language))"
+    let wakeText = wakeLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? wakeLabel! : gestureDisplayName(wake, language: language)
+    let stopText = stopLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? stopLabel! : gestureDisplayName(stop, language: language)
+    return localizedText("cameraLabel", language: language) + ": \(enabledText) · \(mode) · " + localizedText("wake", language: language) + " \(wakeText) · " + localizedText("stop", language: language) + " \(stopText) · \(gestureRunningModeDisplayName(running, language: language))"
 }
 
 final class AgentCircleView: NSView {
