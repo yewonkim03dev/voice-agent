@@ -6,6 +6,7 @@ export interface VoiceAgentEvent {
   type: VoiceAgentEventType;
   text: string;
   role: VoiceAgentSpeechRole;
+  transient?: boolean;
   raw: Record<string, unknown>;
 }
 
@@ -90,6 +91,7 @@ function parseVoiceAgentEventJson(json: string): VoiceAgentEvent | null {
     type: record.type,
     text: record.text.trim(),
     role: record.type === "speech" ? parseSpeechRole(record.role) : "message",
+    ...(record.transient === true ? { transient: true } : {}),
     raw: record
   };
 }

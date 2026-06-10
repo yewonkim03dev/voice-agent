@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export const defaultVoiceSessionHistoryPath = ".voice-agent.history.json";
+export const maxVoiceChatHistoryEntries = 100;
 
 export interface VoiceChatHistoryEntry {
   role: "user" | "assistant";
@@ -95,15 +96,57 @@ function parseChatHistory(value: unknown): VoiceChatHistoryEntry[] {
       const role = entry.role === "user" ? "user" : entry.role === "assistant" ? "assistant" : undefined;
       const text = typeof entry.text === "string" ? entry.text.trim() : "";
       if (!role || !text) return undefined;
+      const kind = normalizeChatHistoryKind(entry.kind, role);
+      if (!kind) return undefined;
+      if (shouldSkipVoiceChatHistoryEntry(kind, text)) return undefined;
       return {
         role,
-        kind: typeof entry.kind === "string" && entry.kind.trim() ? entry.kind.trim() : "status",
+        kind,
         text,
         createdAt: parseTimestamp(entry.createdAt)
       };
     })
     .filter((entry): entry is VoiceChatHistoryEntry => Boolean(entry))
-    .slice(-20);
+    .slice(-maxVoiceChatHistoryEntries);
+}
+
+function normalizeChatHistoryKind(value: unknown, role: VoiceChatHistoryEntry["role"]): string | undefined {
+  const kind = typeof value === "string" ? value.trim() : "";
+  if (role === "user") return kind === "question" || !kind ? "question" : undefined;
+  if (!kind) return "status";
+
+  switch (kind) {
+    case "answer":
+    case "speech":
+      return "answer";
+    case "approval":
+    case "popup":
+    case "command":
+    case "status":
+    case "error":
+      return kind;
+    default:
+      return undefined;
+  }
+}
+
+export function shouldSkipVoiceChatHistoryEntry(kind: string, text: string): boolean {
+  if (kind !== "status") return false;
+
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return true;
+
+  return (
+    normalized.includes("wake 명령어를 확인") ||
+    normalized.includes("호출어를 확인") ||
+    normalized.includes("wake command") ||
+    normalized.includes("wake phrase") ||
+    normalized.includes("no configured wake phrase matched") ||
+    normalized.includes("no speech detected") ||
+    normalized.includes("produced no transcript") ||
+    normalized.includes("stt command exited") ||
+    /^\[stt:[^\]]+\]/u.test(normalized)
+  );
 }
 
 function parsePopupHistory(value: unknown): VoicePopupHistoryEntry[] {

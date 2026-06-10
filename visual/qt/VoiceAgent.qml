@@ -119,6 +119,10 @@ ApplicationWindow {
             currentReferenceCountSuffix: "개 현재 질문 참고자료",
             commands: "명령",
             recentQa: "최근 Q/A",
+            answer: "답변",
+            approval: "권한 요청",
+            popup: "팝업",
+            clear: "지우기",
             hide: "숨기기",
             settings: "설정",
             language: "언어",
@@ -253,6 +257,9 @@ ApplicationWindow {
             speaking: "speaking",
             approvalPending: "approval pending",
             error: "error",
+            answer: "answer",
+            approval: "approval",
+            popup: "popup",
             shutdown: "shutting down",
             wakePrefix: "wake: ",
             sessionNew: "session: new",
@@ -271,6 +278,7 @@ ApplicationWindow {
             currentReferenceCountSuffix: " current reference item(s)",
             commands: "Commands",
             recentQa: "Recent Q/A",
+            clear: "Clear",
             hide: "Hide",
             settings: "Settings",
             language: "Language",
@@ -865,19 +873,66 @@ ApplicationWindow {
     function pushChat(role, kind, text) {
         var trimmed = String(text || "").trim()
         if (trimmed.length === 0) return
+        var normalizedKind = root.normalizeChatKind(role, kind)
+        if (normalizedKind.length === 0) return
+        if (root.shouldSkipChatItem(normalizedKind, trimmed)) return
         var next = chatItems.slice()
         next.push({
             role: role,
-            kind: kind,
+            kind: normalizedKind,
             text: trimmed
         })
-        chatItems = next.slice(Math.max(0, next.length - 10))
+        chatItems = next.slice(Math.max(0, next.length - 100))
+    }
+
+    function replaceChatHistory(entries) {
+        var next = []
+        var source = entries || []
+        for (var i = 0; i < source.length; i++) {
+            var item = source[i]
+            var role = item && item.role === "user" ? "user" : "assistant"
+            var kind = root.normalizeChatKind(role, item ? item.kind : "")
+            var text = String(item && item.text ? item.text : "").trim()
+            if (kind.length > 0 && text.length > 0 && !root.shouldSkipChatItem(kind, text)) {
+                next.push({
+                    role: role,
+                    kind: kind,
+                    text: text
+                })
+            }
+        }
+        chatItems = next.slice(Math.max(0, next.length - 100))
+    }
+
+    function normalizeChatKind(role, kind) {
+        var value = String(kind || "").trim()
+        if (role === "user") return value === "" || value === "question" ? "question" : ""
+        if (value === "speech") return "answer"
+        if (value === "answer" || value === "approval" || value === "popup" || value === "command" || value === "status" || value === "error") return value
+        return ""
+    }
+
+    function shouldSkipChatItem(kind, text) {
+        if (kind !== "status") return false
+        var value = String(text || "").trim().toLowerCase()
+        return value.indexOf("wake 명령어를 확인") >= 0 ||
+            value.indexOf("호출어를 확인") >= 0 ||
+            value.indexOf("wake command") >= 0 ||
+            value.indexOf("wake phrase") >= 0 ||
+            value.indexOf("no configured wake phrase matched") >= 0 ||
+            value.indexOf("no speech detected") >= 0 ||
+            value.indexOf("produced no transcript") >= 0 ||
+            value.indexOf("stt command exited") >= 0 ||
+            /^\[stt:[^\]]+\]/.test(value)
     }
 
     function chatBubbleColor(role, kind) {
         if (role === "user") return "#142337"
         if (kind === "command") return "#131b26"
         if (kind === "status") return "#151d2b"
+        if (kind === "approval") return "#33240b"
+        if (kind === "popup") return "#211838"
+        if (kind === "answer" || kind === "speech") return "#10252f"
         if (kind === "error") return "#31131b"
         return "#10252f"
     }
@@ -886,12 +941,27 @@ ApplicationWindow {
         if (role === "user") return "#2b5e9e"
         if (kind === "command") return "#324057"
         if (kind === "status") return "#3b4660"
+        if (kind === "approval") return "#d9a526"
+        if (kind === "popup") return "#7558d6"
+        if (kind === "answer" || kind === "speech") return "#266070"
         if (kind === "error") return "#9d2f45"
         return "#266070"
     }
 
+    function chatLabelColor(role, kind) {
+        if (role === "user") return "#8fc7ff"
+        if (kind === "approval") return "#ffd166"
+        if (kind === "popup") return "#c4b5ff"
+        if (kind === "answer" || kind === "speech") return "#87e6f0"
+        if (kind === "error") return "#ff6b82"
+        return "#9fb0c7"
+    }
+
     function chatLabel(kind) {
         if (kind === "question") return "Q"
+        if (kind === "answer") return root.uiText("answer")
+        if (kind === "approval") return root.uiText("approval")
+        if (kind === "popup") return root.uiText("popup")
         if (kind === "speech") return root.uiText("speech")
         if (kind === "command") return root.uiText("command")
         if (kind === "status") return root.uiText("status")
@@ -996,10 +1066,10 @@ ApplicationWindow {
             } else if (event.type === "speech") {
                 root.uiState = "speaking"
                 root.statusText = event.text
-                root.pushChat("assistant", "speech", event.text)
+                root.pushChat("assistant", "answer", event.text)
             } else if (event.type === "status") {
                 root.statusText = root.displayText(event.text || "", "status")
-                root.pushChat("assistant", "status", root.statusText)
+                if (!event.transient) root.pushChat("assistant", "status", root.statusText)
             } else if (event.type === "error") {
                 root.uiState = "error"
                 root.statusText = root.displayText(event.text || "", "error")
@@ -1007,7 +1077,11 @@ ApplicationWindow {
             } else if (event.type === "approval") {
                 root.uiState = "approval_pending"
                 root.statusText = event.text
-                root.pushChat("assistant", "status", event.text)
+                root.pushChat("assistant", "approval", event.text)
+            } else if (event.type === "popup") {
+                root.pushChat("assistant", "popup", event.title || root.uiText("popup"))
+            } else if (event.type === "chat_history") {
+                root.replaceChatHistory(event.entries || [])
             } else if (event.type === "usage") {
                 root.usageText = event.text || ""
             } else if (event.type === "camera") {
@@ -1752,13 +1826,21 @@ ApplicationWindow {
                         font.bold: true
                     }
 
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Button {
+                        text: root.uiText("clear")
+                        onClicked: {
+                            root.chatItems = []
+                            root.sendControl("clear_chat_history")
+                        }
+                    }
+
                     Button {
                         text: root.uiText("hide")
                         onClicked: root.chatPanelOpen = false
-                    }
-
-                    Item {
-                        Layout.fillWidth: true
                     }
                 }
 
@@ -1799,7 +1881,7 @@ ApplicationWindow {
                                     id: bubbleKind
                                     width: parent.width
                                     text: root.chatLabel(modelData.kind)
-                                    color: modelData.role === "user" ? "#8fc7ff" : "#9fb0c7"
+                                    color: root.chatLabelColor(modelData.role, modelData.kind)
                                     font.pixelSize: 11
                                     font.bold: true
                                 }

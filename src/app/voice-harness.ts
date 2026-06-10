@@ -171,6 +171,7 @@ export class VoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
+    this.writeLine(formatTerminalCommand("/qa-clear", "clears recent Q/A for the current session."));
     this.writeLine(formatTerminalNote("STT output is printed as [stt:<language>] before routing."));
     this.printRunOptions();
   }
@@ -247,6 +248,7 @@ export class VoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
+    this.writeLine(formatTerminalCommand("/qa-clear", "clears recent Q/A for the current session."));
     this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
     this.writeLine(formatTerminalCommand("/tts-stop", "stops current TTS playback."));
     this.writeLine(formatTerminalCommand("/quit", "exits Voice Agent."));
@@ -509,6 +511,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
+    this.writeLine(formatTerminalCommand("/qa-clear", "clears recent Q/A for the current session."));
     this.writeLine(formatTerminalNote("STT output is printed as [stt:<language>] before routing."));
     this.printRunOptions();
   }
@@ -643,6 +646,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
+    this.writeLine(formatTerminalCommand("/qa-clear", "clears recent Q/A for the current session."));
     this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
     this.writeLine(formatTerminalCommand("/tts-stop", "stops current TTS playback."));
     this.writeLine(formatTerminalCommand("/quit", "exits Voice Agent."));
@@ -1829,7 +1833,8 @@ export class AlwaysOnVoiceHarnessRunner {
     this.terminalHarness.sendVisualEvent({
       op: "voice-agent-ui",
       type: "status",
-      text: transcript.text
+      text: transcript.text,
+      transient: true
     });
     this.writeLine(`[stt:${transcript.language}] ${transcript.text}`);
   }
@@ -2155,6 +2160,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
     visible.startsWith("/refs ") ||
     visible.startsWith("/popups ") ||
     visible.startsWith("/popup ") ||
+    visible.startsWith("/qa-clear ") ||
     visible.startsWith("STT output ")
   ) {
     return true;

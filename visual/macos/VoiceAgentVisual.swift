@@ -45,6 +45,8 @@ private let visualTextEn: [String: String] = [
     "ok": "OK",
     "settings": "Settings",
     "popup": "Popup",
+    "answer": "answer",
+    "approval": "approval",
     "recentPopups": "Popups",
     "noRecentPopups": "No recent popups",
     "selectPopup": "Select a popup to open",
@@ -222,6 +224,8 @@ private let visualTextKo: [String: String] = [
     "ok": "확인",
     "settings": "설정",
     "popup": "팝업",
+    "answer": "답변",
+    "approval": "권한 요청",
     "recentPopups": "팝업",
     "noRecentPopups": "최근 팝업 없음",
     "selectPopup": "열 팝업을 선택하세요",
@@ -1249,6 +1253,7 @@ final class ParticleOrbView: NSView {
 }
 
 final class VisualRootView: NSView {
+    var onClearChatHistory: (() -> Void)?
     var uiLanguage: UiLanguage = .en {
         didSet { applyLocalization() }
     }
@@ -1322,6 +1327,9 @@ final class VisualRootView: NSView {
         addSubview(questionView)
 
         chatView.isHidden = true
+        chatView.onClear = { [weak self] in
+            self?.onClearChatHistory?()
+        }
         addSubview(chatView)
 
         chatToggleButton.bezelStyle = .rounded
@@ -1812,9 +1820,11 @@ struct ChatHistoryItem {
 }
 
 final class ChatHistoryView: NSView {
+    var onClear: (() -> Void)?
     var uiLanguage: UiLanguage = .en {
         didSet {
             bubbleViews.forEach { $0.uiLanguage = uiLanguage }
+            clearButton.title = localizedText("clear", language: uiLanguage)
             needsDisplay = true
         }
     }
@@ -1822,6 +1832,7 @@ final class ChatHistoryView: NSView {
     private var bubbleViews: [ChatBubbleView] = []
     private let scrollView = NSScrollView(frame: .zero)
     private let contentView = NSView(frame: .zero)
+    private let clearButton = NSButton(title: "Clear", target: nil, action: nil)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1830,6 +1841,11 @@ final class ChatHistoryView: NSView {
         scrollView.hasVerticalScroller = true
         scrollView.documentView = contentView
         addSubview(scrollView)
+
+        clearButton.bezelStyle = .rounded
+        clearButton.target = self
+        clearButton.action = #selector(clearHistory)
+        addSubview(clearButton)
     }
 
     required init?(coder: NSCoder) {
@@ -1839,17 +1855,19 @@ final class ChatHistoryView: NSView {
     func push(role: String, kind: String, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        guard let normalizedKind = normalizeChatKind(role: role, kind: kind) else { return }
+        guard !shouldSkipItem(kind: normalizedKind, text: trimmed) else { return }
 
         if let previous = items.last,
            previous.role == role,
-           previous.kind == kind,
+           previous.kind == normalizedKind,
            previous.text == trimmed {
             return
         }
 
-        items.append(ChatHistoryItem(role: role, kind: kind, text: trimmed, createdAt: Date().timeIntervalSince1970 * 1000))
-        if items.count > 10 {
-            items.removeFirst(items.count - 10)
+        items.append(ChatHistoryItem(role: role, kind: normalizedKind, text: trimmed, createdAt: Date().timeIntervalSince1970 * 1000))
+        if items.count > 100 {
+            items.removeFirst(items.count - 100)
         }
         rebuildBubbles()
         layoutBubbles(scrollToBottom: true)
@@ -1857,16 +1875,58 @@ final class ChatHistoryView: NSView {
     }
 
     func replaceItems(_ nextItems: [ChatHistoryItem]) {
-        items = Array(nextItems.suffix(10))
+        items = Array(nextItems.compactMap { item -> ChatHistoryItem? in
+            guard let normalizedKind = normalizeChatKind(role: item.role, kind: item.kind) else { return nil }
+            guard !shouldSkipItem(kind: normalizedKind, text: item.text) else { return nil }
+            return ChatHistoryItem(role: item.role, kind: normalizedKind, text: item.text, createdAt: item.createdAt)
+        }.suffix(100))
         rebuildBubbles()
         layoutBubbles(scrollToBottom: true)
         needsDisplay = true
     }
 
+    private func normalizeChatKind(role: String, kind: String) -> String? {
+        let value = kind.trimmingCharacters(in: .whitespacesAndNewlines)
+        if role == "user" {
+            return value.isEmpty || value == "question" ? "question" : nil
+        }
+        switch value {
+        case "answer", "approval", "popup", "command", "status", "error":
+            return value
+        case "speech":
+            return "answer"
+        default:
+            return nil
+        }
+    }
+
+    private func shouldSkipItem(kind: String, text: String) -> Bool {
+        guard kind == "status" else { return false }
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.contains("wake 명령어를 확인")
+            || normalized.contains("호출어를 확인")
+            || normalized.contains("wake command")
+            || normalized.contains("wake phrase")
+            || normalized.contains("no configured wake phrase matched")
+            || normalized.contains("no speech detected")
+            || normalized.contains("produced no transcript")
+            || normalized.contains("stt command exited")
+            || normalized.range(of: #"^\[stt:[^\]]+\]"#, options: .regularExpression) != nil
+    }
+
     override func layout() {
         super.layout()
+        clearButton.frame = NSRect(x: max(14, bounds.width - 88), y: max(0, bounds.height - 37), width: 72, height: 24)
         scrollView.frame = NSRect(x: 8, y: 8, width: max(0, bounds.width - 20), height: max(0, bounds.height - 44))
         layoutBubbles(scrollToBottom: false)
+    }
+
+    @objc private func clearHistory() {
+        items.removeAll()
+        rebuildBubbles()
+        layoutBubbles(scrollToBottom: true)
+        needsDisplay = true
+        onClear?()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1886,7 +1946,7 @@ final class ChatHistoryView: NSView {
             .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.92, blue: 0.97, alpha: 1)
         ]
         (localizedText("recentQa", language: uiLanguage) as NSString).draw(
-            with: NSRect(x: 14, y: bounds.height - 30, width: bounds.width - 28, height: 18),
+            with: NSRect(x: 14, y: bounds.height - 30, width: max(0, bounds.width - 110), height: 18),
             options: [.usesLineFragmentOrigin],
             attributes: attrs
         )
@@ -1943,9 +2003,7 @@ final class ChatBubbleView: NSView {
 
         kindLabel.stringValue = label(for: item.kind)
         kindLabel.font = NSFont.systemFont(ofSize: 11, weight: .bold)
-        kindLabel.textColor = item.role == "user"
-            ? NSColor(calibratedRed: 0.56, green: 0.78, blue: 1.0, alpha: 1)
-            : NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
+        kindLabel.textColor = labelColor()
         addSubview(kindLabel)
 
         textView.isEditable = false
@@ -2012,6 +2070,9 @@ final class ChatBubbleView: NSView {
     private func label(for kind: String) -> String {
         switch kind {
         case "question": return "Q"
+        case "answer": return localizedText("answer", language: uiLanguage)
+        case "approval": return localizedText("approval", language: uiLanguage)
+        case "popup": return localizedText("popup", language: uiLanguage)
         case "speech": return localizedText("speech", language: uiLanguage)
         case "command": return localizedText("command", language: uiLanguage)
         case "status": return localizedText("status", language: uiLanguage)
@@ -2027,10 +2088,38 @@ final class ChatBubbleView: NSView {
         if item.kind == "command" {
             return NSColor(calibratedRed: 0.07, green: 0.10, blue: 0.15, alpha: 1)
         }
+        if item.kind == "approval" {
+            return NSColor(calibratedRed: 0.22, green: 0.16, blue: 0.06, alpha: 1)
+        }
+        if item.kind == "popup" {
+            return NSColor(calibratedRed: 0.13, green: 0.10, blue: 0.23, alpha: 1)
+        }
+        if item.kind == "answer" || item.kind == "speech" {
+            return NSColor(calibratedRed: 0.05, green: 0.16, blue: 0.20, alpha: 1)
+        }
         if item.kind == "error" {
             return NSColor(calibratedRed: 0.19, green: 0.07, blue: 0.10, alpha: 1)
         }
         return NSColor(calibratedRed: 0.06, green: 0.15, blue: 0.19, alpha: 1)
+    }
+
+    private func labelColor() -> NSColor {
+        if item.role == "user" {
+            return NSColor(calibratedRed: 0.56, green: 0.78, blue: 1.0, alpha: 1)
+        }
+        if item.kind == "approval" {
+            return NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.36, alpha: 1)
+        }
+        if item.kind == "popup" {
+            return NSColor(calibratedRed: 0.76, green: 0.66, blue: 1.0, alpha: 1)
+        }
+        if item.kind == "answer" || item.kind == "speech" {
+            return NSColor(calibratedRed: 0.53, green: 0.87, blue: 0.94, alpha: 1)
+        }
+        if item.kind == "error" {
+            return NSColor(calibratedRed: 1.0, green: 0.42, blue: 0.52, alpha: 1)
+        }
+        return NSColor(calibratedRed: 0.62, green: 0.69, blue: 0.78, alpha: 1)
     }
 
     private func borderColor() -> NSColor {
@@ -2039,6 +2128,15 @@ final class ChatBubbleView: NSView {
         }
         if item.kind == "command" {
             return NSColor(calibratedRed: 0.20, green: 0.25, blue: 0.34, alpha: 1)
+        }
+        if item.kind == "approval" {
+            return NSColor(calibratedRed: 0.84, green: 0.64, blue: 0.22, alpha: 1)
+        }
+        if item.kind == "popup" {
+            return NSColor(calibratedRed: 0.43, green: 0.32, blue: 0.80, alpha: 1)
+        }
+        if item.kind == "answer" || item.kind == "speech" {
+            return NSColor(calibratedRed: 0.14, green: 0.50, blue: 0.58, alpha: 1)
         }
         if item.kind == "error" {
             return NSColor(calibratedRed: 0.62, green: 0.18, blue: 0.27, alpha: 1)
@@ -4414,6 +4512,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             controls: controls
         )
         rootView.uiLanguage = uiLanguage
+        rootView.onClearChatHistory = { [weak self] in
+            self?.sendControl("clear_chat_history")
+        }
         self.rootView = rootView
         rootView.updateSessionId(codexThreadId)
         rootView.updateChatHistory(enabled: chatHistoryEnabled)
@@ -4624,13 +4725,15 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             circleView.statusText = speech
             particleOrbView.state = "speaking"
             particleOrbView.statusText = speech
-            rootView?.pushChat(role: "assistant", kind: "speech", text: speech)
+            rootView?.pushChat(role: "assistant", kind: "answer", text: speech)
             menuBarCompanion.update(state: "speaking", text: speech)
         case "status":
             let status = displayText(event["text"] as? String ?? localizedText("status", language: uiLanguage), state: "status", language: uiLanguage)
             circleView.statusText = status
             particleOrbView.statusText = status
-            rootView?.pushChat(role: "assistant", kind: "status", text: status)
+            if event["transient"] as? Bool != true {
+                rootView?.pushChat(role: "assistant", kind: "status", text: status)
+            }
             menuBarCompanion.update(state: circleView.state, text: status)
         case "error":
             circleView.state = "error"
@@ -4646,7 +4749,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             let title = event["title"] as? String ?? localizedText("popup", language: uiLanguage)
             let format = event["format"] as? String ?? "markdown"
             popupPanel.show(title: title, text: popupText, format: format, language: uiLanguage, fontSize: CGFloat(popupFontSize))
-            rootView?.pushChat(role: "assistant", kind: "status", text: localizedText("popup", language: uiLanguage))
+            rootView?.pushChat(role: "assistant", kind: "popup", text: title)
             menuBarCompanion.updateMessage(localizedText("popup", language: uiLanguage))
         case "popup_history":
             updatePopupHistory(event["entries"] as? [[String: Any]] ?? [])
@@ -4658,7 +4761,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             circleView.statusText = approval
             particleOrbView.state = "approval_pending"
             particleOrbView.statusText = approval
-            rootView?.pushChat(role: "assistant", kind: "status", text: approval)
+            rootView?.pushChat(role: "assistant", kind: "approval", text: approval)
             menuBarCompanion.update(state: "approval_pending", text: approval)
         case "usage":
             let usage = event["text"] as? String ?? ""

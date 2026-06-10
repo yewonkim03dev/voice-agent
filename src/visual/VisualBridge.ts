@@ -25,6 +25,7 @@ export type VisualControlAction =
   | "camera_toggle"
   | "exit"
   | "clear_commands"
+  | "clear_chat_history"
   | "add_context"
   | "clear_context"
   | "show_context"
@@ -120,6 +121,7 @@ export type VisualEvent =
       op: "voice-agent-ui";
       type: "status";
       text: string;
+      transient?: boolean;
     }
   | {
       op: "voice-agent-ui";
@@ -449,6 +451,7 @@ export function parseVisualControlEvent(text: string): VisualControlEvent | null
     record.action !== "camera_toggle" &&
     record.action !== "exit" &&
     record.action !== "clear_commands" &&
+    record.action !== "clear_chat_history" &&
     record.action !== "add_context" &&
     record.action !== "clear_context" &&
     record.action !== "show_context" &&

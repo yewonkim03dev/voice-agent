@@ -1575,6 +1575,59 @@ test("pass-through visual history restores and persists by Codex thread id", asy
   assert.equal(saved?.snapshot.chatHistory.some((entry) => entry.text === "새 질문"), true);
 });
 
+test("pass-through visual chat history preserves command/status but filters wake noise", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge, undefined, undefined, {
+    visualConfig: {
+      popupPreferred: true
+    }
+  });
+
+  await harness.start();
+  await harness.processLine("코덱스 최근 기록 테스트");
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      '{"op":"voice-agent","type":"command","text":"npm test"}\n' +
+      '{"op":"voice-agent","type":"status","text":"working"}\n' +
+      '{"op":"voice-agent","type":"status","text":"Hello","transient":true}\n' +
+      '{"op":"voice-agent","type":"status","text":"wake 명령어를 확인해 주세요."}\n' +
+      '{"op":"voice-agent","type":"speech","text":"일반 답변입니다.","role":"final"}\n' +
+      '{"op":"voice-agent","type":"popup","title":"자세한 답변","text":"긴 본문"}\n',
+    timestamp: 1000
+  });
+  backend.emitPermissionRequest(backend.createPermissionRequest("git push", "sess_1", "approval_1"));
+  await flushAsync();
+
+  const historyEvents = visualBridge.events.filter((event) => event.type === "chat_history");
+  const entries = historyEvents.at(-1)?.entries ?? [];
+  assert.equal(entries.some((entry) => entry.role === "user" && entry.kind === "question" && entry.text === "최근 기록 테스트"), true);
+  assert.equal(entries.some((entry) => entry.role === "assistant" && entry.kind === "command" && entry.text === "npm test"), true);
+  assert.equal(entries.some((entry) => entry.role === "assistant" && entry.kind === "status" && entry.text === "working"), true);
+  assert.equal(entries.some((entry) => entry.text === "Hello"), false);
+  assert.equal(entries.some((entry) => entry.text === "wake 명령어를 확인해 주세요."), false);
+  assert.equal(entries.some((entry) => entry.role === "assistant" && entry.kind === "answer" && entry.text === "일반 답변입니다."), true);
+  assert.equal(entries.some((entry) => entry.role === "assistant" && entry.kind === "popup" && entry.text === "자세한 답변"), true);
+  assert.equal(entries.some((entry) => entry.role === "assistant" && entry.kind === "approval"), true);
+});
+
+test("visual control can clear recent Q/A for the current session", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge, undefined, undefined);
+
+  await harness.start();
+  await harness.processLine("코덱스 기록 남겨");
+  await flushAsync();
+  visualBridge.emitControl("clear_chat_history");
+  await flushAsync();
+
+  const historyEvents = visualBridge.events.filter((event) => event.type === "chat_history");
+  assert.deepEqual(historyEvents.at(-1)?.entries, []);
+});
+
 test("pass-through popup guard resets on next turn", async () => {
   const backend = new InMemoryAgentBackend();
   const visualBridge = new FakeVisualBridge();

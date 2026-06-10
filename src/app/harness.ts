@@ -87,6 +87,8 @@ import {
   type VoiceVisualFileConfig
 } from "./voice-config.ts";
 import {
+  maxVoiceChatHistoryEntries,
+  shouldSkipVoiceChatHistoryEntry,
   type VoiceSessionHistoryPersistence
 } from "./session-history.ts";
 
@@ -1031,6 +1033,12 @@ export class TerminalHarness {
     switch (event.type) {
       case "speech":
         this.printAgentOutputBlock("speech", event.text);
+        this.rememberChatHistory({
+          role: "assistant",
+          kind: "answer",
+          text: event.text,
+          createdAt: this.now()
+        });
         this.sendVisualEvent({
           op: "voice-agent-ui",
           type: "status",
@@ -1052,7 +1060,8 @@ export class TerminalHarness {
         this.sendVisualEvent({
           op: "voice-agent-ui",
           type: "status",
-          text: event.text
+          text: event.text,
+          ...(event.transient === true ? { transient: true } : {})
         });
         return;
       case "error":
@@ -1375,6 +1384,11 @@ export class TerminalHarness {
       case "/popup":
         this.showRecentPopup(argument);
         return "continue";
+      case "/qa-clear":
+      case "/history-clear":
+        this.clearChatHistory();
+        this.writeLine("[history] recent Q/A cleared.");
+        return "continue";
       case "/permission":
         await this.requestPermission(argument);
         return "continue";
@@ -1405,6 +1419,7 @@ export class TerminalHarness {
     this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
     this.writeLine(formatTerminalCommand("/popup <number>", "reopens a recent popup answer."));
+    this.writeLine(formatTerminalCommand("/qa-clear", "clears recent Q/A for the current session."));
     if (this.runtime) {
       this.writeLine(formatTerminalCommand("/permission <command>", "asks for a mock command approval."));
       this.writeLine(formatTerminalCommand("/complete", "emits a mock task completion."));
@@ -1594,6 +1609,9 @@ export class TerminalHarness {
           text: "commands cleared"
         });
         return;
+      case "clear_chat_history":
+        this.clearChatHistory();
+        return;
       case "add_context":
       case "clear_context":
       case "show_context":
@@ -1714,13 +1732,50 @@ export class TerminalHarness {
         });
         return;
       case "command":
+        this.rememberChatHistory({
+          role: "assistant",
+          kind: "command",
+          text: event.text,
+          createdAt: this.now()
+        });
+        return;
       case "speech":
+        this.rememberChatHistory({
+          role: "assistant",
+          kind: "answer",
+          text: event.text,
+          createdAt: this.now()
+        });
+        return;
       case "status":
+        if (event.transient === true) return;
+        this.rememberChatHistory({
+          role: "assistant",
+          kind: "status",
+          text: event.text,
+          createdAt: this.now()
+        });
+        return;
       case "error":
+        this.rememberChatHistory({
+          role: "assistant",
+          kind: "error",
+          text: event.text,
+          createdAt: this.now()
+        });
+        return;
+      case "popup":
+        this.rememberChatHistory({
+          role: "assistant",
+          kind: "popup",
+          text: event.title?.trim() || "Popup",
+          createdAt: this.now()
+        });
+        return;
       case "approval":
         this.rememberChatHistory({
           role: "assistant",
-          kind: event.type === "approval" ? "status" : event.type,
+          kind: "approval",
           text: event.text,
           createdAt: this.now()
         });
@@ -1733,6 +1788,7 @@ export class TerminalHarness {
   private rememberChatHistory(entry: ChatHistoryEntry): void {
     const text = entry.text.trim();
     if (!text) return;
+    if (shouldSkipVoiceChatHistoryEntry(entry.kind, text)) return;
 
     const previous = this.chatHistory.at(-1);
     if (
@@ -1743,6 +1799,15 @@ export class TerminalHarness {
     ) {
       return;
     }
+    if (
+      previous &&
+      previous.role === entry.role &&
+      previous.text === text &&
+      previous.kind === "answer" &&
+      entry.kind === "status"
+    ) {
+      return;
+    }
 
     this.chatHistory.push({
       role: entry.role,
@@ -1750,7 +1815,18 @@ export class TerminalHarness {
       text,
       createdAt: entry.createdAt
     });
-    this.chatHistory.splice(0, Math.max(0, this.chatHistory.length - 20));
+    this.chatHistory.splice(0, Math.max(0, this.chatHistory.length - maxVoiceChatHistoryEntries));
+    this.sendChatHistory();
+    this.persistSessionHistory();
+  }
+
+  private clearChatHistory(): void {
+    if (this.chatHistory.length === 0) {
+      this.sendChatHistory();
+      return;
+    }
+
+    this.chatHistory.splice(0, this.chatHistory.length);
     this.sendChatHistory();
     this.persistSessionHistory();
   }
