@@ -154,7 +154,9 @@ export type VisualEvent =
       enabled: boolean;
       mode: GestureCameraMode;
       wakeGesture: string;
+      wakeGestureLabel?: string;
       stopGesture: string;
+      stopGestureLabel?: string;
       runningMode: GestureRunningMode;
       text?: string;
     }
