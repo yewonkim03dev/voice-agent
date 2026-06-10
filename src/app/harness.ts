@@ -617,7 +617,7 @@ export class TerminalHarness {
         this.passthroughState = "IDLE";
         this.sendVisualQuestion("");
       }
-      this.sendVisualState(status.task === "waiting_permission" ? "approval_pending" : statusToVisualState(status.task));
+      this.sendVisualState(this.codexTaskVisualState(status.task));
     });
   }
 
@@ -2017,7 +2017,8 @@ export class TerminalHarness {
   }
 
   private sendVisualState(state: VisualUiState, text?: string): void {
-    const visualState = state === "idle" && this.isAgentRequestActive() ? this.currentVisualState() : state;
+    const requestedState = this.normalizeVisualState(state);
+    const visualState = requestedState === "idle" && this.isAgentRequestActive() ? this.currentVisualState() : requestedState;
     const visualText = text ?? (visualState === "approval_pending" ? this.currentApprovalVisualText() : undefined);
 
     if (visualState === "approval_pending") {
@@ -2061,15 +2062,37 @@ export class TerminalHarness {
     if (this.runtime) {
       const context = this.runtime.getContext();
       if (context.pendingPermission) return "approval_pending";
-      const statusState = statusToVisualState(context.codexStatus.task);
+      const statusState = this.codexTaskVisualState(context.codexStatus.task);
       if (statusState !== "idle") return statusState;
-      return runtimeStateToVisualState(context.state);
+      return this.normalizeVisualState(runtimeStateToVisualState(context.state));
     }
 
     if (this.pendingPermission) return "approval_pending";
-    const statusState = statusToVisualState(this.codexStatus.task);
+    const statusState = this.codexTaskVisualState(this.codexStatus.task);
     if (statusState !== "idle") return statusState;
-    return runtimeStateToVisualState(this.passthroughState);
+    return this.normalizeVisualState(runtimeStateToVisualState(this.passthroughState));
+  }
+
+  private codexTaskVisualState(task: CodexStatus["task"]): VisualUiState {
+    if (task !== "waiting_permission") return statusToVisualState(task);
+    if (this.hasActivePendingApproval()) return "approval_pending";
+    return this.nonApprovalFallbackVisualState();
+  }
+
+  private normalizeVisualState(state: VisualUiState): VisualUiState {
+    if (state !== "approval_pending") return state;
+    if (this.hasActivePendingApproval()) return "approval_pending";
+    return this.nonApprovalFallbackVisualState();
+  }
+
+  private hasActivePendingApproval(): boolean {
+    if (this.runtime) return Boolean(this.runtime.getContext().pendingPermission);
+    return Boolean(this.pendingPermission);
+  }
+
+  private nonApprovalFallbackVisualState(): VisualUiState {
+    const state = this.runtime ? runtimeStateToVisualState(this.runtime.getContext().state) : runtimeStateToVisualState(this.passthroughState);
+    return state === "approval_pending" ? "thinking" : state;
   }
 
   private currentApprovalVisualText(): string | undefined {

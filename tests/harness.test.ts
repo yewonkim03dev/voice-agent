@@ -755,6 +755,47 @@ test("pass-through visual keeps approval choices visible after permission TTS", 
   assert.match(stateAfterNativeStatus?.text ?? "", /거부: 거부 \/ 아니/u);
 });
 
+test("pass-through visual ignores stale waiting_permission status without active approval", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge);
+
+  await harness.start();
+  await harness.processLine("테스트 작업 진행해줘");
+  await flushAsync();
+  backend.emitStatus({
+    process: "running",
+    task: "thinking"
+  });
+  backend.emitStatus({
+    process: "running",
+    task: "waiting_permission"
+  });
+  await flushAsync();
+
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
+});
+
+test("pass-through visual restore ignores resolved approval without active pending permission", async () => {
+  const backend = new InMemoryAgentBackend();
+  const visualBridge = new FakeVisualBridge();
+  const harness = createPassthroughHarness(backend, [], visualBridge);
+
+  await harness.start();
+  backend.emitPermissionRequest(backend.createPermissionRequest("npm test", "sess_1", "approval_1"));
+  await flushAsync();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "approval_resolved",
+    text: "approval_1",
+    timestamp: 1000
+  });
+  await flushAsync();
+  harness.restoreCurrentVisualState();
+
+  assert.equal(lastStateEvent(visualBridge.events)?.state, "thinking");
+});
+
 test("pass-through approval speech can deny a native approval", async () => {
   const backend = new InMemoryAgentBackend();
   const visualBridge = new FakeVisualBridge();
