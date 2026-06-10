@@ -64,6 +64,16 @@ import type {
 import { detectWakePhrase, type AgentTarget } from "../wake/WakePhraseRouter.ts";
 import { createCodexThreadStore } from "./codex-thread-config.ts";
 import {
+  formatTerminalApproval,
+  formatTerminalCommand,
+  formatTerminalCommandSummary,
+  formatTerminalLabel,
+  formatTerminalNote,
+  formatTerminalSection,
+  formatTerminalWake,
+  terminalBackendRunOptionLines
+} from "./TerminalText.ts";
+import {
   defaultMaxUtteranceSeconds,
   defaultVisualThinkingVolume,
   sanitizeMaxUtteranceSeconds,
@@ -376,12 +386,12 @@ export class TerminalHarness {
     this.sendVisualTtsSettings();
     this.printStartupBanner();
     if (this.runtime) {
-      this.writeLine("  Type text to send a transcript, or /help for terminal commands.");
+      this.writeLine(formatTerminalLabel("Tip", "Type text to send a transcript, or /help for terminal commands."));
     } else {
-      this.writeLine("  Wake: 코덱스 <명령> / 클로드 <명령>");
-      this.writeLine("  Plain text also passes through in development mode.");
-      this.writeLine("  Approval: 허용 / 거부 / 이번 세션 동안 허용");
-      this.writeLine("  Commands: /help /status /tts-stop /quit");
+      this.writeLine(formatTerminalWake("코덱스 <명령> / 클로드 <명령>"));
+      this.writeLine(formatTerminalNote("Plain text also passes through in development mode."));
+      this.writeLine(formatTerminalApproval("허용 / 거부 / 이번 세션 동안 허용"));
+      this.writeLine(formatTerminalCommandSummary("/help /status /tts-stop /quit"));
     }
   }
 
@@ -1316,16 +1326,20 @@ export class TerminalHarness {
   }
 
   private printHelp(): void {
-    this.writeLine("Commands:");
-    this.writeLine("  /help shows this command list.");
-    this.writeLine("  /status shows the current agent status.");
+    this.writeLine(formatTerminalSection("Commands:"));
+    this.writeLine(formatTerminalCommand("/help", "shows this command list."));
+    this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
     if (this.runtime) {
-      this.writeLine("  /permission <command> asks for a mock command approval.");
-      this.writeLine("  /complete emits a mock task completion.");
-      this.writeLine("  /error <message> emits a mock harness error.");
+      this.writeLine(formatTerminalCommand("/permission <command>", "asks for a mock command approval."));
+      this.writeLine(formatTerminalCommand("/complete", "emits a mock task completion."));
+      this.writeLine(formatTerminalCommand("/error <message>", "emits a mock harness error."));
     }
-    this.writeLine("  /tts-stop stops current TTS playback.");
-    this.writeLine("  /quit exits Voice Agent.");
+    this.writeLine(formatTerminalCommand("/tts-stop", "stops current TTS playback."));
+    this.writeLine(formatTerminalCommand("/quit", "exits Voice Agent."));
+    this.writeLine("");
+    for (const line of terminalBackendRunOptionLines()) {
+      this.writeLine(line);
+    }
   }
 
   private async requestPermission(command: string): Promise<void> {

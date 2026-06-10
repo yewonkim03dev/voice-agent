@@ -449,6 +449,11 @@ test("always-on voice runner prints complete voice help", async () => {
   assert.ok(logs.includes("  /gesture-clear-custom deletes all custom camera gesture templates."));
   assert.ok(logs.includes("  /add <text> queues additional info for the next voice transcript."));
   assert.ok(logs.includes("  /refs lists queued additional info."));
+  assert.ok(logs.includes("Voice run options:"));
+  assert.ok(logs.includes("  --always-on, --wake enable always-on wake listening."));
+  assert.ok(logs.includes("  --visual open the Visual/HUD companion."));
+  assert.ok(logs.includes("Backend/TTS run options:"));
+  assert.ok(logs.includes("  --codex, --real use the Codex app-server backend."));
 });
 
 test("always-on voice runner prints camera test guidance without requesting permission when --cam is absent", async () => {
@@ -2942,6 +2947,9 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /cam toggles camera gesture wake on/off."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /cam-test shows camera gesture test steps and current status."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /refs lists queued additional info."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("Voice run options:"), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("  --visual open the Visual/HUD companion."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("Backend/TTS run options:"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[camera:test] permission=authorized"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("Type /help to show available commands."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[codex-app] turn/start sess_1: 날씨 확인해줘"), false);

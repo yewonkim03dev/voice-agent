@@ -90,6 +90,9 @@ test("help slash command prints terminal commands", async () => {
   assert.ok(lines.includes("  /status shows the current agent status."));
   assert.ok(lines.includes("  /tts-stop stops current TTS playback."));
   assert.ok(lines.includes("  /quit exits Voice Agent."));
+  assert.ok(lines.includes("Backend/TTS run options:"));
+  assert.ok(lines.includes("  --codex, --real use the Codex app-server backend."));
+  assert.ok(lines.includes("  --tts, --no-tts enable or disable TTS."));
 });
 
 test("unknown slash command suggests help", async () => {

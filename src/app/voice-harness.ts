@@ -49,6 +49,14 @@ import { detectConfiguredWakePhrase, normalizedWakePhrases } from "../wake/WakeP
 import { readCodexThreadSettings } from "./codex-thread-config.ts";
 import { createTerminalHarnessFromArgs, parseHarnessCliArgs, TerminalHarness } from "./harness.ts";
 import {
+  formatTerminalCommand,
+  formatTerminalLabel,
+  formatTerminalNote,
+  formatTerminalSection,
+  terminalBackendRunOptionLines,
+  terminalVoiceRunOptionLines
+} from "./TerminalText.ts";
+import {
   defaultVoiceConfigPath,
   defaultMaxUtteranceSeconds,
   VoiceLocalSettingsStore,
@@ -135,11 +143,12 @@ export class VoiceHarnessRunner {
     await this.terminalHarness.start();
     await this.recordingController.start();
     this.started = true;
-    this.writeLine("  Voice input: /record to start, /record again to stop.");
-    this.writeLine("  /help shows available terminal commands.");
-    this.writeLine("  /add <text> queues additional info for the next voice transcript.");
-    this.writeLine("  /refs lists queued additional info.");
-    this.writeLine("  STT output is printed as [stt:<language>] before routing.");
+    this.writeLine(formatTerminalLabel("Voice input", "/record to start, /record again to stop."));
+    this.writeLine(formatTerminalCommand("/help", "shows available terminal commands."));
+    this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
+    this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
+    this.writeLine(formatTerminalNote("STT output is printed as [stt:<language>] before routing."));
+    this.printRunOptions();
   }
 
   async stop(): Promise<void> {
@@ -196,14 +205,25 @@ export class VoiceHarnessRunner {
   }
 
   private printHelp(): void {
-    this.writeLine("Commands:");
-    this.writeLine("  /help shows this command list.");
-    this.writeLine("  /record starts or stops manual recording.");
-    this.writeLine("  /add <text> queues additional info for the next voice transcript.");
-    this.writeLine("  /refs lists queued additional info.");
-    this.writeLine("  /status shows the current agent status.");
-    this.writeLine("  /tts-stop stops current TTS playback.");
-    this.writeLine("  /quit exits Voice Agent.");
+    this.writeLine(formatTerminalSection("Commands:"));
+    this.writeLine(formatTerminalCommand("/help", "shows this command list."));
+    this.writeLine(formatTerminalCommand("/record", "starts or stops manual recording."));
+    this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
+    this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
+    this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
+    this.writeLine(formatTerminalCommand("/tts-stop", "stops current TTS playback."));
+    this.writeLine(formatTerminalCommand("/quit", "exits Voice Agent."));
+    this.printRunOptions();
+  }
+
+  private printRunOptions(): void {
+    this.writeLine("");
+    for (const line of terminalVoiceRunOptionLines()) {
+      this.writeLine(line);
+    }
+    for (const line of terminalBackendRunOptionLines()) {
+      this.writeLine(line);
+    }
   }
 
   private async routeDirectText(text: string): Promise<void> {
@@ -368,19 +388,20 @@ export class AlwaysOnVoiceHarnessRunner {
     await this.audioInput.start();
     await this.startCameraGestureIfEnabled();
     this.started = true;
-    this.writeLine("  Voice input: always-on wake listening enabled.");
-    this.writeLine(`  Wake phrases: ${this.wakePhrases.join(", ")}`);
-    this.writeLine("  Manual fallback: /record to start, /record again to stop.");
-    this.writeLine("  /help shows available terminal commands.");
-    this.writeLine("  /mic toggles microphone listening on/off.");
-    this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
-    this.writeLine("  /cam toggles camera gesture wake on/off.");
-    this.writeLine("  /cam-test shows camera gesture test steps and current status.");
-    this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
-    this.writeLine("  /gesture-reset clears local gesture mappings and custom templates.");
-    this.writeLine("  /add <text> queues additional info for the next voice transcript.");
-    this.writeLine("  /refs lists queued additional info.");
-    this.writeLine("  STT output is printed as [stt:<language>] before routing.");
+    this.writeLine(formatTerminalLabel("Voice input", "always-on wake listening enabled."));
+    this.writeLine(formatTerminalLabel("Wake phrases", this.wakePhrases.join(", ")));
+    this.writeLine(formatTerminalLabel("Manual fallback", "/record to start, /record again to stop."));
+    this.writeLine(formatTerminalCommand("/help", "shows available terminal commands."));
+    this.writeLine(formatTerminalCommand("/mic", "toggles microphone listening on/off."));
+    this.writeLine(formatTerminalCommand("/mic-reconnect", "rebuilds or restarts microphone input."));
+    this.writeLine(formatTerminalCommand("/cam", "toggles camera gesture wake on/off."));
+    this.writeLine(formatTerminalCommand("/cam-test", "shows camera gesture test steps and current status."));
+    this.writeLine(formatTerminalCommand("/gesture-add <name>", "captures a custom camera gesture template."));
+    this.writeLine(formatTerminalCommand("/gesture-reset", "clears local gesture mappings and custom templates."));
+    this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
+    this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
+    this.writeLine(formatTerminalNote("STT output is printed as [stt:<language>] before routing."));
+    this.printRunOptions();
   }
 
   async stop(): Promise<void> {
@@ -487,22 +508,33 @@ export class AlwaysOnVoiceHarnessRunner {
   }
 
   private printHelp(): void {
-    this.writeLine("Commands:");
-    this.writeLine("  /help shows this command list.");
-    this.writeLine("  /record starts or stops manual recording.");
-    this.writeLine("  /mic toggles microphone listening on/off.");
-    this.writeLine("  /mic-reconnect rebuilds or restarts microphone input.");
-    this.writeLine("  /cam toggles camera gesture wake on/off.");
-    this.writeLine("  /cam-test shows camera gesture test steps and current status.");
-    this.writeLine("  /gesture-add <name> captures a custom camera gesture template.");
-    this.writeLine("  /gesture-delete <name> deletes one custom camera gesture template.");
-    this.writeLine("  /gesture-clear-custom deletes all custom camera gesture templates.");
-    this.writeLine("  /gesture-reset clears local gesture mappings and custom templates.");
-    this.writeLine("  /add <text> queues additional info for the next voice transcript.");
-    this.writeLine("  /refs lists queued additional info.");
-    this.writeLine("  /status shows the current agent status.");
-    this.writeLine("  /tts-stop stops current TTS playback.");
-    this.writeLine("  /quit exits Voice Agent.");
+    this.writeLine(formatTerminalSection("Commands:"));
+    this.writeLine(formatTerminalCommand("/help", "shows this command list."));
+    this.writeLine(formatTerminalCommand("/record", "starts or stops manual recording."));
+    this.writeLine(formatTerminalCommand("/mic", "toggles microphone listening on/off."));
+    this.writeLine(formatTerminalCommand("/mic-reconnect", "rebuilds or restarts microphone input."));
+    this.writeLine(formatTerminalCommand("/cam", "toggles camera gesture wake on/off."));
+    this.writeLine(formatTerminalCommand("/cam-test", "shows camera gesture test steps and current status."));
+    this.writeLine(formatTerminalCommand("/gesture-add <name>", "captures a custom camera gesture template."));
+    this.writeLine(formatTerminalCommand("/gesture-delete <name>", "deletes one custom camera gesture template."));
+    this.writeLine(formatTerminalCommand("/gesture-clear-custom", "deletes all custom camera gesture templates."));
+    this.writeLine(formatTerminalCommand("/gesture-reset", "clears local gesture mappings and custom templates."));
+    this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
+    this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
+    this.writeLine(formatTerminalCommand("/status", "shows the current agent status."));
+    this.writeLine(formatTerminalCommand("/tts-stop", "stops current TTS playback."));
+    this.writeLine(formatTerminalCommand("/quit", "exits Voice Agent."));
+    this.printRunOptions();
+  }
+
+  private printRunOptions(): void {
+    this.writeLine("");
+    for (const line of terminalVoiceRunOptionLines()) {
+      this.writeLine(line);
+    }
+    for (const line of terminalBackendRunOptionLines()) {
+      this.writeLine(line);
+    }
   }
 
   private async printCameraGestureTest(): Promise<void> {
@@ -1880,6 +1912,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (visible === "Harness stopped.") return true;
   if (visible.startsWith("Type /help ")) return true;
   if (isVisibleHelpCommandLine(visible)) return true;
+  if (visible.startsWith("--")) return true;
 
   if (
     visible.includes("VOICE AGENT HARNESS READY") ||
@@ -1889,11 +1922,15 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
     visible.startsWith("mode:") ||
     visible.startsWith("agent:") ||
     visible.startsWith("Local layer ") ||
+    visible.startsWith("Tip:") ||
+    visible.startsWith("Input:") ||
     visible.startsWith("Wake:") ||
     visible.startsWith("Plain text ") ||
     visible.startsWith("Approval:") ||
     visible.startsWith("Commands:") ||
     visible.startsWith("Voice input:") ||
+    visible.startsWith("Voice run options:") ||
+    visible.startsWith("Backend/TTS run options:") ||
     visible.startsWith("Wake phrases:") ||
     visible.startsWith("Manual fallback:") ||
     visible.startsWith("/help ") ||
