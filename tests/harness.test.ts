@@ -231,6 +231,7 @@ test("visual settings apply persists TTS and visual overrides", async () => {
     hudEnabled: false,
     hudCompact: true,
     popupPreferred: true,
+    popupFontSize: 30,
     speakWakeRejectedWarnings: false,
     maxUtteranceSeconds: 80
   });
@@ -258,6 +259,7 @@ test("visual settings apply persists TTS and visual overrides", async () => {
         hudEnabled: false,
         hudCompact: true,
         popupPreferred: true,
+        popupFontSize: 24,
         speakWakeRejectedWarnings: false,
         maxUtteranceSeconds: 55
       }
@@ -373,6 +375,7 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
     hudEnabled: true,
     hudCompact: false,
     popupPreferred: false,
+    popupFontSize: 14,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: 15
   });
@@ -413,6 +416,7 @@ test("visual reset_settings clears persisted overrides", async () => {
     hudEnabled: true,
     hudCompact: false,
     popupPreferred: false,
+    popupFontSize: 14,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: 15
   });
@@ -1070,6 +1074,7 @@ test("visual popup preference updates backend protocol prompt and persists", asy
       hudEnabled: true,
       hudCompact: false,
       popupPreferred: true,
+      popupFontSize: 14,
       speakWakeRejectedWarnings: true,
       maxUtteranceSeconds: 15
     }

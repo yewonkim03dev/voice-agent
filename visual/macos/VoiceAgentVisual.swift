@@ -94,6 +94,7 @@ private let visualTextEn: [String: String] = [
     "showRecentQa": "Show Recent Q/A panel",
     "showFloatingHud": "Show floating HUD",
     "popupPreferred": "Prefer popup for long answers",
+    "popupFontSize": "Popup Font",
     "speakWakeWarning": "Speak wake warning",
     "alwaysStartNewThread": "Always start new thread",
     "reactionMode": "Reaction design",
@@ -153,6 +154,7 @@ private let visualTextEn: [String: String] = [
     "chatHelp": "Shows or hides the Recent Q/A panel.",
     "hudHelp": "Shows or hides the floating HUD above other apps.",
     "popupHelp": "Lets long or study-oriented answers open in a native popup instead of being spoken in full.",
+    "popupFontHelp": "Base font size for native popup answers, from 12 to 24 points.",
     "reactionModeHelp": "Chooses the reactive visual surface. Audio circle keeps the original design; Particle orb adds a glowing point-sphere mode.",
     "wakeWarningHelp": "Controls whether wake mismatch warnings are spoken aloud.",
     "wakePhrasesHelp": "Wake phrase list. One phrase per line replaces the current list.",
@@ -256,6 +258,7 @@ private let visualTextKo: [String: String] = [
     "showRecentQa": "최근 Q/A 패널 표시",
     "showFloatingHud": "floating HUD 표시",
     "popupPreferred": "긴 답변 팝업 선호",
+    "popupFontSize": "팝업 글자 크기",
     "speakWakeWarning": "호출어 경고 말하기",
     "alwaysStartNewThread": "항상 새 스레드로 시작",
     "reactionMode": "반응 디자인",
@@ -315,6 +318,7 @@ private let visualTextKo: [String: String] = [
     "chatHelp": "최근 질문과 답변 패널 표시 여부입니다.",
     "hudHelp": "다른 앱 위에 뜨는 floating HUD 표시 여부입니다.",
     "popupHelp": "긴 설명이나 공부용 답변을 전부 읽지 않고 네이티브 팝업으로 띄웁니다.",
+    "popupFontHelp": "네이티브 팝업 답변의 기본 글자 크기입니다. 12에서 24 사이입니다.",
     "reactionModeHelp": "상태와 음량에 반응하는 비주얼을 고릅니다. Audio circle은 기존 디자인이고 Particle orb는 빛나는 점 구체 모드입니다.",
     "wakeWarningHelp": "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
     "wakePhrasesHelp": "호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.",
@@ -2736,9 +2740,11 @@ final class PopupPanelController: NSObject {
     private var rawText = ""
     private var showingRaw = false
     private var currentLanguage: UiLanguage = .en
+    private var fontSize: CGFloat = 14
 
-    func show(title: String, text: String, format: String, language: UiLanguage) {
+    func show(title: String, text: String, format: String, language: UiLanguage, fontSize: CGFloat) {
         currentLanguage = language
+        self.fontSize = clampedCGFloat(fontSize, min: 12, max: 24)
         rawText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         showingRaw = format == "plain"
         ensurePanel()
@@ -2755,6 +2761,15 @@ final class PopupPanelController: NSObject {
     func updateLanguage(_ language: UiLanguage) {
         currentLanguage = language
         updateLocalization()
+    }
+
+    func updateFontSize(_ value: CGFloat) {
+        let next = clampedCGFloat(value, min: 12, max: 24)
+        guard abs(next - fontSize) > 0.1 else { return }
+        fontSize = next
+        if panel != nil {
+            renderContent()
+        }
     }
 
     private func ensurePanel() {
@@ -2833,14 +2848,14 @@ final class PopupPanelController: NSObject {
         if showingRaw {
             webView.isHidden = true
             scrollView.isHidden = false
-            textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            textView.font = NSFont.monospacedSystemFont(ofSize: max(11, fontSize - 1), weight: .regular)
             textView.string = rawText
             return
         }
 
         scrollView.isHidden = true
         webView.isHidden = false
-        webView.loadHTMLString(popupHtmlDocument(rawText), baseURL: katexDistDirectory())
+        webView.loadHTMLString(popupHtmlDocument(rawText, fontSize: fontSize), baseURL: katexDistDirectory())
     }
 
     @objc private func toggleMode() {
@@ -2873,9 +2888,10 @@ private func combinedRecentPopupMarkdown(_ entries: [PopupHistoryEntry]) -> Stri
     }.joined(separator: "\n\n---\n\n")
 }
 
-private func popupHtmlDocument(_ markdown: String) -> String {
+private func popupHtmlDocument(_ markdown: String, fontSize: CGFloat = 14) -> String {
     let body = markdownBodyHtml(markdown)
     let assets = katexAssetTags()
+    let baseFontSize = String(format: "%.0f", clampedCGFloat(fontSize, min: 12, max: 24))
     return #"""
 <!doctype html>
 <html>
@@ -2885,6 +2901,7 @@ private func popupHtmlDocument(_ markdown: String) -> String {
 \#(assets)
 <style>
 :root {
+  --popup-font-size: \#(baseFontSize)px;
   color-scheme: dark;
   background: #111827;
   color: #e5edf8;
@@ -2895,7 +2912,7 @@ body {
   padding: 18px 20px 28px;
   background: #111827;
   color: #e5edf8;
-  font-size: 14px;
+  font-size: var(--popup-font-size);
   line-height: 1.58;
 }
 h1, h2, h3 {
@@ -2903,9 +2920,9 @@ h1, h2, h3 {
   line-height: 1.25;
   color: #f5f8ff;
 }
-h1 { font-size: 24px; }
-h2 { font-size: 20px; }
-h3 { font-size: 17px; }
+h1 { font-size: calc(var(--popup-font-size) + 10px); }
+h2 { font-size: calc(var(--popup-font-size) + 6px); }
+h3 { font-size: calc(var(--popup-font-size) + 3px); }
 p {
   margin: 9px 0;
 }
@@ -2926,7 +2943,7 @@ pre {
 }
 code {
   font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 13px;
+  font-size: calc(var(--popup-font-size) - 1px);
 }
 .katex-display {
   overflow-x: auto;
@@ -3238,6 +3255,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsVolumeField = NSTextField(string: "1.00")
     private let settingsThinkingVolumeField = NSTextField(string: "0.32")
     private let settingsMaxUtteranceField = NSTextField(string: "15")
+    private let settingsPopupFontSizeField = NSTextField(string: "14")
     private let settingsReactionModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
     private let settingsHudCheckbox = NSButton(checkboxWithTitle: "Show floating HUD", target: nil, action: nil)
@@ -3272,6 +3290,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var ttsVolume = 1.0
     private var thinkingVolume = 0.32
     private var maxUtteranceSeconds = 15.0
+    private var popupFontSize = 14.0
     private var responseLanguage = "auto"
     private var reactionMode = "audio_circle"
     private var chatHistoryEnabled = true
@@ -3405,7 +3424,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 title: localizedText("recentPopups", language: uiLanguage),
                 text: localizedText("noRecentPopups", language: uiLanguage),
                 format: "plain",
-                language: uiLanguage
+                language: uiLanguage,
+                fontSize: CGFloat(popupFontSize)
             )
             return
         }
@@ -3414,7 +3434,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             title: localizedText("recentPopups", language: uiLanguage),
             text: combinedRecentPopupMarkdown(recentPopups),
             format: "markdown",
-            language: uiLanguage
+            language: uiLanguage,
+            fontSize: CGFloat(popupFontSize)
         )
     }
 
@@ -3580,7 +3601,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             guard !popupText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { break }
             let title = event["title"] as? String ?? localizedText("popup", language: uiLanguage)
             let format = event["format"] as? String ?? "markdown"
-            popupPanel.show(title: title, text: popupText, format: format, language: uiLanguage)
+            popupPanel.show(title: title, text: popupText, format: format, language: uiLanguage, fontSize: CGFloat(popupFontSize))
             rootView?.pushChat(role: "assistant", kind: "status", text: localizedText("popup", language: uiLanguage))
             menuBarCompanion.updateMessage(localizedText("popup", language: uiLanguage))
         case "popup_history":
@@ -3766,11 +3787,13 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         ttsVolume = clampedDouble(settingsVolumeField.stringValue, fallback: ttsVolume, min: 0, max: 1)
         thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
         maxUtteranceSeconds = clampedDouble(settingsMaxUtteranceField.stringValue, fallback: maxUtteranceSeconds, min: 5, max: 55)
+        popupFontSize = clampedDouble(settingsPopupFontSizeField.stringValue, fallback: popupFontSize, min: 12, max: 24)
         reactionMode = normalizedReactionMode(settingsReactionModePopup.selectedRepresentedValue(fallback: "audio_circle"))
         responseLanguage = ttsLanguage
         chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
         hudEnabled = settingsHudCheckbox.state == .on
         popupPreferred = settingsPopupPreferredCheckbox.state == .on
+        popupPanel.updateFontSize(CGFloat(popupFontSize))
         speakWakeRejectedWarnings = settingsWakeRejectedWarningCheckbox.state == .on
         codexAlwaysStartNewThread = settingsNewThreadCheckbox.state == .on
         thinkingPulseSound.volume = Float(thinkingVolume)
@@ -3808,6 +3831,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     @objc private func resetSettings() {
         thinkingVolume = 0.32
         maxUtteranceSeconds = 15
+        popupFontSize = 14
         reactionMode = "audio_circle"
         chatHistoryEnabled = true
         hudEnabled = true
@@ -3828,6 +3852,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         menuBarCompanion.setHudEnabled(true)
         menuBarCompanion.setReactionMode(reactionMode)
         menuBarCompanion.setHudCompact(false)
+        popupPanel.updateFontSize(CGFloat(popupFontSize))
         syncSettingsControls()
         sendControl("reset_settings")
     }
@@ -3942,6 +3967,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         if let value = settings["popupPreferred"] as? Bool {
             popupPreferred = value
         }
+        if let value = settings["popupFontSize"] as? Double {
+            popupFontSize = min(24, max(12, value))
+            popupPanel.updateFontSize(CGFloat(popupFontSize))
+        }
         if let value = settings["speakWakeRejectedWarnings"] as? Bool {
             speakWakeRejectedWarnings = value
         }
@@ -4024,7 +4053,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let contentWidth: CGFloat = 380
-        let contentHeight: CGFloat = 1360
+        let contentHeight: CGFloat = 1400
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -4065,6 +4094,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsCustomGestureClearButton.target = self
         settingsCustomGestureClearButton.action = #selector(clearCustomGestureTemplatesFromSettings)
 
+        addSettingsRow(view, label: localizedText("popupFontSize", language: uiLanguage), control: settingsPopupFontSizeField, y: 1326)
+        addSettingsHelp(view, y: 1326, text: localizedText("popupFontHelp", language: uiLanguage))
         addSettingsRow(view, label: localizedText("reactionMode", language: uiLanguage), control: settingsReactionModePopup, y: 1286)
         addSettingsHelp(view, y: 1286, text: localizedText("reactionModeHelp", language: uiLanguage))
         addSettingsRow(view, label: localizedText("gestureWake", language: uiLanguage), control: settingsGestureWakePopup, y: 1246)
@@ -4288,6 +4319,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
         settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
         settingsMaxUtteranceField.stringValue = String(format: "%.0f", maxUtteranceSeconds)
+        settingsPopupFontSizeField.stringValue = String(format: "%.0f", popupFontSize)
         settingsReactionModePopup.selectRepresentedValue(reactionMode)
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
         settingsHudCheckbox.state = hudEnabled ? .on : .off
@@ -4419,6 +4451,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "hudEnabled": hudEnabled,
                 "hudCompact": hudCompact,
                 "popupPreferred": popupPreferred,
+                "popupFontSize": popupFontSize,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])
@@ -4438,6 +4471,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "hudEnabled": hudEnabled,
                 "hudCompact": hudCompact,
                 "popupPreferred": popupPreferred,
+                "popupFontSize": popupFontSize,
                 "speakWakeRejectedWarnings": speakWakeRejectedWarnings
             ]
         ])
@@ -4582,6 +4616,10 @@ private extension NSPopUpButton {
 private func clampedDouble(_ value: String, fallback: Double, min: Double, max: Double) -> Double {
     guard let parsed = Double(value) else { return fallback }
     return Swift.min(max, Swift.max(min, parsed))
+}
+
+private func clampedCGFloat(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
+    Swift.min(max, Swift.max(min, value))
 }
 
 private func normalizedPhrases(_ values: [String]) -> [String] {

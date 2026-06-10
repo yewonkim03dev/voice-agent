@@ -42,6 +42,7 @@ export type VoiceVisualFileConfig = Partial<{
   hudEnabled: boolean;
   hudCompact: boolean;
   popupPreferred: boolean;
+  popupFontSize: string | number;
   speakWakeRejectedWarnings: boolean;
   maxUtteranceSeconds: string | number;
 }>;
@@ -353,6 +354,7 @@ export async function resetVoiceLocalSettings(options: {
   delete visual.hudEnabled;
   delete visual.hudCompact;
   delete visual.popupPreferred;
+  delete visual.popupFontSize;
   delete visual.speakWakeRejectedWarnings;
   delete visual.maxUtteranceSeconds;
 
@@ -609,6 +611,9 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
     ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
     ...(typeof record.hudCompact === "boolean" ? { hudCompact: record.hudCompact } : {}),
     ...(typeof record.popupPreferred === "boolean" ? { popupPreferred: record.popupPreferred } : {}),
+    ...(parseVisualPopupFontSize(record.popupFontSize) !== undefined
+      ? { popupFontSize: parseVisualPopupFontSize(record.popupFontSize) }
+      : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
       : {}),
@@ -650,6 +655,13 @@ function parseVisualMaxUtteranceSeconds(value: unknown): number | undefined {
   if (typeof value === "string" && value.trim() === "") return undefined;
   const parsed = typeof value === "number" ? value : Number(value.trim());
   return Number.isFinite(parsed) ? sanitizeMaxUtteranceSeconds(parsed) : undefined;
+}
+
+function parseVisualPopupFontSize(value: unknown): number | undefined {
+  if (typeof value !== "number" && typeof value !== "string") return undefined;
+  if (typeof value === "string" && value.trim() === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number(value.trim());
+  return Number.isFinite(parsed) ? clamp(parsed, 12, 24) : undefined;
 }
 
 export function sanitizeMaxUtteranceSeconds(

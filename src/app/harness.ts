@@ -1841,6 +1841,7 @@ export class TerminalHarness {
       hudEnabled: this.visualSettings.hudEnabled ?? true,
       hudCompact: this.visualSettings.hudCompact ?? false,
       popupPreferred: this.visualSettings.popupPreferred ?? false,
+      popupFontSize: this.visualSettings.popupFontSize ?? 14,
       speakWakeRejectedWarnings: this.visualSettings.speakWakeRejectedWarnings ?? true,
       maxUtteranceSeconds: this.visualSettings.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds
     };
@@ -2371,6 +2372,7 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
     hudEnabled: true,
     hudCompact: false,
     popupPreferred: false,
+    popupFontSize: 14,
     speakWakeRejectedWarnings: true,
     maxUtteranceSeconds: defaultMaxUtteranceSeconds
   };
@@ -2396,6 +2398,7 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
     hudEnabled: typeof settings?.hudEnabled === "boolean" ? settings.hudEnabled : undefined,
     hudCompact: typeof settings?.hudCompact === "boolean" ? settings.hudCompact : undefined,
     popupPreferred: typeof settings?.popupPreferred === "boolean" ? settings.popupPreferred : undefined,
+    popupFontSize: parsePersistedNumber(settings?.popupFontSize),
     speakWakeRejectedWarnings: typeof settings?.speakWakeRejectedWarnings === "boolean"
       ? settings.speakWakeRejectedWarnings
       : undefined,
@@ -2419,6 +2422,9 @@ function sanitizeVisualRuntimeSettings(
     hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true,
     hudCompact: settings.hudCompact ?? fallback.hudCompact ?? false,
     popupPreferred: settings.popupPreferred ?? fallback.popupPreferred ?? false,
+    popupFontSize: settings.popupFontSize === undefined
+      ? fallback.popupFontSize ?? 14
+      : clamp(settings.popupFontSize, 12, 24),
     speakWakeRejectedWarnings: settings.speakWakeRejectedWarnings ?? fallback.speakWakeRejectedWarnings ?? true,
     maxUtteranceSeconds: settings.maxUtteranceSeconds === undefined
       ? fallback.maxUtteranceSeconds ?? defaultMaxUtteranceSeconds

@@ -214,7 +214,7 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","reactionMode":"particle_orb","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"popupPreferred":true,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","reactionMode":"particle_orb","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"popupPreferred":true,"popupFontSize":30,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
@@ -226,6 +226,7 @@ test("visual bridge parses allowed control events only", () => {
       hudEnabled: false,
       hudCompact: true,
       popupPreferred: true,
+      popupFontSize: 24,
       speakWakeRejectedWarnings: false,
       maxUtteranceSeconds: 80
     }
@@ -432,6 +433,8 @@ test("Qt companion is native QML and avoids browser/webview imports", async () =
   assert.match(qml, /running: root\.isThinkingAudioState\(root\.uiState\)/u);
   assert.match(qml, /source: Qt\.resolvedUrl\("thinking-pulse\.wav"\)/u);
   assert.match(qml, /volume: root\.thinkingVolume/u);
+  assert.match(qml, /popupFontSizeSlider/u);
+  assert.match(qml, /popupFontSize: root\.popupFontSize/u);
   assert.match(qml, /thinkingPulseTimer/u);
   assert.match(qml, /stt_processing/u);
   assert.match(qml, /submitting/u);
@@ -715,6 +718,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsReactionModePopup/u);
   assert.match(swift, /settingsMaxUtteranceField/u);
   assert.match(swift, /Max Speech/u);
+  assert.match(swift, /settingsPopupFontSizeField/u);
+  assert.match(swift, /Popup Font/u);
   assert.match(swift, /NSTextFieldDelegate/u);
   assert.match(swift, /settingsMaxUtteranceField\.delegate = self/u);
   assert.match(swift, /func controlTextDidChange/u);
@@ -728,6 +733,8 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsPopupPreferredCheckbox/u);
   assert.match(swift, /Prefer popup for long answers/u);
   assert.match(swift, /"popupPreferred": popupPreferred/u);
+  assert.match(swift, /"popupFontSize": popupFontSize/u);
+  assert.match(swift, /popupHtmlDocument\(rawText, fontSize: fontSize\)/u);
   assert.match(swift, /"reactionMode": reactionMode/u);
   assert.match(swift, /Particle orb/u);
   assert.match(swift, /final class ParticleOrbView: NSView/u);

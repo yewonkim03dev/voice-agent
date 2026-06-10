@@ -60,6 +60,7 @@ export interface VisualRuntimeSettings {
   hudEnabled?: boolean;
   hudCompact?: boolean;
   popupPreferred?: boolean;
+  popupFontSize?: number;
   speakWakeRejectedWarnings?: boolean;
   maxUtteranceSeconds?: number;
 }
@@ -536,6 +537,9 @@ function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRunt
     ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
     ...(typeof record.hudCompact === "boolean" ? { hudCompact: record.hudCompact } : {}),
     ...(typeof record.popupPreferred === "boolean" ? { popupPreferred: record.popupPreferred } : {}),
+    ...(typeof record.popupFontSize === "number" && Number.isFinite(record.popupFontSize)
+      ? { popupFontSize: clamp(record.popupFontSize, 12, 24) }
+      : {}),
     ...(typeof record.speakWakeRejectedWarnings === "boolean"
       ? { speakWakeRejectedWarnings: record.speakWakeRejectedWarnings }
       : {}),

@@ -49,6 +49,7 @@ ApplicationWindow {
     property real ttsVolume: 1.0
     property real thinkingVolume: 0.32
     property real maxUtteranceSeconds: 15
+    property real popupFontSize: 14
     property string responseLanguage: "auto"
     property bool speakWakeRejectedWarnings: true
     property var wakePhrases: []
@@ -124,6 +125,7 @@ ApplicationWindow {
             volume: "볼륨 ",
             thinkingSound: "작업 효과음 ",
             maxSpeech: "최대 발화 ",
+            popupFontSize: "팝업 글자 크기 ",
             showRecentQa: "최근 Q/A 패널 표시",
             speakWakeWarning: "호출어 경고 말하기",
             wakePhrasesReplace: "호출어 목록 교체",
@@ -202,6 +204,7 @@ ApplicationWindow {
             volumeHelp: "TTS 출력 볼륨입니다.",
             thinkingHelp: "작업 중 반복 효과음 볼륨입니다.",
             maxSpeechHelp: "한 번에 받을 발화 최대 길이입니다. 5초에서 55초 사이입니다.",
+            popupFontHelp: "네이티브 팝업 답변의 기본 글자 크기입니다. 12에서 24 사이입니다.",
             chatHelp: "최근 질문과 답변 패널 표시 여부입니다.",
             wakeWarningHelp: "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
             wakePhrasesHelp: "줄마다 하나씩 호출어를 입력하면 기존 목록을 대체합니다.",
@@ -262,6 +265,7 @@ ApplicationWindow {
             volume: "Volume ",
             thinkingSound: "Thinking sound ",
             maxSpeech: "Max speech ",
+            popupFontSize: "Popup font ",
             showRecentQa: "Show Recent Q/A panel",
             speakWakeWarning: "Speak wake warning",
             wakePhrasesReplace: "Wake phrases replace list",
@@ -340,6 +344,7 @@ ApplicationWindow {
             volumeHelp: "TTS output volume.",
             thinkingHelp: "Thinking-loop sound volume.",
             maxSpeechHelp: "Maximum utterance length, from 5 to 55 seconds.",
+            popupFontHelp: "Base font size for native popup answers, from 12 to 24 points.",
             chatHelp: "Shows or hides the Recent Q/A panel.",
             wakeWarningHelp: "Speaks or mutes wake mismatch warnings.",
             wakePhrasesHelp: "One wake phrase per line replaces the current list.",
@@ -516,6 +521,7 @@ ApplicationWindow {
                 visual: {
                     thinkingVolume: root.thinkingVolume,
                     maxUtteranceSeconds: root.maxUtteranceSeconds,
+                    popupFontSize: root.popupFontSize,
                     responseLanguage: languageBox.currentText,
                     chatHistoryEnabled: chatHistoryCheck.checked,
                     speakWakeRejectedWarnings: wakeWarningCheck.checked
@@ -528,6 +534,7 @@ ApplicationWindow {
     function resetSettings() {
         root.thinkingVolume = 0.32
         root.maxUtteranceSeconds = 15
+        root.popupFontSize = 14
         root.chatHistoryEnabled = true
         root.speakWakeRejectedWarnings = true
         root.codexAlwaysStartNewThread = false
@@ -541,6 +548,7 @@ ApplicationWindow {
         })
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (maxUtteranceSlider) maxUtteranceSlider.value = root.maxUtteranceSeconds
+        if (popupFontSizeSlider) popupFontSizeSlider.value = root.popupFontSize
         if (chatHistoryCheck) chatHistoryCheck.checked = true
         if (wakeWarningCheck) wakeWarningCheck.checked = true
         if (newThreadCheck) newThreadCheck.checked = false
@@ -704,12 +712,14 @@ ApplicationWindow {
     function applyRuntimeVisualSettings(settings) {
         root.thinkingVolume = settings.thinkingVolume === undefined ? 0.32 : Math.max(0, Math.min(0.8, settings.thinkingVolume))
         root.maxUtteranceSeconds = settings.maxUtteranceSeconds === undefined ? 15 : Math.max(5, Math.min(55, settings.maxUtteranceSeconds))
+        root.popupFontSize = settings.popupFontSize === undefined ? 14 : Math.max(12, Math.min(24, settings.popupFontSize))
         root.responseLanguage = settings.responseLanguage || "auto"
         root.chatHistoryEnabled = settings.chatHistoryEnabled === undefined ? true : !!settings.chatHistoryEnabled
         root.speakWakeRejectedWarnings = settings.speakWakeRejectedWarnings === undefined ? true : !!settings.speakWakeRejectedWarnings
         if (root.chatHistoryEnabled && !root.chatPanelOpen) root.chatPanelOpen = true
         if (thinkingVolumeSlider) thinkingVolumeSlider.value = root.thinkingVolume
         if (maxUtteranceSlider) maxUtteranceSlider.value = root.maxUtteranceSeconds
+        if (popupFontSizeSlider) popupFontSizeSlider.value = root.popupFontSize
         if (chatHistoryCheck) chatHistoryCheck.checked = root.chatHistoryEnabled
         if (wakeWarningCheck) wakeWarningCheck.checked = root.speakWakeRejectedWarnings
         if (languageBox) languageBox.currentIndex = root.indexOfValue(["auto", "ko", "en"], root.responseLanguage)
@@ -2057,6 +2067,36 @@ ApplicationWindow {
                     value: root.maxUtteranceSeconds
                     stepSize: 1
                     onValueChanged: root.maxUtteranceSeconds = value
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.uiText("popupFontSize") + Math.round(popupFontSizeSlider.value) + "pt"
+                        color: "#91a4bd"
+                    }
+
+                    Button {
+                        text: "?"
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 250
+                        ToolTip.text: root.uiText("popupFontHelp")
+                    }
+                }
+
+                Slider {
+                    id: popupFontSizeSlider
+                    Layout.fillWidth: true
+                    from: 12
+                    to: 24
+                    value: root.popupFontSize
+                    stepSize: 1
+                    onValueChanged: root.popupFontSize = value
                 }
 
                 RowLayout {
