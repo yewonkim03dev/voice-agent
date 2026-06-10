@@ -37,6 +37,7 @@ export interface VoiceHarnessConfig {
 export type VoiceVisualFileConfig = Partial<{
   thinkingVolume: string | number;
   responseLanguage: "auto" | "ko" | "en";
+  reactionMode: "audio_circle" | "particle_orb";
   chatHistoryEnabled: boolean;
   hudEnabled: boolean;
   hudCompact: boolean;
@@ -347,6 +348,7 @@ export async function resetVoiceLocalSettings(options: {
   delete next.tts;
   delete visual.thinkingVolume;
   delete visual.responseLanguage;
+  delete visual.reactionMode;
   delete visual.chatHistoryEnabled;
   delete visual.hudEnabled;
   delete visual.hudCompact;
@@ -600,6 +602,9 @@ function parseVisualFileConfig(parsed: Partial<VoiceHarnessConfig> & Record<stri
     ...(parseVisualResponseLanguage(record.responseLanguage)
       ? { responseLanguage: parseVisualResponseLanguage(record.responseLanguage) }
       : {}),
+    ...(parseVisualReactionMode(record.reactionMode)
+      ? { reactionMode: parseVisualReactionMode(record.reactionMode) }
+      : {}),
     ...(typeof record.chatHistoryEnabled === "boolean" ? { chatHistoryEnabled: record.chatHistoryEnabled } : {}),
     ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
     ...(typeof record.hudCompact === "boolean" ? { hudCompact: record.hudCompact } : {}),
@@ -664,6 +669,10 @@ export function sanitizeMaxUtteranceSeconds(
 
 function parseVisualResponseLanguage(value: unknown): VoiceVisualFileConfig["responseLanguage"] | undefined {
   return value === "auto" || value === "ko" || value === "en" ? value : undefined;
+}
+
+function parseVisualReactionMode(value: unknown): VoiceVisualFileConfig["reactionMode"] | undefined {
+  return value === "audio_circle" || value === "particle_orb" ? value : undefined;
 }
 
 function parseOptionalWakePhrases(value: unknown): string[] | undefined {

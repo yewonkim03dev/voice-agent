@@ -214,13 +214,14 @@ test("visual bridge parses allowed control events only", () => {
       voiceName: "Yuna"
     }
   });
-  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"popupPreferred":true,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
+  assert.deepEqual(parseVisualControlEvent('{"op":"voice-agent-ui","type":"control","action":"update_visual_settings","visual":{"thinkingVolume":0.9,"responseLanguage":"en","reactionMode":"particle_orb","chatHistoryEnabled":false,"hudEnabled":false,"hudCompact":true,"popupPreferred":true,"speakWakeRejectedWarnings":false,"maxUtteranceSeconds":80}}'), {
     op: "voice-agent-ui",
     type: "control",
     action: "update_visual_settings",
     visual: {
       thinkingVolume: 0.8,
       responseLanguage: "en",
+      reactionMode: "particle_orb",
       chatHistoryEnabled: false,
       hudEnabled: false,
       hudCompact: true,
@@ -711,6 +712,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsCodexThreadField/u);
   assert.match(swift, /Codex Thread/u);
   assert.match(swift, /settingsThinkingVolumeField/u);
+  assert.match(swift, /settingsReactionModePopup/u);
   assert.match(swift, /settingsMaxUtteranceField/u);
   assert.match(swift, /Max Speech/u);
   assert.match(swift, /NSTextFieldDelegate/u);
@@ -726,6 +728,11 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /settingsPopupPreferredCheckbox/u);
   assert.match(swift, /Prefer popup for long answers/u);
   assert.match(swift, /"popupPreferred": popupPreferred/u);
+  assert.match(swift, /"reactionMode": reactionMode/u);
+  assert.match(swift, /Particle orb/u);
+  assert.match(swift, /final class ParticleOrbView: NSView/u);
+  assert.match(swift, /settingsReactionModePopup\.addValueItemsIfNeeded\(\["audio_circle", "particle_orb"\]/u);
+  assert.match(swift, /rootView\?\.updateReactionMode\(reactionMode\)/u);
   assert.match(swift, /case "popup":/u);
   assert.match(swift, /case "popup_history":/u);
   assert.match(swift, /private var recentPopups: \[PopupHistoryEntry\] = \[\]/u);
@@ -793,6 +800,7 @@ test("macOS native companion is AppKit and avoids browser/webview imports", asyn
   assert.match(swift, /showFloatingHud\(\)\s*\n\s*popover\.show/u);
   assert.doesNotMatch(swift, /panel\.orderOut\(nil\)\s*\n\s*panel\.orderFrontRegardless\(\)/u);
   assert.match(swift, /hudCircle = AgentCircleView\(frame: \.zero\)/u);
+  assert.match(swift, /hudOrb = ParticleOrbView\(frame: \.zero\)/u);
   assert.match(swift, /hudQuestionLabel = NSTextField\(wrappingLabelWithString: ""\)/u);
   assert.match(swift, /hudQuestionLabel\.stringValue = trimmed\.isEmpty \? "" : "Q: \\\(trimmed\)"/u);
   assert.match(swift, /hudCircle\.compactStatusStyle = true/u);

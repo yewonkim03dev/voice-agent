@@ -226,6 +226,7 @@ test("visual settings apply persists TTS and visual overrides", async () => {
   visualBridge.emitVisualControl({
     thinkingVolume: 0.48,
     responseLanguage: "en",
+    reactionMode: "particle_orb",
     chatHistoryEnabled: false,
     hudEnabled: false,
     hudCompact: true,
@@ -252,6 +253,7 @@ test("visual settings apply persists TTS and visual overrides", async () => {
       visual: {
         thinkingVolume: 0.48,
         responseLanguage: "en",
+        reactionMode: "particle_orb",
         chatHistoryEnabled: false,
         hudEnabled: false,
         hudCompact: true,
@@ -366,6 +368,7 @@ test("visual reset_settings restores default TTS runtime settings", async () => 
   assert.deepEqual(settings?.visual, {
     thinkingVolume: 0.32,
     responseLanguage: "auto",
+    reactionMode: "audio_circle",
     chatHistoryEnabled: true,
     hudEnabled: true,
     hudCompact: false,
@@ -405,6 +408,7 @@ test("visual reset_settings clears persisted overrides", async () => {
   assert.deepEqual(settings?.visual, {
     thinkingVolume: 0.32,
     responseLanguage: "auto",
+    reactionMode: "audio_circle",
     chatHistoryEnabled: true,
     hudEnabled: true,
     hudCompact: false,
@@ -1058,6 +1062,7 @@ test("visual popup preference updates backend protocol prompt and persists", asy
     visual: {
       thinkingVolume: 0.32,
       responseLanguage: "auto",
+      reactionMode: "audio_circle",
       chatHistoryEnabled: true,
       hudEnabled: true,
       hudCompact: false,

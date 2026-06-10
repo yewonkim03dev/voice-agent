@@ -2655,6 +2655,7 @@ test("voice local settings store persists overrides and reset restores factory d
       },
       visual: {
         thinkingVolume: 0.47,
+        reactionMode: "particle_orb",
         chatHistoryEnabled: false,
         hudEnabled: false,
         hudCompact: true,
@@ -2734,6 +2735,7 @@ test("voice local settings store persists overrides and reset restores factory d
     assert.deepEqual(updated.visual, {
       provider: "qtqml",
       thinkingVolume: 0.47,
+      reactionMode: "particle_orb",
       chatHistoryEnabled: false,
       hudEnabled: false,
       hudCompact: true,

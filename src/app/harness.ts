@@ -1836,6 +1836,7 @@ export class TerminalHarness {
     return {
       thinkingVolume: this.visualSettings.thinkingVolume ?? defaultVisualThinkingVolume,
       responseLanguage: this.visualSettings.responseLanguage ?? "auto",
+      reactionMode: this.visualSettings.reactionMode ?? "audio_circle",
       chatHistoryEnabled: this.visualSettings.chatHistoryEnabled ?? true,
       hudEnabled: this.visualSettings.hudEnabled ?? true,
       hudCompact: this.visualSettings.hudCompact ?? false,
@@ -2365,6 +2366,7 @@ function defaultVisualRuntimeSettings(): VisualRuntimeSettings {
   return {
     thinkingVolume: defaultVisualThinkingVolume,
     responseLanguage: "auto",
+    reactionMode: "audio_circle",
     chatHistoryEnabled: true,
     hudEnabled: true,
     hudCompact: false,
@@ -2389,6 +2391,7 @@ function visualRuntimeSettingsFromFile(settings: VoiceVisualFileConfig | undefin
   return sanitizeVisualRuntimeSettings({
     thinkingVolume: parsePersistedNumber(settings?.thinkingVolume),
     responseLanguage: parseVisualResponseLanguage(settings?.responseLanguage),
+    reactionMode: parseVisualReactionMode(settings?.reactionMode),
     chatHistoryEnabled: typeof settings?.chatHistoryEnabled === "boolean" ? settings.chatHistoryEnabled : undefined,
     hudEnabled: typeof settings?.hudEnabled === "boolean" ? settings.hudEnabled : undefined,
     hudCompact: typeof settings?.hudCompact === "boolean" ? settings.hudCompact : undefined,
@@ -2411,6 +2414,7 @@ function sanitizeVisualRuntimeSettings(
       ? fallback.thinkingVolume ?? defaultVisualThinkingVolume
       : clamp(settings.thinkingVolume, 0, 0.8),
     responseLanguage: settings.responseLanguage ?? fallback.responseLanguage ?? "auto",
+    reactionMode: settings.reactionMode ?? fallback.reactionMode ?? "audio_circle",
     chatHistoryEnabled: settings.chatHistoryEnabled ?? fallback.chatHistoryEnabled ?? true,
     hudEnabled: settings.hudEnabled ?? fallback.hudEnabled ?? true,
     hudCompact: settings.hudCompact ?? fallback.hudCompact ?? false,
@@ -2424,6 +2428,10 @@ function sanitizeVisualRuntimeSettings(
 
 function parseVisualResponseLanguage(value: unknown): VisualRuntimeSettings["responseLanguage"] | undefined {
   return value === "auto" || value === "ko" || value === "en" ? value : undefined;
+}
+
+function parseVisualReactionMode(value: unknown): VisualRuntimeSettings["reactionMode"] | undefined {
+  return value === "audio_circle" || value === "particle_orb" ? value : undefined;
 }
 
 function ttsFileConfigFromVisualSettings(settings: VisualTtsSettings): VoiceTtsFileConfig {

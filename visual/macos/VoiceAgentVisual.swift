@@ -96,6 +96,9 @@ private let visualTextEn: [String: String] = [
     "popupPreferred": "Prefer popup for long answers",
     "speakWakeWarning": "Speak wake warning",
     "alwaysStartNewThread": "Always start new thread",
+    "reactionMode": "Reaction design",
+    "reactionAudioCircle": "Audio circle",
+    "reactionParticleOrb": "Particle orb",
     "language": "Language",
     "gender": "Gender",
     "voice": "Voice",
@@ -150,6 +153,7 @@ private let visualTextEn: [String: String] = [
     "chatHelp": "Shows or hides the Recent Q/A panel.",
     "hudHelp": "Shows or hides the floating HUD above other apps.",
     "popupHelp": "Lets long or study-oriented answers open in a native popup instead of being spoken in full.",
+    "reactionModeHelp": "Chooses the reactive visual surface. Audio circle keeps the original design; Particle orb adds a glowing point-sphere mode.",
     "wakeWarningHelp": "Controls whether wake mismatch warnings are spoken aloud.",
     "wakePhrasesHelp": "Wake phrase list. One phrase per line replaces the current list.",
     "stopPhrasesHelp": "Phrases spoken after a wake phrase that stop current speech or work.",
@@ -254,6 +258,9 @@ private let visualTextKo: [String: String] = [
     "popupPreferred": "긴 답변 팝업 선호",
     "speakWakeWarning": "호출어 경고 말하기",
     "alwaysStartNewThread": "항상 새 스레드로 시작",
+    "reactionMode": "반응 디자인",
+    "reactionAudioCircle": "Audio circle",
+    "reactionParticleOrb": "Particle orb",
     "language": "언어",
     "gender": "성별",
     "voice": "음성",
@@ -308,6 +315,7 @@ private let visualTextKo: [String: String] = [
     "chatHelp": "최근 질문과 답변 패널 표시 여부입니다.",
     "hudHelp": "다른 앱 위에 뜨는 floating HUD 표시 여부입니다.",
     "popupHelp": "긴 설명이나 공부용 답변을 전부 읽지 않고 네이티브 팝업으로 띄웁니다.",
+    "reactionModeHelp": "상태와 음량에 반응하는 비주얼을 고릅니다. Audio circle은 기존 디자인이고 Particle orb는 빛나는 점 구체 모드입니다.",
     "wakeWarningHelp": "호출어 불일치 안내를 TTS로 읽을지 정합니다.",
     "wakePhrasesHelp": "호출어 목록입니다. 줄마다 하나씩 입력하면 기존 목록을 대체합니다.",
     "stopPhrasesHelp": "작업 중 호출어 뒤에 말하면 정지로 처리할 문구입니다.",
@@ -443,6 +451,17 @@ private func gestureRunningModeDisplayName(_ value: String, language: UiLanguage
         return localizedText("gestureRunEmergencyOnly", language: language)
     case "off":
         return localizedText("gestureRunOff", language: language)
+    default:
+        return value
+    }
+}
+
+private func reactionModeDisplayName(_ value: String, language: UiLanguage) -> String {
+    switch value {
+    case "particle_orb":
+        return localizedText("reactionParticleOrb", language: language)
+    case "audio_circle":
+        return localizedText("reactionAudioCircle", language: language)
     default:
         return value
     }
@@ -936,11 +955,275 @@ final class AgentCircleView: NSView {
     }
 }
 
+private struct OrbParticleSample {
+    let theta: CGFloat
+    let phi: CGFloat
+    let seed: CGFloat
+    let band: CGFloat
+    let size: CGFloat
+}
+
+final class ParticleOrbView: NSView {
+    var state = "idle" {
+        didSet { needsDisplay = true }
+    }
+    var statusText = "waiting for bridge" {
+        didSet { needsDisplay = true }
+    }
+    var rms: CGFloat = 0 {
+        didSet { needsDisplay = true }
+    }
+    var peak: CGFloat = 0 {
+        didSet { needsDisplay = true }
+    }
+    var glow: CGFloat = 0 {
+        didSet { needsDisplay = true }
+    }
+    var compactStatusStyle = false {
+        didSet { needsDisplay = true }
+    }
+    private var phase: CGFloat = 0
+    private let particles: [OrbParticleSample]
+
+    override init(frame frameRect: NSRect) {
+        particles = Self.makeParticles(count: 720)
+        super.init(frame: frameRect)
+        Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.phase += 0.018 + self.statePhaseBoost()
+            self.glow = max(0, self.glow - 0.022)
+            self.needsDisplay = true
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedRed: 0.03, green: 0.04, blue: 0.06, alpha: 1).setFill()
+        dirtyRect.fill()
+
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let side = min(bounds.width, bounds.height)
+        let activity = max(rms, peak * 0.5, glow * 0.92, stateActivityFloor())
+        let breath = sin(phase * 1.7) * 0.5 + 0.5
+        let baseRadius = side * (0.25 + activity * 0.032 + breath * 0.012)
+        let pulse = max(0, peak - 0.18) * 28 + glow * 16
+
+        drawBloom(center: center, radius: baseRadius * (2.2 + activity * 0.7), activity: activity)
+        drawOrbitRings(center: center, radius: baseRadius, activity: activity)
+        drawParticles(center: center, baseRadius: baseRadius + pulse, activity: activity, breath: breath)
+        drawCore(center: center, radius: max(20, baseRadius * 0.30), activity: activity)
+        drawStatusText()
+    }
+
+    private static func makeParticles(count: Int) -> [OrbParticleSample] {
+        let goldenAngle = CGFloat.pi * (3 - sqrt(CGFloat(5)))
+        return (0..<count).map { index in
+            let t = (CGFloat(index) + 0.5) / CGFloat(count)
+            let y = 1 - 2 * t
+            let radius = sqrt(max(0, 1 - y * y))
+            let theta = CGFloat(index) * goldenAngle
+            let phi = acos(y)
+            let seed = CGFloat((index * 37) % 97) / 97
+            let band = CGFloat(index % 5) / 4
+            let size = 1.0 + CGFloat(index % 7) * 0.13 + radius * 0.35
+            return OrbParticleSample(theta: theta, phi: phi, seed: seed, band: band, size: size)
+        }
+    }
+
+    private func drawParticles(center: CGPoint, baseRadius: CGFloat, activity: CGFloat, breath: CGFloat) {
+        let rotationY = phase * 0.34
+        let rotationX = sin(phase * 0.23) * 0.28
+        let shake = rms * 26 + peak * 20 + glow * 18
+        let sortedParticles = particles.map { sample -> (sample: OrbParticleSample, x: CGFloat, y: CGFloat, z: CGFloat) in
+            let sinPhi = sin(sample.phi)
+            let localNoise = particleNoise(sample, speed: 1.0 + sample.band)
+            let radius = baseRadius + localNoise * (4 + shake * (0.45 + sample.band * 0.65)) + breath * 3
+            let rawX = cos(sample.theta) * sinPhi
+            let rawY = sin(sample.theta) * sinPhi
+            let rawZ = cos(sample.phi)
+            let yRotX = rawX * cos(rotationY) + rawZ * sin(rotationY)
+            let yRotZ = -rawX * sin(rotationY) + rawZ * cos(rotationY)
+            let xRotY = rawY * cos(rotationX) - yRotZ * sin(rotationX)
+            let xRotZ = rawY * sin(rotationX) + yRotZ * cos(rotationX)
+            return (sample, yRotX * radius, xRotY * radius, xRotZ)
+        }.sorted { $0.z < $1.z }
+
+        for item in sortedParticles {
+            let depth = (item.z + 1) * 0.5
+            let projection = 0.76 + depth * 0.34
+            let point = CGPoint(
+                x: center.x + item.x * projection,
+                y: center.y + item.y * projection
+            )
+            let sparkle = max(0, particleNoise(item.sample, speed: 2.9))
+            let size = item.sample.size * (0.8 + depth * 1.8) + activity * 2.4 + sparkle * peak * 3.2
+            let alpha = min(0.96, max(0.08, 0.15 + depth * 0.54 + activity * 0.22 + glow * 0.22))
+            let hue = wrapHue(stateHue() + item.sample.band * 0.055 + depth * 0.022 + sparkle * 0.016)
+            let color = NSColor(calibratedHue: hue, saturation: 0.92, brightness: 0.98, alpha: alpha)
+
+            if depth > 0.52 || glow > 0.25 {
+                color.withAlphaComponent(alpha * 0.18).setFill()
+                NSBezierPath(ovalIn: NSRect(
+                    x: point.x - size * 1.9,
+                    y: point.y - size * 1.9,
+                    width: size * 3.8,
+                    height: size * 3.8
+                )).fill()
+            }
+
+            color.setFill()
+            NSBezierPath(ovalIn: NSRect(
+                x: point.x - size * 0.5,
+                y: point.y - size * 0.5,
+                width: size,
+                height: size
+            )).fill()
+        }
+    }
+
+    private func drawBloom(center: CGPoint, radius: CGFloat, activity: CGFloat) {
+        guard let gradient = NSGradient(colors: [
+            NSColor(calibratedHue: stateHue(), saturation: 0.90, brightness: 0.88, alpha: 0.28 + activity * 0.18),
+            NSColor(calibratedHue: wrapHue(stateHue() + 0.16), saturation: 0.82, brightness: 0.52, alpha: 0.02)
+        ]) else { return }
+
+        gradient.draw(
+            fromCenter: center,
+            radius: radius * 0.08,
+            toCenter: center,
+            radius: radius,
+            options: []
+        )
+    }
+
+    private func drawOrbitRings(center: CGPoint, radius: CGFloat, activity: CGFloat) {
+        for orbit in 0..<3 {
+            let path = NSBezierPath()
+            let width = radius * (1.82 + CGFloat(orbit) * 0.22 + activity * 0.10)
+            let height = radius * (0.62 + CGFloat(orbit) * 0.08)
+            let rotation = (CGFloat(orbit) * 34 + phase * (8 + CGFloat(orbit) * 2)) * CGFloat.pi / 180
+            let steps = 96
+            for index in 0...steps {
+                let angle = CGFloat(index) / CGFloat(steps) * CGFloat.pi * 2
+                let x = cos(angle) * width / 2
+                let y = sin(angle) * height / 2
+                let point = CGPoint(
+                    x: center.x + x * cos(rotation) - y * sin(rotation),
+                    y: center.y + x * sin(rotation) + y * cos(rotation)
+                )
+                if index == 0 {
+                    path.move(to: point)
+                } else {
+                    path.line(to: point)
+                }
+            }
+            path.lineWidth = 0.9 + activity * 1.0
+            NSColor(calibratedHue: wrapHue(stateHue() + CGFloat(orbit) * 0.06), saturation: 0.86, brightness: 0.92, alpha: 0.14 + activity * 0.12).setStroke()
+            path.stroke()
+        }
+    }
+
+    private func drawCore(center: CGPoint, radius: CGFloat, activity: CGFloat) {
+        guard let gradient = NSGradient(colors: [
+            NSColor(calibratedHue: stateHue(), saturation: 0.95, brightness: 0.92, alpha: 0.42 + activity * 0.22),
+            NSColor(calibratedHue: wrapHue(stateHue() + 0.10), saturation: 0.78, brightness: 0.38, alpha: 0.02)
+        ]) else { return }
+
+        gradient.draw(
+            fromCenter: center,
+            radius: 0,
+            toCenter: center,
+            radius: radius * (2.2 + activity),
+            options: []
+        )
+    }
+
+    private func drawStatusText() {
+        let expandedText = bounds.width >= 320 || bounds.height >= 320
+        let compactStateText = compactStatusStyle || (!expandedText && state != "approval_pending" && state != "wake_rejected")
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = compactStateText ? .byTruncatingTail : .byWordWrapping
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: state == "approval_pending" || state == "wake_rejected" ? 13 : 15, weight: .semibold),
+            .foregroundColor: NSColor(calibratedRed: 0.90, green: 0.94, blue: 0.99, alpha: 1),
+            .paragraphStyle: paragraph
+        ]
+        let textHeight = state == "approval_pending"
+            ? min(max(bounds.height * 0.46, 156), 240)
+            : state == "wake_rejected"
+                ? min(max(bounds.height * 0.38, 128), 198)
+            : expandedText ? min(max(bounds.height * 0.28, 82), 140) : min(max(bounds.height * 0.18, 54), 76)
+        let textInset: CGFloat = compactStateText ? 8 : 24
+        let textRect = NSRect(x: textInset, y: 16, width: bounds.width - textInset * 2, height: textHeight)
+        (statusText as NSString).draw(
+            with: textRect,
+            options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+            attributes: attrs
+        )
+    }
+
+    private func particleNoise(_ sample: OrbParticleSample, speed: CGFloat) -> CGFloat {
+        sin(sample.theta * 4.7 + phase * speed + sample.seed * 8.1) * 0.45
+            + sin(sample.phi * 8.3 - phase * (0.72 + sample.band) + sample.seed * 5.4) * 0.32
+            + sin((sample.theta + sample.phi) * 14.0 + phase * 0.48) * 0.18
+    }
+
+    private func stateHue() -> CGFloat {
+        switch state {
+        case "approval_pending": return 0.128
+        case "error": return 0.958
+        case "wake_rejected": return 0.972
+        case "stt_processing": return 0.550
+        case "submitting": return 0.100
+        case "speaking": return 0.528
+        case "wake_matched": return 0.067
+        case "listening": return 0.411
+        case "thinking", "running": return 0.728
+        default: return 0.583
+        }
+    }
+
+    private func stateActivityFloor() -> CGFloat {
+        switch state {
+        case "speaking": return 0.42 + sin(phase * 2.2) * 0.08
+        case "stt_processing": return 0.50
+        case "submitting": return 0.62
+        case "thinking", "running": return 0.30
+        case "approval_pending": return 0.34
+        case "wake_rejected": return 0.70
+        case "wake_matched": return 0.72
+        case "listening": return 0.18
+        default: return 0.06
+        }
+    }
+
+    private func statePhaseBoost() -> CGFloat {
+        switch state {
+        case "speaking": return 0.026
+        case "stt_processing": return 0.045
+        case "submitting": return 0.054
+        case "wake_rejected": return 0.074
+        case "thinking", "running": return 0.020
+        default: return 0
+        }
+    }
+
+    private func wrapHue(_ value: CGFloat) -> CGFloat {
+        let wrapped = value.truncatingRemainder(dividingBy: 1)
+        return wrapped < 0 ? wrapped + 1 : wrapped
+    }
+}
+
 final class VisualRootView: NSView {
     var uiLanguage: UiLanguage = .en {
         didSet { applyLocalization() }
     }
     private let circleView: AgentCircleView
+    private let particleOrbView: ParticleOrbView
     private let commandView: NSTextView
     private let contextField: NSTextField
     private let contextSummary: NSTextField
@@ -965,6 +1248,7 @@ final class VisualRootView: NSView {
     private var chatPanelOpen = true
     private var micEnabled = true
     private var cameraEnabled = false
+    private var reactionMode = "audio_circle"
     private var currentSessionId = ""
     private var currentUsage = ""
     private var currentCamera = ""
@@ -973,6 +1257,7 @@ final class VisualRootView: NSView {
 
     init(
         circleView: AgentCircleView,
+        particleOrbView: ParticleOrbView,
         commandView: NSTextView,
         contextField: NSTextField,
         contextSummary: NSTextField,
@@ -983,6 +1268,7 @@ final class VisualRootView: NSView {
         controls: NSStackView
     ) {
         self.circleView = circleView
+        self.particleOrbView = particleOrbView
         self.commandView = commandView
         self.contextField = contextField
         self.contextSummary = contextSummary
@@ -998,6 +1284,9 @@ final class VisualRootView: NSView {
 
         circleView.autoresizingMask = []
         addSubview(circleView)
+        particleOrbView.autoresizingMask = []
+        particleOrbView.isHidden = true
+        addSubview(particleOrbView)
 
         questionView.isHidden = true
         addSubview(questionView)
@@ -1291,6 +1580,7 @@ final class VisualRootView: NSView {
             width: circleViewWidth,
             height: circleSize
         )
+        particleOrbView.frame = circleView.frame
 
         let questionHeight: CGFloat = expanded ? 58 : 50
         questionView.fontSize = expanded ? 17 : 15
@@ -1320,6 +1610,13 @@ final class VisualRootView: NSView {
     func updateCameraEnabled(_ enabled: Bool) {
         cameraEnabled = enabled
         applyLocalization()
+    }
+
+    func updateReactionMode(_ mode: String) {
+        reactionMode = mode == "particle_orb" ? "particle_orb" : "audio_circle"
+        circleView.isHidden = reactionMode != "audio_circle"
+        particleOrbView.isHidden = reactionMode != "particle_orb"
+        needsLayout = true
     }
 
     func updateContextSummary(_ count: Int) {
@@ -1883,6 +2180,7 @@ final class MenuBarCompanion {
     private let questionLabel = NSTextField(wrappingLabelWithString: "Q: none")
     private let usageLabel = NSTextField(labelWithString: "")
     private let hudCircle = AgentCircleView(frame: .zero)
+    private let hudOrb = ParticleOrbView(frame: .zero)
     private let hudStateLabel = NSTextField(labelWithString: "idle")
     private let hudDetailLabel = NSTextField(wrappingLabelWithString: "waiting for bridge")
     private let hudQuestionLabel = NSTextField(wrappingLabelWithString: "")
@@ -1901,6 +2199,7 @@ final class MenuBarCompanion {
     private var onHudCompactChange: ((Bool) -> Void)?
     private var hudEnabled = true
     private var hudCompact = false
+    private var reactionMode = "audio_circle"
     private var micEnabled = true
     private var cameraEnabled = false
     private var currentState = "idle"
@@ -1962,6 +2261,11 @@ final class MenuBarCompanion {
         applyLocalization()
     }
 
+    func setReactionMode(_ mode: String) {
+        reactionMode = mode == "particle_orb" ? "particle_orb" : "audio_circle"
+        applyHudLayout()
+    }
+
     func updateMicEnabled(_ enabled: Bool) {
         micEnabled = enabled
         applyLocalization()
@@ -1981,6 +2285,8 @@ final class MenuBarCompanion {
         detailLabel.stringValue = displayText(text, state: state, language: uiLanguage)
         hudCircle.state = state
         hudCircle.statusText = stateText(state, language: uiLanguage)
+        hudOrb.state = state
+        hudOrb.statusText = stateText(state, language: uiLanguage)
         hudStateLabel.stringValue = stateText(state, language: uiLanguage)
         hudDetailLabel.stringValue = displayText(text, state: state, language: uiLanguage)
     }
@@ -2027,6 +2333,8 @@ final class MenuBarCompanion {
     func updateVolume(rms: CGFloat, peak: CGFloat) {
         hudCircle.rms = rms
         hudCircle.peak = peak
+        hudOrb.rms = rms
+        hudOrb.peak = peak
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -2157,6 +2465,10 @@ final class MenuBarCompanion {
         hudCircle.frame = hudCompact
             ? NSRect(x: 12, y: 12, width: 92, height: 92)
             : NSRect(x: 14, y: 132, width: 110, height: 110)
+        hudOrb.compactStatusStyle = true
+        hudOrb.frame = hudCircle.frame
+        hudCircle.isHidden = reactionMode != "audio_circle"
+        hudOrb.isHidden = reactionMode != "particle_orb"
 
         hudStateLabel.isHidden = hudCompact
         hudDetailLabel.isHidden = hudCompact
@@ -2263,6 +2575,10 @@ final class MenuBarCompanion {
         hudCircle.compactStatusStyle = true
         hudCircle.frame = NSRect(x: 14, y: 132, width: 110, height: 110)
         view.addSubview(hudCircle)
+        hudOrb.compactStatusStyle = true
+        hudOrb.frame = hudCircle.frame
+        hudOrb.isHidden = true
+        view.addSubview(hudOrb)
 
         hudStateLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
         hudStateLabel.textColor = NSColor(calibratedRed: 0.53, green: 0.78, blue: 1.0, alpha: 1)
@@ -2899,6 +3215,7 @@ private func markdownAttributedString(_ markdown: String) -> NSAttributedString 
 final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     private let bridgeUrl: String
     private let circleView = AgentCircleView(frame: .zero)
+    private let particleOrbView = ParticleOrbView(frame: .zero)
     private weak var rootView: VisualRootView?
     private var mainWindow: NSWindow?
     private let menuBarCompanion = MenuBarCompanion()
@@ -2921,6 +3238,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private let settingsVolumeField = NSTextField(string: "1.00")
     private let settingsThinkingVolumeField = NSTextField(string: "0.32")
     private let settingsMaxUtteranceField = NSTextField(string: "15")
+    private let settingsReactionModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let settingsChatHistoryCheckbox = NSButton(checkboxWithTitle: "Show Recent Q/A panel", target: nil, action: nil)
     private let settingsHudCheckbox = NSButton(checkboxWithTitle: "Show floating HUD", target: nil, action: nil)
     private let settingsPopupPreferredCheckbox = NSButton(checkboxWithTitle: "Prefer popup for long answers", target: nil, action: nil)
@@ -2955,6 +3273,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private var thinkingVolume = 0.32
     private var maxUtteranceSeconds = 15.0
     private var responseLanguage = "auto"
+    private var reactionMode = "audio_circle"
     private var chatHistoryEnabled = true
     private var hudEnabled = true
     private var hudCompact = false
@@ -3012,6 +3331,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         )
         menuBarCompanion.uiLanguage = uiLanguage
         menuBarCompanion.updateMicEnabled(micEnabled)
+        menuBarCompanion.setReactionMode(reactionMode)
         menuBarCompanion.setHudCompact(hudCompact)
         connect()
     }
@@ -3054,6 +3374,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
         let rootView = VisualRootView(
             circleView: circleView,
+            particleOrbView: particleOrbView,
             commandView: commandView,
             contextField: contextField,
             contextSummary: contextSummary,
@@ -3069,6 +3390,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         rootView.updateChatHistory(enabled: chatHistoryEnabled)
         rootView.updateMicEnabled(micEnabled)
         rootView.updateCameraEnabled(cameraEnabled)
+        rootView.updateReactionMode(reactionMode)
         return rootView
     }
 
@@ -3133,16 +3455,19 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     private func connect() {
         guard let url = URL(string: bridgeUrl), !bridgeUrl.isEmpty else {
             circleView.statusText = localizedText("waitingForBridge", language: uiLanguage)
+            particleOrbView.statusText = circleView.statusText
             menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             return
         }
 
         circleView.statusText = localizedText("connecting", language: uiLanguage)
+        particleOrbView.statusText = circleView.statusText
         menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
         let task = URLSession.shared.webSocketTask(with: url)
         webSocket = task
         task.resume()
         circleView.statusText = localizedText("connected", language: uiLanguage)
+        particleOrbView.statusText = circleView.statusText
         menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
         receiveNext()
     }
@@ -3161,6 +3486,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 DispatchQueue.main.async {
                     self.circleView.state = "error"
                     self.circleView.statusText = localizedText("bridgeDisconnected", language: self.uiLanguage)
+                    self.particleOrbView.state = "error"
+                    self.particleOrbView.statusText = self.circleView.statusText
                     self.menuBarCompanion.update(state: "error", text: self.circleView.statusText)
                     self.thinkingPulseSound.setActive(false)
                 }
@@ -3180,26 +3507,37 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         case "state":
             circleView.state = event["state"] as? String ?? "idle"
             circleView.statusText = displayText(event["text"] as? String ?? "", state: circleView.state, language: uiLanguage)
+            particleOrbView.state = circleView.state
+            particleOrbView.statusText = circleView.statusText
             menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             if circleView.state == "wake_rejected" {
                 circleView.glow = 1
+                particleOrbView.glow = 1
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) { [weak self] in
                     guard let self, self.circleView.state == "wake_rejected" else { return }
                     self.circleView.state = "idle"
                     self.circleView.statusText = stateText("idle", language: self.uiLanguage)
+                    self.particleOrbView.state = "idle"
+                    self.particleOrbView.statusText = self.circleView.statusText
                     self.menuBarCompanion.update(state: "idle", text: self.circleView.statusText)
                     self.circleView.glow = 0
+                    self.particleOrbView.glow = 0
                 }
             }
         case "volume":
             circleView.rms = min(1, max(0, CGFloat(event["rms"] as? Double ?? 0) * 14))
             circleView.peak = min(1, max(0, CGFloat(event["peak"] as? Double ?? 0) * 5))
+            particleOrbView.rms = circleView.rms
+            particleOrbView.peak = circleView.peak
             menuBarCompanion.updateVolume(rms: circleView.rms, peak: circleView.peak)
         case "wake":
             circleView.state = "wake_matched"
             circleView.statusText = localizedText("wakePrefix", language: uiLanguage) + (event["phrase"] as? String ?? "")
+            particleOrbView.state = circleView.state
+            particleOrbView.statusText = circleView.statusText
             menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
             circleView.glow = 1
+            particleOrbView.glow = 1
             NSSound.beep()
         case "question":
             let question = event["text"] as? String ?? ""
@@ -3219,17 +3557,22 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             circleView.state = "speaking"
             let speech = event["text"] as? String ?? stateText("speaking", language: uiLanguage)
             circleView.statusText = speech
+            particleOrbView.state = "speaking"
+            particleOrbView.statusText = speech
             rootView?.pushChat(role: "assistant", kind: "speech", text: speech)
             menuBarCompanion.update(state: "speaking", text: speech)
         case "status":
             let status = displayText(event["text"] as? String ?? localizedText("status", language: uiLanguage), state: "status", language: uiLanguage)
             circleView.statusText = status
+            particleOrbView.statusText = status
             rootView?.pushChat(role: "assistant", kind: "status", text: status)
             menuBarCompanion.update(state: circleView.state, text: status)
         case "error":
             circleView.state = "error"
             let error = displayText(event["text"] as? String ?? localizedText("error", language: uiLanguage), state: "error", language: uiLanguage)
             circleView.statusText = error
+            particleOrbView.state = "error"
+            particleOrbView.statusText = error
             rootView?.pushChat(role: "assistant", kind: "error", text: error)
             menuBarCompanion.update(state: "error", text: error)
         case "popup":
@@ -3246,6 +3589,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
             circleView.state = "approval_pending"
             let approval = event["text"] as? String ?? stateText("approval_pending", language: uiLanguage)
             circleView.statusText = approval
+            particleOrbView.state = "approval_pending"
+            particleOrbView.statusText = approval
             rootView?.pushChat(role: "assistant", kind: "status", text: approval)
             menuBarCompanion.update(state: "approval_pending", text: approval)
         case "usage":
@@ -3421,6 +3766,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         ttsVolume = clampedDouble(settingsVolumeField.stringValue, fallback: ttsVolume, min: 0, max: 1)
         thinkingVolume = clampedDouble(settingsThinkingVolumeField.stringValue, fallback: thinkingVolume, min: 0, max: 0.8)
         maxUtteranceSeconds = clampedDouble(settingsMaxUtteranceField.stringValue, fallback: maxUtteranceSeconds, min: 5, max: 55)
+        reactionMode = normalizedReactionMode(settingsReactionModePopup.selectedRepresentedValue(fallback: "audio_circle"))
         responseLanguage = ttsLanguage
         chatHistoryEnabled = settingsChatHistoryCheckbox.state == .on
         hudEnabled = settingsHudCheckbox.state == .on
@@ -3429,7 +3775,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         codexAlwaysStartNewThread = settingsNewThreadCheckbox.state == .on
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: chatHistoryEnabled)
+        rootView?.updateReactionMode(reactionMode)
         menuBarCompanion.setHudEnabled(hudEnabled)
+        menuBarCompanion.setReactionMode(reactionMode)
         menuBarCompanion.setHudCompact(hudCompact)
         wakePhrases = normalizedPhrases([settingsWakePhrasesView.string])
         stopPhrases = normalizedPhrases([settingsStopPhrasesView.string])
@@ -3460,6 +3808,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     @objc private func resetSettings() {
         thinkingVolume = 0.32
         maxUtteranceSeconds = 15
+        reactionMode = "audio_circle"
         chatHistoryEnabled = true
         hudEnabled = true
         hudCompact = false
@@ -3475,7 +3824,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         customGestureTemplates = []
         thinkingPulseSound.volume = Float(thinkingVolume)
         rootView?.updateChatHistory(enabled: true)
+        rootView?.updateReactionMode(reactionMode)
         menuBarCompanion.setHudEnabled(true)
+        menuBarCompanion.setReactionMode(reactionMode)
         menuBarCompanion.setHudCompact(false)
         syncSettingsControls()
         sendControl("reset_settings")
@@ -3556,6 +3907,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsNewThreadCheckbox.title = localizedText("alwaysStartNewThread", language: uiLanguage)
         popupPanel.updateLanguage(uiLanguage)
         circleView.statusText = displayText(circleView.statusText, state: circleView.state, language: uiLanguage)
+        particleOrbView.state = circleView.state
+        particleOrbView.statusText = circleView.statusText
         menuBarCompanion.update(state: circleView.state, text: circleView.statusText)
     }
 
@@ -3569,6 +3922,11 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         if let value = settings["responseLanguage"] as? String {
             responseLanguage = normalizedLanguage(value)
             ttsLanguage = responseLanguage
+        }
+        if let value = settings["reactionMode"] as? String {
+            reactionMode = normalizedReactionMode(value)
+            rootView?.updateReactionMode(reactionMode)
+            menuBarCompanion.setReactionMode(reactionMode)
         }
         if let value = settings["chatHistoryEnabled"] as? Bool {
             chatHistoryEnabled = value
@@ -3666,7 +4024,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func makeSettingsWindow() -> NSWindow {
         let contentWidth: CGFloat = 380
-        let contentHeight: CGFloat = 1320
+        let contentHeight: CGFloat = 1360
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -3692,6 +4050,9 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
         settingsLanguagePopup.addItemsIfNeeded(["auto", "ko", "en"])
         settingsGenderPopup.addItemsIfNeeded(["auto", "female", "male"])
+        settingsReactionModePopup.addValueItemsIfNeeded(["audio_circle", "particle_orb"]) {
+            reactionModeDisplayName($0, language: uiLanguage)
+        }
         reloadGestureOptionControls()
         settingsGestureRunningModePopup.addValueItemsIfNeeded(["off", "emergency_only"]) {
             gestureRunningModeDisplayName($0, language: uiLanguage)
@@ -3704,6 +4065,8 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsCustomGestureClearButton.target = self
         settingsCustomGestureClearButton.action = #selector(clearCustomGestureTemplatesFromSettings)
 
+        addSettingsRow(view, label: localizedText("reactionMode", language: uiLanguage), control: settingsReactionModePopup, y: 1286)
+        addSettingsHelp(view, y: 1286, text: localizedText("reactionModeHelp", language: uiLanguage))
         addSettingsRow(view, label: localizedText("gestureWake", language: uiLanguage), control: settingsGestureWakePopup, y: 1246)
         addSettingsHelp(view, y: 1246, text: localizedText("gestureHelp", language: uiLanguage))
         addSettingsRow(view, label: localizedText("gestureStop", language: uiLanguage), control: settingsGestureStopPopup, y: 1212)
@@ -3925,6 +4288,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         settingsVolumeField.stringValue = String(format: "%.2f", ttsVolume)
         settingsThinkingVolumeField.stringValue = String(format: "%.2f", thinkingVolume)
         settingsMaxUtteranceField.stringValue = String(format: "%.0f", maxUtteranceSeconds)
+        settingsReactionModePopup.selectRepresentedValue(reactionMode)
         settingsChatHistoryCheckbox.state = chatHistoryEnabled ? .on : .off
         settingsHudCheckbox.state = hudEnabled ? .on : .off
         settingsPopupPreferredCheckbox.state = popupPreferred ? .on : .off
@@ -4050,6 +4414,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "thinkingVolume": thinkingVolume,
                 "maxUtteranceSeconds": maxUtteranceSeconds,
                 "responseLanguage": responseLanguage,
+                "reactionMode": reactionMode,
                 "chatHistoryEnabled": chatHistoryEnabled,
                 "hudEnabled": hudEnabled,
                 "hudCompact": hudCompact,
@@ -4068,6 +4433,7 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
                 "thinkingVolume": thinkingVolume,
                 "maxUtteranceSeconds": maxUtteranceSeconds,
                 "responseLanguage": responseLanguage,
+                "reactionMode": reactionMode,
                 "chatHistoryEnabled": chatHistoryEnabled,
                 "hudEnabled": hudEnabled,
                 "hudCompact": hudCompact,
@@ -4079,6 +4445,10 @@ final class VisualAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
     private func normalizedLanguage(_ value: String) -> String {
         value == "ko" || value == "en" || value == "auto" ? value : "auto"
+    }
+
+    private func normalizedReactionMode(_ value: String) -> String {
+        value == "particle_orb" ? "particle_orb" : "audio_circle"
     }
 
     private func normalizedGestureName(_ value: String, allowNone: Bool) -> String {

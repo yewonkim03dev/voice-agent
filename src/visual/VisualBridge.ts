@@ -55,6 +55,7 @@ export interface VisualTtsSettings {
 export interface VisualRuntimeSettings {
   thinkingVolume?: number;
   responseLanguage?: "ko" | "en" | "auto";
+  reactionMode?: "audio_circle" | "particle_orb";
   chatHistoryEnabled?: boolean;
   hudEnabled?: boolean;
   hudCompact?: boolean;
@@ -530,6 +531,7 @@ function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRunt
       ? { thinkingVolume: clamp(record.thinkingVolume, 0, 0.8) }
       : {}),
     ...(isVisualLanguage(record.responseLanguage) ? { responseLanguage: record.responseLanguage } : {}),
+    ...(isVisualReactionMode(record.reactionMode) ? { reactionMode: record.reactionMode } : {}),
     ...(typeof record.chatHistoryEnabled === "boolean" ? { chatHistoryEnabled: record.chatHistoryEnabled } : {}),
     ...(typeof record.hudEnabled === "boolean" ? { hudEnabled: record.hudEnabled } : {}),
     ...(typeof record.hudCompact === "boolean" ? { hudCompact: record.hudCompact } : {}),
@@ -545,6 +547,10 @@ function parseVisualRuntimeSettings(record: Record<string, unknown>): VisualRunt
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isVisualReactionMode(value: unknown): value is NonNullable<VisualRuntimeSettings["reactionMode"]> {
+  return value === "audio_circle" || value === "particle_orb";
 }
 
 function isVisualLanguage(value: unknown): value is NonNullable<VisualTtsSettings["language"]> {
