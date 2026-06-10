@@ -172,6 +172,22 @@ test("voice runner routes English STT transcript through wake pass-through", asy
   assert.equal(backend.prompts[0].text, "run npm test");
 });
 
+test("voice runner opens the visual companion from a terminal command", async () => {
+  let visualRequests = 0;
+  const { backend, runner } = createVoiceRunner([], {
+    onVisualRequest: async () => {
+      visualRequests += 1;
+    }
+  });
+
+  await runner.start();
+  await runner.processLine("/visual");
+  await runner.stop();
+
+  assert.equal(visualRequests, 1);
+  assert.equal(backend.prompts.length, 0);
+});
+
 test("voice runner appends /add text to the next manual STT transcript", async () => {
   const { backend, runner, audioInput } = createVoiceRunner([
     {
@@ -441,6 +457,7 @@ test("always-on voice runner prints complete voice help", async () => {
 
   assert.ok(logs.includes("Commands:"));
   assert.ok(logs.includes("  /record starts or stops manual recording."));
+  assert.ok(logs.includes("  /visual opens the Visual/HUD companion."));
   assert.ok(logs.includes("  /mic toggles microphone listening on/off."));
   assert.ok(logs.includes("  /mic-reconnect rebuilds or restarts microphone input."));
   assert.ok(logs.includes("  /cam toggles camera gesture wake on/off."));
@@ -455,6 +472,22 @@ test("always-on voice runner prints complete voice help", async () => {
   assert.ok(logs.includes("  --visual open the Visual/HUD companion."));
   assert.ok(logs.includes("Backend/TTS run options:"));
   assert.ok(logs.includes("  --codex, --real use the Codex app-server backend."));
+});
+
+test("always-on voice runner opens the visual companion from a terminal command", async () => {
+  let visualRequests = 0;
+  const { backend, runner } = createAlwaysOnRunner([], {
+    onVisualRequest: async () => {
+      visualRequests += 1;
+    }
+  });
+
+  await runner.start();
+  await runner.processLine("/visual");
+  await runner.stop();
+
+  assert.equal(visualRequests, 1);
+  assert.equal(backend.prompts.length, 0);
 });
 
 test("always-on voice runner prints camera test guidance without requesting permission when --cam is absent", async () => {
@@ -3001,6 +3034,7 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[settings:error] settings write failed"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  Wake: 코덱스 <명령>"), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /help shows available terminal commands."), true);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("  /visual opens the Visual/HUD companion."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /mic toggles microphone listening on/off."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /cam toggles camera gesture wake on/off."), true);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("  /cam-test shows camera gesture test steps and current status."), true);
@@ -3016,7 +3050,7 @@ test("default voice harness output keeps user-facing lines and hides diagnostics
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[wake:candidate] start preRollFrames=8 preRollBytes=32768"), false);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[audio] bytes=1024 durationMs=100 rms=0.01 peak=0.1"), false);
   assert.equal(shouldWriteDefaultVoiceHarnessLine("[stt:apple] locale=ko-KR status=start"), false);
-  assert.equal(shouldWriteDefaultVoiceHarnessLine("[visual] listening on ws://127.0.0.1:1234"), false);
+  assert.equal(shouldWriteDefaultVoiceHarnessLine("[visual] listening on ws://127.0.0.1:1234"), true);
 });
 
 test("voice setup detection writes a config when recorder and STT commands exist", async () => {
@@ -3119,6 +3153,7 @@ function createVoiceRunner(
   transcripts: Array<{ text: string; language: Language }>,
   options: {
     writeLine?: (line: string) => void;
+    onVisualRequest?: () => Promise<void>;
   } = {}
 ): {
   backend: InMemoryAgentBackend;
@@ -3159,6 +3194,7 @@ function createVoiceRunner(
     gate,
     recordingController: controller,
     speechProcessor,
+    onVisualRequest: options.onVisualRequest,
     writeLine: options.writeLine
   });
 
@@ -3177,6 +3213,7 @@ function createAlwaysOnRunner(
     stopPhrases?: string[];
     voiceOutput?: VoiceOutput & { readonly messages: VoiceMessage[] };
     visualBridge?: VisualBridgeLike;
+    onVisualRequest?: () => Promise<void>;
     speechProcessor?: SpeechProcessor;
     wakeStreamDetector?: WakeStreamDetector;
     settingsPersistence?: VoiceSettingsPersistence;
@@ -3222,6 +3259,7 @@ function createAlwaysOnRunner(
     wakePhrases: options.wakePhrases ?? defaultWakePhrases,
     stopPhrases: options.stopPhrases,
     visualBridge: options.visualBridge,
+    onVisualRequest: options.onVisualRequest,
     settingsPersistence: options.settingsPersistence,
     gestureWake: options.gestureWake,
     cameraGestureEnabled: options.cameraGestureEnabled,

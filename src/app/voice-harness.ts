@@ -75,6 +75,7 @@ export interface VoiceHarnessRunnerOptions {
   recordingController: RecordingController;
   speechProcessor: SpeechProcessor;
   visualBridge?: VisualBridgeLike;
+  onVisualRequest?: () => Promise<void>;
   settingsPersistence?: VoiceSettingsPersistence;
   writeLine?: WriteLine;
   debug?: boolean;
@@ -88,6 +89,7 @@ export interface AlwaysOnVoiceHarnessRunnerOptions {
   speechProcessor: SpeechProcessor;
   wakePhrases: string[];
   visualBridge?: VisualBridgeLike;
+  onVisualRequest?: () => Promise<void>;
   settingsPersistence?: VoiceSettingsPersistence;
   writeLine?: WriteLine;
   debug?: boolean;
@@ -112,6 +114,7 @@ export class VoiceHarnessRunner {
   private readonly writeLine: WriteLine;
   private readonly debug: boolean;
   private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
+  private readonly onVisualRequest: (() => Promise<void>) | undefined;
   private readonly textContext: SupplementalTextBuffer;
   private readonly pendingTranscripts = new Set<Promise<void>>();
   private started = false;
@@ -124,6 +127,7 @@ export class VoiceHarnessRunner {
     this.writeLine = options.writeLine ?? noop;
     this.debug = options.debug ?? false;
     this.settingsPersistence = options.settingsPersistence;
+    this.onVisualRequest = options.onVisualRequest;
     this.textContext = new SupplementalTextBuffer(this.writeLine, (entries) =>
       sendVisualContextEvent(options.visualBridge, entries)
     );
@@ -145,6 +149,7 @@ export class VoiceHarnessRunner {
     this.started = true;
     this.writeLine(formatTerminalLabel("Voice input", "/record to start, /record again to stop."));
     this.writeLine(formatTerminalCommand("/help", "shows available terminal commands."));
+    this.writeLine(formatTerminalCommand("/visual", "opens the Visual/HUD companion."));
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
@@ -180,6 +185,11 @@ export class VoiceHarnessRunner {
       return "continue";
     }
 
+    if (isVisualCommand(text)) {
+      await this.requestVisualCompanion();
+      return "continue";
+    }
+
     if (text === "/quit") {
       await this.stop();
       this.writeLine("Harness stopped.");
@@ -209,6 +219,7 @@ export class VoiceHarnessRunner {
     this.writeLine(formatTerminalSection("Commands:"));
     this.writeLine(formatTerminalCommand("/help", "shows this command list."));
     this.writeLine(formatTerminalCommand("/record", "starts or stops manual recording."));
+    this.writeLine(formatTerminalCommand("/visual", "opens the Visual/HUD companion."));
     this.writeLine(formatTerminalCommand("/add <text>", "queues additional info for the next voice transcript."));
     this.writeLine(formatTerminalCommand("/refs", "lists queued additional info."));
     this.writeLine(formatTerminalCommand("/popups", "lists recent popup answers."));
@@ -226,6 +237,15 @@ export class VoiceHarnessRunner {
     for (const line of terminalBackendRunOptionLines()) {
       this.writeLine(line);
     }
+  }
+
+  private async requestVisualCompanion(): Promise<void> {
+    if (!this.onVisualRequest) {
+      this.writeLine("[visual] unavailable: visual launcher is not configured.");
+      return;
+    }
+
+    await this.onVisualRequest();
   }
 
   private async routeDirectText(text: string): Promise<void> {
@@ -288,6 +308,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private readonly writeLine: WriteLine;
   private readonly debug: boolean;
   private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
+  private readonly onVisualRequest: (() => Promise<void>) | undefined;
   private readonly echoGuard: EchoGuard;
   private readonly bargeInPolicy: BargeInPolicy;
   private readonly now: () => number;
@@ -340,6 +361,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine = options.writeLine ?? noop;
     this.debug = options.debug ?? false;
     this.settingsPersistence = options.settingsPersistence;
+    this.onVisualRequest = options.onVisualRequest;
     this.echoGuard = options.echoGuard ?? new EchoGuard();
     this.bargeInPolicy = options.bargeInPolicy ?? new BargeInPolicy({
       stopPhrases: options.stopPhrases
@@ -394,6 +416,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(formatTerminalLabel("Wake phrases", this.wakePhrases.join(", ")));
     this.writeLine(formatTerminalLabel("Manual fallback", "/record to start, /record again to stop."));
     this.writeLine(formatTerminalCommand("/help", "shows available terminal commands."));
+    this.writeLine(formatTerminalCommand("/visual", "opens the Visual/HUD companion."));
     this.writeLine(formatTerminalCommand("/mic", "toggles microphone listening on/off."));
     this.writeLine(formatTerminalCommand("/mic-reconnect", "rebuilds or restarts microphone input."));
     this.writeLine(formatTerminalCommand("/cam", "toggles camera gesture wake on/off."));
@@ -438,6 +461,11 @@ export class AlwaysOnVoiceHarnessRunner {
 
     if (text === "/record") {
       this.toggleManualRecording();
+      return "continue";
+    }
+
+    if (isVisualCommand(text)) {
+      await this.requestVisualCompanion();
       return "continue";
     }
 
@@ -514,6 +542,7 @@ export class AlwaysOnVoiceHarnessRunner {
     this.writeLine(formatTerminalSection("Commands:"));
     this.writeLine(formatTerminalCommand("/help", "shows this command list."));
     this.writeLine(formatTerminalCommand("/record", "starts or stops manual recording."));
+    this.writeLine(formatTerminalCommand("/visual", "opens the Visual/HUD companion."));
     this.writeLine(formatTerminalCommand("/mic", "toggles microphone listening on/off."));
     this.writeLine(formatTerminalCommand("/mic-reconnect", "rebuilds or restarts microphone input."));
     this.writeLine(formatTerminalCommand("/cam", "toggles camera gesture wake on/off."));
@@ -539,6 +568,15 @@ export class AlwaysOnVoiceHarnessRunner {
     for (const line of terminalBackendRunOptionLines()) {
       this.writeLine(line);
     }
+  }
+
+  private async requestVisualCompanion(): Promise<void> {
+    if (!this.onVisualRequest) {
+      this.writeLine("[visual] unavailable: visual launcher is not configured.");
+      return;
+    }
+
+    await this.onVisualRequest();
   }
 
   private async printCameraGestureTest(): Promise<void> {
@@ -1684,6 +1722,7 @@ export function createVoiceHarnessRunnerFromConfig(
     audioInput?: AudioInput;
     speechProcessor?: SpeechProcessor;
     visualBridge?: VisualBridgeLike;
+    onVisualRequest?: () => Promise<void>;
     settingsPersistence?: VoiceSettingsPersistence;
     codexThreadId?: string;
     codexAlwaysStartNewThread?: boolean;
@@ -1748,6 +1787,7 @@ export function createVoiceHarnessRunnerFromConfig(
     recordingController,
     speechProcessor,
     visualBridge: options.visualBridge,
+    onVisualRequest: options.onVisualRequest,
     writeLine,
     debug: options.debug
   });
@@ -1765,9 +1805,13 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     wakePhrases?: string[];
     debug?: boolean;
     visualBridge?: VisualBridgeLike;
+    onVisualRequest?: () => Promise<void>;
     settingsPersistence?: VoiceSettingsPersistence;
     codexThreadId?: string;
     codexAlwaysStartNewThread?: boolean;
+    cameraGestureEnabled?: boolean;
+    cameraGestureWatcher?: CameraGestureWatcher;
+    cameraPermissionManager?: CameraPermissionManager;
     onExitRequest?: () => void | Promise<void>;
     now?: () => number;
     createId?: (prefix: string) => string;
@@ -1826,6 +1870,7 @@ export function createAlwaysOnVoiceHarnessRunnerFromConfig(
     wakePhrases: options.wakePhrases ?? config.wakePhrases,
     stopPhrases: config.stopPhrases,
     visualBridge: options.visualBridge,
+    onVisualRequest: options.onVisualRequest,
     settingsPersistence: options.settingsPersistence,
     gestureWake: config.gestureWake,
     cameraGestureEnabled: options.cameraGestureEnabled,
@@ -1915,7 +1960,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
   if (visible.startsWith("[harness")) return true;
   if (visible.startsWith("[status]")) return true;
   if (visible.startsWith("[tts]")) return true;
-  if (visible.startsWith("[visual] unavailable")) return true;
+  if (visible.startsWith("[visual]")) return true;
   if (visible.startsWith("[voice:context]")) return true;
   if (visible.startsWith("[voice]")) return true;
   if (visible === "Harness stopped.") return true;
@@ -1943,6 +1988,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
     visible.startsWith("Wake phrases:") ||
     visible.startsWith("Manual fallback:") ||
     visible.startsWith("/help ") ||
+    visible.startsWith("/visual ") ||
     visible.startsWith("/cam-test ") ||
     visible.startsWith("/add ") ||
     visible.startsWith("/refs ") ||
@@ -1957,7 +2003,7 @@ export function shouldWriteDefaultVoiceHarnessLine(line: string): boolean {
 }
 
 function isVisibleHelpCommandLine(visible: string): boolean {
-  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-delete|gesture-remove|gesture-rm|gesture-clear-custom|gestures-clear-custom|gesture-delete-all|gestures-delete-all|gesture-reset|gesture-clear|add|refs|popups|popup)(?:\s|$)/u.test(visible);
+  return /^\/(?:help|status|permission|complete|error|tts-stop|quit|record|visual|hud|mic|mic-reconnect|cam|camera|camera-toggle|cam-test|camera-test|gesture-add|gesture-capture|gesture-delete|gesture-remove|gesture-rm|gesture-clear-custom|gestures-clear-custom|gesture-delete-all|gestures-delete-all|gesture-reset|gesture-clear|add|refs|popups|popup)(?:\s|$)/u.test(visible);
 }
 
 export async function runVoiceHarness(): Promise<void> {
@@ -1979,33 +2025,55 @@ export async function runVoiceHarness(): Promise<void> {
   }
 
   const args = defaultCodexArgs(cli.harnessArgs);
-  const visualBridge = cli.visual ? new VisualBridge({ writeLine }) : undefined;
+  const visualBridge = new VisualBridge({ writeLine });
   const settingsPersistence = new VoiceLocalSettingsStore();
   const codexThreadSettings = await loadCodexThreadSettingsForVisual(writeLine, parseHarnessCliArgs(args).cwd);
   let shutdownRequested = false;
   let readline: ReturnType<typeof createInterface> | undefined;
+  let visualCompanionStarted = false;
+  let visualStartTask: Promise<void> | undefined;
   const requestShutdown = (): void => {
     shutdownRequested = true;
     if (readline) closeReadline(readline);
   };
-
-  if (visualBridge) {
-    try {
-      const url = await visualBridge.start();
-      await launchVisualCompanion({
-        url,
-        provider: cli.visualProvider,
-        writeLine
-      });
-    } catch (error) {
-      writeLine(`[visual] unavailable: ${formatError(error)}`);
+  const requestVisual = async (): Promise<void> => {
+    if (visualCompanionStarted) {
+      const suffix = visualBridge.url ? ` ${visualBridge.url}` : "";
+      writeLine(`[visual] already running${suffix}`);
+      return;
     }
-  }
+
+    if (visualStartTask) {
+      await visualStartTask;
+      return;
+    }
+
+    visualStartTask = (async () => {
+      try {
+        const url = await visualBridge.start();
+        const result = await launchVisualCompanion({
+          url,
+          provider: cli.visualProvider,
+          writeLine
+        });
+        visualCompanionStarted = result.started;
+      } catch (error) {
+        writeLine(`[visual] unavailable: ${formatError(error)}`);
+      } finally {
+        visualStartTask = undefined;
+      }
+    })();
+
+    await visualStartTask;
+  };
+
+  if (cli.visual) await requestVisual();
   const runner = cli.alwaysOn
     ? createAlwaysOnVoiceHarnessRunnerFromConfig(resolution.config, args, {
         writeLine,
         debug: cli.debug,
         visualBridge,
+        onVisualRequest: requestVisual,
         settingsPersistence,
         codexThreadId: codexThreadSettings.threadId,
         codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
@@ -2016,6 +2084,7 @@ export async function runVoiceHarness(): Promise<void> {
         writeLine,
         debug: cli.debug,
         visualBridge,
+        onVisualRequest: requestVisual,
         settingsPersistence,
         codexThreadId: codexThreadSettings.threadId,
         codexAlwaysStartNewThread: codexThreadSettings.alwaysStartNewThread,
@@ -2045,7 +2114,7 @@ export async function runVoiceHarness(): Promise<void> {
   } finally {
     closeReadline(readline);
     await runner.stop();
-    await visualBridge?.stop();
+    await visualBridge.stop();
   }
 }
 
@@ -2499,6 +2568,10 @@ function isCameraToggleCommand(text: string): boolean {
 
 function isHelpCommand(text: string): boolean {
   return /^\/(?:help|commands|\?)$/iu.test(text.trim());
+}
+
+function isVisualCommand(text: string): boolean {
+  return /^\/(?:visual|hud)$/iu.test(text.trim());
 }
 
 function isMicReconnectCommand(text: string): boolean {
