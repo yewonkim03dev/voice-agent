@@ -20,6 +20,9 @@ export const voiceAgentProtocolPrompt = [
   "status: silent UI state.",
   "error: brief error.",
   "",
+  "Only emit user-visible output through these voice-agent JSON events. Do not write raw plain text outside NDJSON.",
+  "Never dump raw HTML, fetched pages, JSON blobs, crawl output, or long logs to stdout; summarize them in speech/popup or keep them internal.",
+  "",
   "Before tool/file/search/command work, emit a brief speech progress event. During long work, emit short progress after meaningful milestones.",
   "Never put raw commands/paths/URLs/logs in speech. No markdown fences. Use the configured response language for speech text."
 ].join("\n");
@@ -32,6 +35,10 @@ export const voiceAgentPopupProtocolPrompt = [
   "For those popup-worthy answers, emit exactly one short speech final summary for TTS and exactly one popup containing the full answer body.",
   "Popup math is rendered with KaTeX. Write inline math as $...$ or \\(...\\), and display math as $$...$$ or \\[...\\].",
   "Do not use Unicode-only pseudo math when LaTeX is intended; prefer KaTeX-compatible LaTeX such as \\frac, \\sum, _{}, ^{}, \\lambda, and \\|w\\|_2^2.",
+  "Popup markdown links must be standard links with short labels, like [source name](https://example.com/path). Do not use raw URLs as labels.",
+  "Never include line breaks, bullets, quotes, or trailing punctuation inside Markdown link URLs.",
+  "Keep all popup markdown inside the JSON text string; never leave Markdown fragments outside the JSON object.",
+  "Before emitting a popup event, verify the NDJSON line is one valid JSON object and closes immediately after that object.",
   "Do not speak the popup body. Keep the speech final summary concise, phrased as a brief handoff such as \"핵심 내용은 팝업에 정리하겠습니다.\" in the configured response language.",
   "Across all NDJSON lines for one answer, emit no more than one popup event."
 ].join("\n");

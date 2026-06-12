@@ -351,6 +351,7 @@ test("harness CLI parses TTS flags without forwarding them to Codex", () => {
     codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", "-c", "model=\"gpt\""],
     claudeCommand: "claude",
     cwd: "/repo",
+    debug: false,
     tts: {
       enabled: true,
       provider: "macos-apple",

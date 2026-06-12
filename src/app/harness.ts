@@ -263,6 +263,7 @@ export interface TerminalHarnessOptions {
   visualConfig?: VoiceVisualFileConfig;
   settingsPersistence?: VoiceSettingsPersistence;
   sessionHistoryPersistence?: VoiceSessionHistoryPersistence;
+  debug?: boolean;
   approvalPhrases?: ApprovalPhraseConfig;
   stopPhrases?: string[];
   codexThreadId?: string;
@@ -301,6 +302,7 @@ export class TerminalHarness {
   private readonly settingsPersistence: VoiceSettingsPersistence | undefined;
   private readonly sessionHistoryPersistence: VoiceSessionHistoryPersistence | undefined;
   private readonly onExitRequest: (() => void | Promise<void>) | undefined;
+  private readonly debug: boolean;
   private visualSettings: VisualRuntimeSettings;
   private approvalPhrases: ApprovalPhraseSet;
   private stopPhrases: string[];
@@ -343,6 +345,7 @@ export class TerminalHarness {
     this.settingsPersistence = options.settingsPersistence;
     this.sessionHistoryPersistence = options.sessionHistoryPersistence;
     this.onExitRequest = options.onExitRequest;
+    this.debug = options.debug === true;
     this.visualSettings = visualRuntimeSettingsFromFile(options.visualConfig);
     this.approvalPhrases = approvalPhraseSet(options.approvalPhrases);
     this.stopPhrases = normalizeStopPhrases(options.stopPhrases);
@@ -977,7 +980,7 @@ export class TerminalHarness {
       return;
     }
 
-    this.printAgentOutputBlock(type, line);
+    this.printRawPassthroughOutput(type, line);
   }
 
   private handleStalePassthroughOutput(type: CodexOutputEvent["type"], text: string): void {
@@ -1001,12 +1004,7 @@ export class TerminalHarness {
     for (const line of normalized.split("\n")) {
       const visible = line.trimEnd();
       if (!visible) continue;
-      this.printAgentOutputBlock(`stale:${type}`, visible);
-      this.sendVisualEvent({
-        op: "voice-agent-ui",
-        type: "command",
-        text: `[stale ${type}] ${visible}`
-      });
+      this.printRawPassthroughOutput(`stale:${type}`, visible);
     }
   }
 
@@ -1149,6 +1147,11 @@ export class TerminalHarness {
     }
 
     this.writeLine(`[agent:${type}] ${visible}`);
+  }
+
+  private printRawPassthroughOutput(type: string, text: string): void {
+    if (!this.debug) return;
+    this.printAgentOutputBlock(type, text);
   }
 
   private shouldInterrupt(text: string): boolean {
@@ -2235,6 +2238,7 @@ export interface HarnessCliOptions {
   codexThreadId?: string;
   claudeCommand: string;
   cwd: string;
+  debug: boolean;
   tts?: TtsCliOptions;
 }
 
@@ -2252,6 +2256,7 @@ export function createTerminalHarnessFromArgs(
 
     return new TerminalHarness({
       ...options,
+      debug: options.debug === true || cli.debug,
       codexThreadId,
       codexAlwaysStartNewThread,
       ttsCli: cli.tts,
@@ -2280,6 +2285,7 @@ export function createTerminalHarnessFromArgs(
   if (cli.backendMode === "claude") {
     return new TerminalHarness({
       ...options,
+      debug: options.debug === true || cli.debug,
       ttsCli: cli.tts,
       cwd: cli.cwd,
       backendLabel: "claude",
@@ -2296,6 +2302,7 @@ export function createTerminalHarnessFromArgs(
 
   return new TerminalHarness({
     ...options,
+    debug: options.debug === true || cli.debug,
     ttsCli: cli.tts,
     cwd: cli.cwd,
     backendLabel: "mock",
@@ -2314,6 +2321,7 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
   let codexThreadId: string | undefined;
   let claudeCommand = "claude";
   let cwd = defaultCwd;
+  let debug = false;
   let tts: TtsCliOptions | undefined;
 
   for (let index = 0; index < harnessArgs.length; index += 1) {
@@ -2344,6 +2352,9 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
         break;
       case "--cwd":
         cwd = requiredValue(harnessArgs, ++index, "--cwd");
+        break;
+      case "--debug":
+        debug = true;
         break;
       case "--tts":
         tts = {
@@ -2419,6 +2430,7 @@ export function parseHarnessCliArgs(args: string[], defaultCwd = process.cwd()):
     ...(codexThreadId ? { codexThreadId } : {}),
     claudeCommand,
     cwd,
+    debug,
     ...(tts ? { tts } : {})
   };
 }

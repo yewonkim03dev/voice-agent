@@ -468,7 +468,19 @@ test("parses real harness mode with extra Codex app-server args", () => {
     codexCommand: "codex",
     codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", "-c", "model=\"gpt-5-codex\""],
     claudeCommand: "claude",
-    cwd: "/repo"
+    cwd: "/repo",
+    debug: false
+  });
+});
+
+test("parses debug mode without forwarding it to app-server", () => {
+  assert.deepEqual(parseHarnessCliArgs(["--codex", "--debug", "-c", "model=\"gpt\""], "/repo"), {
+    backendMode: "codex",
+    codexCommand: "codex",
+    codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", "-c", "model=\"gpt\""],
+    claudeCommand: "claude",
+    cwd: "/repo",
+    debug: true
   });
 });
 
@@ -483,7 +495,8 @@ test("parses a fixed Codex thread id without forwarding it to app-server", () =>
     codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", "-c", "model=\"gpt\""],
     codexThreadId: "thread_saved",
     claudeCommand: "claude",
-    cwd: "/repo"
+    cwd: "/repo",
+    debug: false
   });
 });
 
@@ -494,7 +507,8 @@ test("parses Codex approval policy without forwarding it to app-server args", ()
     codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0", "-c", "model=\"gpt\""],
     codexApprovalPolicy: "on-failure",
     claudeCommand: "claude",
-    cwd: "/repo"
+    cwd: "/repo",
+    debug: false
   });
 });
 
@@ -522,7 +536,8 @@ test("parses Claude harness mode", () => {
     codexCommand: "codex",
     codexArgs: ["app-server", "--listen", "ws://127.0.0.1:0"],
     claudeCommand: "claude-dev",
-    cwd: "/repo"
+    cwd: "/repo",
+    debug: false
   });
 });
 
@@ -995,7 +1010,7 @@ test("pass-through mode does not parse agent text into fake approval requests", 
   assert.equal(backend.permissions[0].requestId, "approval_1");
 });
 
-test("pass-through mode buffers token-sized agent output until completion", async () => {
+test("pass-through mode suppresses raw token-sized agent output by default", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
   const harness = createPassthroughHarness(backend, lines);
@@ -1024,7 +1039,7 @@ test("pass-through mode buffers token-sized agent output until completion", asyn
   });
   await Promise.resolve();
 
-  assert.equal(lines.some((line) => line.includes("[agent:stdout] 실행했습니다.")), true);
+  assert.equal(lines.some((line) => line.includes("[agent:stdout] 실행했습니다.")), false);
 });
 
 test("parses voice-agent NDJSON speech events", () => {
@@ -1099,6 +1114,8 @@ test("voice-agent protocol prefers speech for audible progress", () => {
   assert.match(voiceAgentProtocolPrompt, /display only, never spoken/u);
   assert.match(voiceAgentProtocolPrompt, /status: silent UI state/u);
   assert.match(voiceAgentProtocolPrompt, /Use the configured response language/u);
+  assert.match(voiceAgentProtocolPrompt, /Do not write raw plain text outside NDJSON/u);
+  assert.match(voiceAgentProtocolPrompt, /Never dump raw HTML, fetched pages, JSON blobs, crawl output, or long logs to stdout/u);
   assert.doesNotMatch(voiceAgentProtocolPrompt, /Popup channel/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /Popup channel/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /at most one popup event per assistant answer/u);
@@ -1108,6 +1125,9 @@ test("voice-agent protocol prefers speech for audible progress", () => {
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /KaTeX/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /\$\.\.\.\$/u);
   assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /\$\$\.\.\.\$\$/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /standard links with short labels/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /Never include line breaks, bullets, quotes, or trailing punctuation inside Markdown link URLs/u);
+  assert.match(voiceAgentProtocolPromptForSettings({ popupPreferred: true }), /never leave Markdown fragments outside the JSON object/u);
 });
 
 test("visual popup preference updates backend protocol prompt and persists", async () => {
@@ -1742,10 +1762,43 @@ test("pass-through mode recovers adjacent structured events", async () => {
   assert.equal(visualBridge.events.some((event) => event.type === "state" && event.state === "speaking"), true);
 });
 
-test("pass-through mode keeps invalid JSON and mixed raw stdout as raw fallback", async () => {
+test("pass-through mode suppresses invalid JSON and mixed raw stdout by default", async () => {
   const backend = new InMemoryAgentBackend();
   const lines: string[] = [];
   const harness = createPassthroughHarness(backend, lines);
+
+  await harness.start();
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "stdout",
+    text:
+      "raw before\n" +
+      '{"op":"voice-agent","type":"speech","text":"중간 보고야."}\n' +
+      "{not-json}\n" +
+      "raw after",
+    timestamp: 1000
+  });
+  backend.emitOutput({
+    sessionId: "sess_1",
+    type: "task_complete",
+    text: "Task complete",
+    timestamp: 1000
+  });
+  await flushAsync();
+
+  assert.equal(lines.some((line) => line.includes("[agent:stdout] raw before")), false);
+  assert.equal(lines.some((line) => line.includes("[agent:speech] 중간 보고야.")), true);
+  assert.equal(lines.some((line) => line.includes("[agent:stdout] {not-json}")), false);
+  assert.equal(lines.some((line) => line.includes("[agent:stdout] raw after")), false);
+  assert.equal(harness.voiceOutput.messages.some((message) => message.text === "중간 보고야."), true);
+});
+
+test("pass-through mode shows raw stdout fallback in debug mode", async () => {
+  const backend = new InMemoryAgentBackend();
+  const lines: string[] = [];
+  const harness = createPassthroughHarness(backend, lines, undefined, undefined, undefined, {
+    debug: true
+  });
 
   await harness.start();
   backend.emitOutput({
@@ -1770,7 +1823,6 @@ test("pass-through mode keeps invalid JSON and mixed raw stdout as raw fallback"
   assert.equal(lines.some((line) => line.includes("[agent:speech] 중간 보고야.")), true);
   assert.equal(lines.some((line) => line.includes("[agent:stdout] {not-json}")), true);
   assert.equal(lines.some((line) => line.includes("[agent:stdout] raw after")), true);
-  assert.equal(harness.voiceOutput.messages.some((message) => message.text === "중간 보고야."), true);
 });
 
 test("pass-through mode skips generic completion after structured speech", async () => {
