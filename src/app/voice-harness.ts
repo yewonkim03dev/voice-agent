@@ -46,7 +46,7 @@ import {
 import { BargeInPolicy } from "../voice/BargeInPolicy.ts";
 import { EchoGuard, type EchoGuardResult } from "../voice/EchoGuard.ts";
 import type { VisualProvider } from "../visual/VisualConfig.ts";
-import { VisualBridge, type VisualBridgeLike } from "../visual/VisualBridge.ts";
+import { VisualBridge, type VisualBridgeLike, type VisualRuntimeSettings } from "../visual/VisualBridge.ts";
 import { launchVisualCompanion } from "../visual/run-visual.ts";
 import { createWakeStreamDetectorFromConfig } from "../wake/createWakeStreamDetector.ts";
 import { NoopWakeStreamDetector, type WakeStreamDetector, type WakeStreamEvent } from "../wake/WakeStreamDetector.ts";
@@ -354,7 +354,7 @@ export class VoiceHarnessRunner {
         visualQuestionReferences: applied.entries
       });
     } catch (error) {
-      this.writeLine(`[voice:error] ${formatError(error)}`);
+      this.writeLine(formatTranscriptionErrorLog(formatError(error), this.debug, this.terminalHarness.getVisualRuntimeSettings().responseLanguage));
     }
   }
 
@@ -809,7 +809,7 @@ export class AlwaysOnVoiceHarnessRunner {
         this.cancelWakeFollowUpCandidate(details);
       }
       if (!this.shouldSuppressTranscriptionError(source, details)) {
-        this.writeLine(`[voice:error] ${details}`);
+        this.writeLine(formatTranscriptionErrorLog(details, this.debug, this.terminalHarness.getVisualRuntimeSettings().responseLanguage));
       }
     } finally {
       this.releaseAudio(audio, source);
@@ -1822,7 +1822,7 @@ export class AlwaysOnVoiceHarnessRunner {
   private shouldSuppressTranscriptionError(source: "candidate" | "manual", details: string): boolean {
     if (this.debug || source !== "candidate") return false;
     if (!this.shouldSuppressBackgroundCandidateFeedback()) return false;
-    return /no transcript|no speech detected|produced no transcript/i.test(details);
+    return isNoTranscriptError(details);
   }
 
   private shouldSuppressBackgroundCandidateFeedback(): boolean {
@@ -2630,6 +2630,28 @@ function localizedScreenQuestion(language: "auto" | "ko" | "en" | undefined): st
 
 function buildScreenReferenceText(language: "auto" | "ko" | "en" | undefined, path: string): string {
   return language === "en" ? `App Shot image path: ${path}` : `앱샷 이미지 경로: ${path}`;
+}
+
+function formatTranscriptionErrorLog(
+  details: string,
+  debug: boolean,
+  language: VisualRuntimeSettings["responseLanguage"]
+): string {
+  if (debug || !isNoTranscriptError(details)) {
+    return `[voice:error] ${details}`;
+  }
+
+  return `[voice:warning] ${localizedNoTranscriptMessage(language)}`;
+}
+
+function localizedNoTranscriptMessage(language: VisualRuntimeSettings["responseLanguage"]): string {
+  return language === "en"
+    ? "No speech was recognized. Please try again."
+    : "음성을 인식하지 못했습니다. 다시 말해 주세요.";
+}
+
+function isNoTranscriptError(details: string): boolean {
+  return /no transcript|no speech detected|produced no transcript/i.test(details);
 }
 
 function createDirectTranscript(

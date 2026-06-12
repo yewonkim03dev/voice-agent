@@ -2388,6 +2388,50 @@ test("always-on voice runner hides no-transcript candidate errors while TTS is s
   assert.equal(logs.some((line) => line.includes("[voice:error] Apple Speech produced no transcript.")), false);
 });
 
+test("voice runner localizes no-transcript STT errors outside debug mode", async () => {
+  const logs: string[] = [];
+  const speechProcessor = new SequenceSpeechProcessor([
+    new Error("STT command exited with code 1. Apple Speech produced no transcript.")
+  ]);
+  const { runner, audioInput } = createVoiceRunner([], {
+    speechProcessor,
+    writeLine: (line) => logs.push(line),
+    debug: false
+  });
+
+  await runner.start();
+  await recordOnce(runner, audioInput);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(logs.some((line) => line.includes("STT command exited with code 1")), false);
+  assert.ok(logs.includes("[voice:warning] 음성을 인식하지 못했습니다. 다시 말해 주세요."));
+});
+
+test("always-on voice runner uses English no-transcript warning when configured", async () => {
+  const visualBridge = new FakeVisualBridge();
+  const speechProcessor = new SequenceSpeechProcessor([
+    new Error("STT command exited with code 1. Apple Speech produced no transcript.")
+  ]);
+  const { runner, audioInput, logs } = createAlwaysOnRunner([], {
+    speechProcessor,
+    visualBridge,
+    debug: false
+  });
+
+  await runner.start();
+  visualBridge.emitVisualControl({
+    responseLanguage: "en"
+  });
+  await flushAsync();
+  emitCandidate(audioInput, 1000);
+  await runner.drain();
+  await runner.stop();
+
+  assert.equal(logs.some((line) => line.includes("STT command exited with code 1")), false);
+  assert.ok(logs.includes("[voice:warning] No speech was recognized. Please try again."));
+});
+
 test("always-on voice runner keeps thinking after recent non-wake speech during active request", async () => {
   const visualBridge = new FakeVisualBridge();
   const voiceOutput = new AutoFinishVoiceOutput();
@@ -3257,6 +3301,8 @@ function createVoiceRunner(
     onVisualRequest?: () => Promise<void>;
     visualBridge?: VisualBridgeLike;
     screenCaptureProvider?: ScreenCaptureProvider;
+    speechProcessor?: SpeechProcessor;
+    debug?: boolean;
   } = {}
 ): {
   backend: InMemoryAgentBackend;
@@ -3292,7 +3338,7 @@ function createVoiceRunner(
     now: () => 1000,
     createId
   });
-  const speechProcessor = new FakeSpeechProcessor(transcripts);
+  const speechProcessor = options.speechProcessor ?? new FakeSpeechProcessor(transcripts);
   const runner = new VoiceHarnessRunner({
     terminalHarness: harness,
     gate,
@@ -3301,7 +3347,8 @@ function createVoiceRunner(
     visualBridge: options.visualBridge,
     onVisualRequest: options.onVisualRequest,
     screenCaptureProvider: options.screenCaptureProvider,
-    writeLine: options.writeLine
+    writeLine: options.writeLine,
+    debug: options.debug
   });
 
   return {
